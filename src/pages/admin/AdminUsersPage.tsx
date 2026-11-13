@@ -5,6 +5,7 @@ import { SITE_NAME } from '@/config/site'
 import { countryLabel } from '@/lib/api'
 import { staffAuthConfigured, staffLogin, staffToken } from '@/lib/staffAuth'
 import CountrySelect from '@/components/CountrySelect'
+import DevicesList, { type DeviceSession } from '@/components/DevicesList'
 
 /** Поддержка: пользователи — карточка, страны (резидентство меняется по заявке), прямое сообщение */
 
@@ -173,6 +174,16 @@ export default function AdminUsersPage() {
               </button>
             </div>
             <p className="meta mt-1 !normal-case tracking-normal">смена — после проверки документа по заявке; пишется в аудит</p>
+
+            <h3 className="mt-6 text-sm font-semibold">Устройства</h3>
+            <DevicesList
+              key={card.did}
+              load={() => call<DeviceSession[]>(`/admin/users/${encodeURIComponent(card.did)}/sessions`)}
+              revoke={(id) => call(`/admin/users/${encodeURIComponent(card.did)}/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })}
+              revokeAll={() => call(`/admin/users/${encodeURIComponent(card.did)}/sessions/revoke-all`, { method: 'POST' })}
+              revokeAllLabel="Завершить все сессии пользователя"
+            />
+            <p className="meta mt-1 !normal-case tracking-normal">завершение пишется в аудит; пользователю придётся войти снова</p>
 
             <h3 className="mt-6 text-sm font-semibold">Обращения · {card.tickets.length}</h3>
             {card.tickets.length === 0 ? (

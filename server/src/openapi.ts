@@ -404,6 +404,17 @@ const ops: Op[] = [
     body: ResidenceBody, ok: { status: 200, description: 'Профиль с новой страной резидентства' },
     errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [403, 'Forbidden — нужна роль support'], [404, 'NotFound']],
   },
+  // ── устройства
+  {
+    method: 'get', path: '/me/sessions', tag: 'security', summary: 'Мои устройства', auth: 'bearer',
+    description: 'Сессии аккаунта: устройство по User-Agent, страна входа, когда вошли и когда были активны; current — это устройство.',
+    ok: { status: 200, description: 'До 50, активные сверху' }, errors: [[401, 'AuthenticationRequired · SessionRevoked']],
+  },
+  { method: 'delete', path: '/me/sessions/{id}', tag: 'security', summary: 'Завершить сессию', auth: 'bearer', ok: { status: 200, description: 'Завершена — её токены больше не принимаются' }, errors: [[404, 'NotFound']] },
+  { method: 'post', path: '/me/sessions/revoke-others', tag: 'security', summary: 'Завершить все, кроме этого устройства', auth: 'bearer', ok: { status: 200, description: '{ ok, revoked }' } },
+  { method: 'get', path: '/admin/users/{did}/sessions', tag: 'admin', summary: 'Устройства пользователя', auth: 'staff', ok: { status: 200, description: 'Сессии аккаунта' }, errors: [[403, 'Forbidden']] },
+  { method: 'delete', path: '/admin/users/{did}/sessions/{id}', tag: 'admin', summary: 'Завершить сессию пользователя', auth: 'staff', ok: { status: 200, description: 'В аудит' }, errors: [[404, 'NotFound']] },
+  { method: 'post', path: '/admin/users/{did}/sessions/revoke-all', tag: 'admin', summary: 'Завершить все сессии пользователя', auth: 'staff', ok: { status: 200, description: '{ ok, revoked } · в аудит' } },
   // ── обращения
   {
     method: 'post', path: '/support/tickets', tag: 'service', summary: 'Обращение в поддержку или запрос органа',

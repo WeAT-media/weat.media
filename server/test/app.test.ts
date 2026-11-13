@@ -15,6 +15,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { createStaffVerifier, type AuditEntry, type AuditRepo } from '../src/staff.ts'
 import type { ClaimRepo, ClaimRow } from '../src/claims.ts'
 import type { MessageRow, TicketRepo, TicketRow } from '../src/tickets.ts'
+import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
 const ZITADEL = 'https://auth.test'
@@ -80,6 +81,29 @@ function memTickets(): TicketRepo {
       const r = rows.find((x) => x.id === id)
       if (r) Object.assign(r, { ...(patch.status ? { status: patch.status } : {}), ...(patch.staff_note !== undefined ? { staff_note: patch.staff_note } : {}), updated_by: by, updated_at: new Date() })
       return r
+    },
+  }
+}
+
+function memSessions(): SessionRepo {
+  const rows: SessionRow[] = []
+  let n = 0
+  return {
+    async record(s) {
+      const prev = s.prevRefreshHash ? rows.find((r) => r.refresh_hash === s.prevRefreshHash && !r.revoked_at) : undefined
+      if (prev) return void Object.assign(prev, { access_hash: s.accessHash, refresh_hash: s.refreshHash, last_seen_at: new Date(), country: s.country })
+      rows.push({ id: `ses_${++n}`, did: s.did, access_hash: s.accessHash, refresh_hash: s.refreshHash, device: s.device, country: s.country, created_at: new Date(), last_seen_at: new Date(), revoked_at: null, revoked_by: null })
+    },
+    async isRevoked(h) {
+      const hit = rows.filter((r) => r.access_hash === h || r.refresh_hash === h)
+      return hit.length > 0 && hit.every((r) => !!r.revoked_at)
+    },
+    async byAccess(h) { return rows.filter((r) => r.access_hash === h).sort((a, b) => Number(!!a.revoked_at) - Number(!!b.revoked_at))[0] },
+    async list(did) { return rows.filter((r) => r.did === did) },
+    async revoke(did, ids, by, keep) {
+      const hit = rows.filter((r) => r.did === did && !r.revoked_at && (ids ? ids.includes(r.id) : r.id !== keep))
+      for (const r of hit) Object.assign(r, { revoked_at: new Date(), revoked_by: by })
+      return hit.length
     },
   }
 }
@@ -498,6 +522,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     orders: (ordersLast = memOrders()),
     claims: memClaims(),
     tickets: memTickets(),
+    sessions: memSessions(),
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
     rateLimiter: opts.rateLimit ? undefined : false,
@@ -1425,6 +1450,42 @@ test('support tickets: guest or user writes, staff reads and changes status (aud
   assert.equal(inbox.length, 1)
   assert.equal(inbox[0].unread, 1, 'прямое сообщение — непрочитанный ответ поддержки')
   assert.equal(auditLog.at(-1)?.action, 'user.message')
+})
+
+test('device journal: sessions recorded on login and refresh, revoked tokens refused', async () => {
+  const app = makeApp()
+  const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+  const win = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'devices', email: 'devices@example.com' }, '1.1.1.1', { 'user-agent': mac }))).json()
+  const other = await (await app.request('/api/auth/login', json({ identifier: 'devices.indie.media', password: reg.password }, '1.1.1.1', { 'user-agent': win }))).json()
+  const auth = (t: string) => ({ authorization: `Bearer ${t}` })
+
+  const list = await (await app.request('/api/me/sessions', { headers: auth(u.accessJwt) })).json()
+  assert.equal(list.length, 2)
+  assert.deepEqual(list.map((s: { device: string }) => s.device).sort(), ['Chrome · Windows', 'Safari · macOS'])
+  assert.equal(list.find((s: { current: boolean }) => s.current).device, 'Safari · macOS', 'это устройство')
+
+  // обновление — та же сессия, не новая
+  const refreshed = await (await app.request('/api/auth/refresh', json({ refreshJwt: other.refreshJwt }, '1.1.1.1', { 'user-agent': win }))).json()
+  assert.ok(refreshed.accessJwt)
+  assert.equal((await (await app.request('/api/me/sessions', { headers: auth(u.accessJwt) })).json()).length, 2)
+
+  // «Завершить все, кроме этого» — токены Windows больше не принимаются, и refresh тоже
+  const r = await (await app.request('/api/me/sessions/revoke-others', { method: 'POST', headers: auth(u.accessJwt) })).json()
+  assert.equal(r.revoked, 1)
+  const denied = await app.request('/api/me', { headers: auth(refreshed.accessJwt) })
+  assert.equal(denied.status, 401)
+  assert.equal((await denied.json()).error, 'SessionRevoked')
+  assert.equal((await app.request('/api/auth/refresh', json({ refreshJwt: refreshed.refreshJwt }, '1.1.1.1'))).status, 401)
+  assert.equal((await app.request('/api/me', { headers: auth(u.accessJwt) })).status, 200, 'своё устройство работает')
+
+  // сотрудник видит и завершает всё — в аудит
+  const staff = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  assert.equal((await (await app.request(`/api/admin/users/${u.user.did}/sessions`, { headers: staff })).json()).length, 2)
+  const all = await (await app.request(`/api/admin/users/${u.user.did}/sessions/revoke-all`, { method: 'POST', headers: staff })).json()
+  assert.equal(all.revoked, 1)
+  assert.equal(auditLog.at(-1)?.action, 'session.revoke_all')
+  assert.equal((await app.request('/api/me', { headers: auth(u.accessJwt) })).status, 401)
 })
 
 test('lava.top: invoice, forged webhook refused, access only after API confirms, idempotent', async () => {

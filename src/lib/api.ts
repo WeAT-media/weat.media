@@ -4,6 +4,7 @@ import type { EditorPreferences, LabelerSettings, Preferences, SubscriptionTier,
 
 /** Ответы AppView (server/src/app.ts) */
 import type { RecordVideo } from '@/lib/videoLink'
+import type { DeviceSession } from '@/components/DevicesList'
 
 export interface ApiUser {
   /** только в публичном профиле: число платных подписчиков */
@@ -257,6 +258,10 @@ export const security = {
     authed<{ backupCodes: string[]; security: SecurityView }>('/me/2fa/totp/enable', post({ code, refreshJwt: loadSession()?.refreshJwt })),
   totpDisable: (code: string) => authed<SecurityView>('/me/2fa/totp/disable', post({ code })),
   regenerateBackupCodes: (code: string) => authed<{ backupCodes: string[] }>('/me/2fa/backup-codes', post({ code })),
+  /** журнал устройств: свои сессии, завершить одну или все, кроме этой */
+  sessions: () => authed<DeviceSession[]>('/me/sessions'),
+  revokeSession: (id: string) => authed<{ ok: true }>(`/me/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  revokeOtherSessions: () => authed<{ ok: true; revoked: number }>('/me/sessions/revoke-others', post({})),
   forgotPassword: (email: string) => call<{ ok: true }>('/auth/password/forgot', post({ email })),
   resetPassword: (token: string, password: string) => call<{ ok: true }>('/auth/password/reset', post({ token, password })),
 }

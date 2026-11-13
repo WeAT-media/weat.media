@@ -17,6 +17,7 @@ import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
+import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
 import type { AuditRepo, Staff, StaffRole, StaffVerifier } from './staff.js'
 import { mountLavaRoutes, type LavaClient, type OrderRepo } from './lava.js'
@@ -40,6 +41,7 @@ export interface Deps {
   orders: OrderRepo
   claims: ClaimRepo
   tickets: TicketRepo
+  sessions: SessionRepo
   /** сервис ленты; не задан — лента собирается обходом PDS */
   feedUrl?: string
   /** lava.top; не задан — оплата выключена (503 PaymentsDisabled) */
@@ -150,6 +152,8 @@ export function createApp(deps: Deps) {
   app.use('*', async (c, next) =>
     bodyLimit({ maxSize: BIG.has(c.req.path) ? 1024 * 1024 : 64 * 1024, onError: tooLarge })(c, next),
   )
+  // журнал устройств: завершённая сессия не проходит; выданная пара токенов — запись (sessions.ts)
+  app.use('*', sessionTracking({ sessions: d.sessions }, { bearer, country: (c) => d.geo.country(clientIp(c)) }))
   mountContourRoutes(app, { users: d.users, peer: d.peer, nodeRole: d.nodeRole ?? 'primary' })
 
   const geoOf = (c: Context) => {
@@ -239,6 +243,7 @@ export function createApp(deps: Deps) {
   )
   mountClaimRoutes(app, { users: d.users, pds: d.pds, claims: d.claims }, { bearer, requireStaff, audit })
   mountTicketRoutes(app, { pds: d.pds, tickets: d.tickets, users: d.users }, { bearer, requireStaff, audit })
+  mountSessionRoutes(app, { pds: d.pds, sessions: d.sessions }, { bearer, requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })

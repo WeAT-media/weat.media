@@ -1,3 +1,4 @@
+import DevicesList from '@/components/DevicesList'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import QRCode from 'qrcode'
@@ -245,6 +246,18 @@ export default function SecuritySettingsPage() {
             </div>
           </div>
         )}
+      </section>
+
+      <section aria-label="Устройства" className="rule mt-8 pt-6">
+        <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Устройства</h2>
+        <p className="mt-1 max-w-[60ch] text-sm text-muted-foreground">Где выполнен вход в аккаунт. Незнакомое — завершите.</p>
+        <DevicesList
+          self
+          load={security.sessions}
+          revoke={security.revokeSession}
+          revokeAll={security.revokeOtherSessions}
+          revokeAllLabel="Завершить все, кроме этого"
+        />
       </section>
     </Reveal>
   )
