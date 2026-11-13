@@ -3,7 +3,7 @@ import { useLocation, useSearchParams } from 'react-router'
 import { CheckCircle2, KeyRound, Scale } from 'lucide-react'
 import Reveal from '@/components/Reveal'
 import ProviderIcon from '@/components/ProviderIcon'
-import { api, ApiError, hasSession, PROVIDER_LABEL, telegramAuthUrl, type IdentitiesView, type Provider } from '@/lib/api'
+import { api, ApiError, hasSession, PROVIDER_LABEL, type IdentitiesView, type Provider } from '@/lib/api'
 import { authErrorText } from '@/lib/authErrors'
 import { SITE_NAME } from '@/config/site'
 
@@ -53,11 +53,9 @@ export default function LinkedAccountsSettingsPage() {
     setBusy(p)
     try {
       const url =
-        p === 'telegram'
-          ? await telegramAuthUrl('link', location.pathname)
-          : p === 'atproto'
-            ? (await api.linkAtproto(atHandle.trim(), location.pathname)).url
-            : (await api.linkOAuth(p, location.pathname)).url
+        p === 'atproto'
+          ? (await api.linkAtproto(atHandle.trim(), location.pathname)).url
+          : (await api.linkOAuth(p, location.pathname)).url
       window.location.assign(url)
     } catch (e) {
       setActionError(e instanceof ApiError ? authErrorText(e.code) || e.message : 'Не удалось начать привязку')

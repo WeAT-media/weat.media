@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createHash, createHmac } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { createApp, type Deps } from '../src/app.ts'
 import type { Identity, IdentityRepo, MfaRepo, MfaRow, Tier, UserRepo, UserRow } from '../src/db.ts'
 import { totpCode } from '../src/totp.ts'
 import { PdsError, type PdsClient } from '../src/pds.ts'
-import type { ExternalProfile, OAuthClient, OAuthProviderId } from '../src/providers.ts'
+import { createOAuthClient, type ExternalProfile, type OAuthClient, type OAuthProviderId } from '../src/providers.ts'
 import { createSecretBox } from '../src/secretbox.ts'
 import type { Settings, SettingsRepo } from '../src/settings.ts'
 import type { PaidContentRow, PaidRepo } from '../src/paidContent.ts'
@@ -485,13 +485,22 @@ const mailbox: { confirm?: string; reset?: string; twofa?: string; update?: stri
 
 const profiles: Record<string, ExternalProfile> = {
   'yandex:code-ivan': { id: '1001', login: 'ivan.petrov', email: 'ivan@yandex.ru', displayName: 'Иван Петров' },
+  'telegram:code-tg': { id: '99', login: 'alina_tg', email: null, displayName: 'Alina' },
   'yandex:code-noemail': { id: '1002', login: 'ghost', email: null, displayName: null },
   'google:code-g': { id: 'g-42', login: 'alina@gmail.com', email: 'alina@gmail.com', displayName: 'Alina' },
   'github:code-gh': { id: '777', login: 'alina-dev', email: null, displayName: 'Alina' },
 }
-const fakeOAuth = (p: OAuthProviderId): OAuthClient => ({
-  authorizeUrl: (state, redirect) => `https://${p}.example/authorize?state=${state}&redirect_uri=${encodeURIComponent(redirect)}`,
-  async exchangeCode(code) {
+/** PKCE-провайдер (Telegram) отдаёт профиль, только если verifier из состояния дошёл до обмена кода */
+const pkceSeen: (string | undefined)[] = []
+const fakeOAuth = (p: OAuthProviderId, pkce = false): OAuthClient => ({
+  pkce,
+  authorizeUrl: (state, redirect, verifier) =>
+    `https://${p}.example/authorize?state=${state}&redirect_uri=${encodeURIComponent(redirect)}${verifier ? `&code_challenge=${verifier.length}` : ''}`,
+  async exchangeCode(code, _redirect, verifier) {
+    if (pkce) {
+      pkceSeen.push(verifier)
+      if (!verifier || verifier.length < 43) throw new Error('no pkce verifier')
+    }
     const prof = profiles[`${p}:${code}`]
     if (!prof) throw new Error('bad code')
     return prof
@@ -622,8 +631,6 @@ function fakePds(): PdsClient {
   }
 }
 
-const BOT = '123456:TEST-bot-token'
-
 /** внешний AT-сервер: authorize кладёт state в URL, callback возвращает подтверждённый DID и email */
 const fakeAtproto: AtprotoAuth = {
   clientMetadata: { client_id: 'http://localhost/client-metadata.json' } as AtprotoAuth['clientMetadata'],
@@ -666,8 +673,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     lava: fakeLava,
     paidBox: createSecretBox('44'.repeat(32)),
     secrets: createSecretBox('11'.repeat(32)),
-    oauth: { yandex: fakeOAuth('yandex'), google: fakeOAuth('google'), github: fakeOAuth('github') },
-    telegramBotToken: BOT,
+    oauth: { yandex: fakeOAuth('yandex'), google: fakeOAuth('google'), github: fakeOAuth('github'), telegram: fakeOAuth('telegram', true) },
     atproto: opts.atproto ? fakeAtproto : undefined,
     users: memRepo(),
     settings: memSettings(),
@@ -1044,12 +1050,6 @@ test('secretbox roundtrip and tamper detection', () => {
   assert.throws(() => box.open(parts.join('.')))
 })
 
-function tgAuth(fields: Record<string, string | number>, token = BOT) {
-  const check = Object.entries(fields).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join('\n')
-  const hash = createHmac('sha256', createHash('sha256').update(token).digest()).update(check).digest('hex')
-  return { ...fields, hash }
-}
-
 async function registerWithPassword(app: ReturnType<typeof makeApp>, ip: string, username = 'alina') {
   const res = await app.request('/api/auth/register', json({ username, email: `${username}@example.com`, password: 'correct-horse', consent: reg.consent }, ip))
   return (await res.json()) as { accessJwt: string; user: { did: string } }
@@ -1084,12 +1084,8 @@ test('RU account can link foreign providers in settings but cannot log in with t
 
   const g = await oauthFlow(app, 'google', 'code-g', '95.1.1.1', { linkToken: accessJwt })
   assert.equal(g.searchParams.get('linked'), 'google')
-  const tg = await app.request('/api/me/identities/telegram', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${accessJwt}` },
-    body: JSON.stringify(tgAuth({ id: 5, username: 'alina', auth_date: Math.floor(Date.now() / 1000) })),
-  })
-  assert.equal(tg.status, 201)
+  const tg = await oauthFlow(app, 'telegram', 'code-tg', '95.1.1.1', { linkToken: accessJwt })
+  assert.equal(tg.searchParams.get('linked'), 'telegram')
 
   const ids = await getIds(app, accessJwt)
   const google = ids.providers.find((p: { provider: string }) => p.provider === 'google')
@@ -1100,8 +1096,8 @@ test('RU account can link foreign providers in settings but cannot log in with t
   // вход через привязанный иностранный сервис закрыт
   const login = await oauthFlow(app, 'google', 'code-g', '95.1.1.1')
   assert.equal(login.searchParams.get('error'), 'ProviderForbidden')
-  const tgLogin = await app.request('/api/auth/telegram/login', json(tgAuth({ id: 5, username: 'alina', auth_date: Math.floor(Date.now() / 1000) }), '95.1.1.1'))
-  assert.equal((await tgLogin.json()).error, 'ProviderForbidden')
+  const tgLogin = await oauthFlow(app, 'telegram', 'code-tg', '95.1.1.1')
+  assert.equal(tgLogin.searchParams.get('error'), 'ProviderForbidden')
 })
 
 test('ru contour hides foreign providers on login page and refuses foreign start', async () => {
@@ -1113,27 +1109,29 @@ test('ru contour hides foreign providers on login page and refuses foreign start
   assert.deepEqual(global.providers, ['yandex', 'google', 'github', 'telegram'])
 })
 
-test('telegram: link with valid signature, login, reject forged and stale data', async () => {
+test('telegram client: authorize URL carries S256 challenge of the verifier, openid profile scope', () => {
+  const tg = createOAuthClient('telegram', { clientId: '9113397681', clientSecret: 's' })
+  assert.equal(tg.pkce, true)
+  const u = new URL(tg.authorizeUrl('st', 'https://weat.media/api/auth/telegram/callback', 'v'.repeat(43)))
+  assert.equal(u.origin + u.pathname, 'https://oauth.telegram.org/auth')
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256')
+  assert.equal(u.searchParams.get('code_challenge'), createHash('sha256').update('v'.repeat(43)).digest('base64url'))
+  assert.equal(u.searchParams.get('scope'), 'openid profile')
+  assert.equal(u.searchParams.get('client_id'), '9113397681')
+})
+
+test('telegram (OIDC + PKCE): link, then log in; verifier reaches token exchange; no account creation', async () => {
   const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const unknown = await oauthFlow(app, 'telegram', 'code-tg', '5.1.1.1')
+  assert.equal(unknown.searchParams.get('error'), 'NotLinked', 'Telegram не даёт email — аккаунт через него не создаётся')
   const { accessJwt, user } = await registerWithPassword(app, '5.1.1.1')
-  const now = Math.floor(Date.now() / 1000)
-  const data = tgAuth({ id: 99, first_name: 'Alina', username: 'alina_tg', auth_date: now })
-  const link = await app.request('/api/me/identities/telegram', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${accessJwt}` },
-    body: JSON.stringify(data),
-  })
-  assert.equal(link.status, 201)
-
-  const login = await app.request('/api/auth/telegram/login', json(data, '5.1.1.1'))
-  assert.equal((await login.json()).user.did, user.did)
-
-  const forged = await app.request('/api/auth/telegram/login', json({ ...data, id: 100 }, '5.1.1.1'))
-  assert.equal(forged.status, 400)
-  const stale = await app.request('/api/auth/telegram/login', json(tgAuth({ id: 99, auth_date: now - 3600 }), '5.1.1.1'))
-  assert.equal(stale.status, 400)
-  const unknown = await app.request('/api/auth/telegram/login', json(tgAuth({ id: 1234, auth_date: now }), '5.1.1.1'))
-  assert.equal((await unknown.json()).error, 'NotLinked')
+  const link = await oauthFlow(app, 'telegram', 'code-tg', '5.1.1.1', { linkToken: accessJwt })
+  assert.equal(link.searchParams.get('linked'), 'telegram')
+  const login = await oauthFlow(app, 'telegram', 'code-tg', '5.1.1.1')
+  const s = await (await app.request('/api/auth/handoff', json({ code: login.searchParams.get('handoff') }, '5.1.1.1'))).json()
+  assert.equal(s.user.did, user.did)
+  assert.ok(pkceSeen.length >= 3 && pkceSeen.every((v) => typeof v === 'string' && v.length >= 43))
+  assert.equal(new Set(pkceSeen).size, pkceSeen.length, 'verifier новый на каждый вход')
 })
 
 test('identity in use, unlink revokes app password, last/primary method guarded', async () => {

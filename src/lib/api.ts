@@ -29,7 +29,7 @@ export interface GeoInfo {
 }
 
 export type Provider = 'yandex' | 'google' | 'github' | 'telegram' | 'atproto'
-export type OAuthProvider = Exclude<Provider, 'telegram' | 'atproto'>
+export type OAuthProvider = Exclude<Provider, 'atproto'>
 
 export interface IdentitiesView {
   /** пользователь знает пароль: регистрация по email */
@@ -43,9 +43,6 @@ export interface IdentitiesView {
     linked: { display: string | null; linkedAt: string; primary: boolean } | null
   }[]
 }
-
-/** Поля Telegram Login Widget (tgAuthResult) */
-export type TelegramAuthData = Record<string, string | number>
 
 export const PROVIDER_LABEL: Record<Provider, string> = {
   yandex: 'Яндекс ID',
@@ -211,21 +208,6 @@ export function oauthStartUrl(provider: OAuthProvider, returnTo: string, consent
   if (consent) q.set('consent', '1')
   if (utm) for (const [k, v] of Object.entries(utm)) if (v) q.set(`utm_${k}`, v)
   return `${BASE}/auth/${provider}/start?${q}`
-}
-
-/** Telegram Login: редирект на oauth.telegram.org, ответ вернётся на /auth/telegram#tgAuthResult=... */
-export async function telegramAuthUrl(mode: 'login' | 'link', returnTo: string): Promise<string> {
-  const { botId } = await call<{ botId: string }>('/auth/telegram/config')
-  const back = new URL('/auth/telegram', window.location.origin)
-  back.search = new URLSearchParams({ mode, returnTo }).toString()
-  const u = new URL('https://oauth.telegram.org/auth')
-  u.search = new URLSearchParams({
-    bot_id: botId,
-    origin: window.location.origin,
-    request_access: 'write',
-    return_to: back.toString(),
-  }).toString()
-  return u.toString()
 }
 
 /** Вход: либо сразу пользователь, либо нужен код из приложения-аутентификатора */
@@ -493,12 +475,7 @@ export const api = {
       body: JSON.stringify({ returnTo }),
       credentials: 'same-origin',
     }),
-  linkTelegram: (data: TelegramAuthData) =>
-    authed<{ ok: true }>('/me/identities/telegram', { method: 'POST', body: JSON.stringify(data) }),
   unlink: (provider: Provider) => authed<IdentitiesView>(`/me/identities/${provider}`, { method: 'DELETE' }),
-  async telegramLogin(data: TelegramAuthData) {
-    return finish(await call<GatedResponse>('/auth/telegram/login', post(data)))
-  },
   geo: () => call<GeoInfo>('/geo'),
   /** обмен одноразового кода после OAuth-редиректа на сессию */
   async handoff(code: string) {

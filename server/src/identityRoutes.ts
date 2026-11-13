@@ -7,16 +7,15 @@ import {
   PROVIDER_ORIGIN,
   PROVIDERS,
   isProvider,
+  newCodeVerifier,
   providerAllowed,
-  verifyTelegram,
   type ExternalProfile,
   type OAuthClient,
   type OAuthProviderId,
   type Provider,
-  type TelegramAuth,
 } from './providers.js'
 import type { AtprotoAuth } from './atprotoOAuth.js'
-import { AtprotoLinkBody, Handle, HandoffBody, OAuthLinkBody, TelegramBody, LEGAL_VERSION, Utm, type UtmData } from './schemas.js'
+import { AtprotoLinkBody, Handle, HandoffBody, OAuthLinkBody, LEGAL_VERSION, Utm, type UtmData } from './schemas.js'
 import type { SecretBox } from './secretbox.js'
 
 export interface IdentityDeps {
@@ -26,7 +25,6 @@ export interface IdentityDeps {
   pds: PdsClient
   secrets: SecretBox
   oauth: Partial<Record<OAuthProviderId, OAuthClient>>
-  telegramBotToken?: string
   atproto?: AtprotoAuth
   peer?: { resolve(handle: string): Promise<string | null> }
 }
@@ -52,6 +50,8 @@ interface OAuthState {
   utm?: UtmData
   /** отметка согласия на странице входа: без неё новый аккаунт через провайдера не создаётся */
   consent?: boolean
+  /** PKCE verifier (Telegram): в зашифрованной cookie, в браузер не попадает */
+  pkce?: string
 }
 
 const COOKIE = 'oauth_state'
@@ -70,7 +70,7 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
   const handoff = new Map<string, { body: ReturnType<Helpers['sessionDto']>; exp: number }>()
 
   const configured = (p: Provider) =>
-    p === 'telegram' ? !!d.telegramBotToken : p === 'atproto' ? !!d.atproto : !!d.oauth[p]
+    p === 'atproto' ? !!d.atproto : !!d.oauth[p]
   const fail = (code: string, message: string, status: 400 | 403 | 404 | 409 = 400) => new PdsError(status, code, message)
 
   const toLogin = (c: Context, params: Record<string, string>) =>
@@ -287,19 +287,20 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
   const startOAuth = (c: Context, s: Omit<OAuthState, 'state'>) => {
     const client = d.oauth[s.provider]!
     const state = randomBytes(16).toString('base64url')
-    setCookie(c, COOKIE, d.secrets.seal(JSON.stringify({ ...s, state })), {
+    const pkce = client.pkce ? newCodeVerifier() : undefined
+    setCookie(c, COOKIE, d.secrets.seal(JSON.stringify({ ...s, state, ...(pkce ? { pkce } : {}) })), {
       httpOnly: true,
       secure,
       sameSite: 'Lax',
       path: COOKIE_PATH,
       maxAge: 600,
     })
-    return client.authorizeUrl(state, redirectUri(s.provider))
+    return client.authorizeUrl(state, redirectUri(s.provider), pkce)
   }
 
   const oauthProvider = (c: Context): OAuthProviderId => {
     const p = c.req.param('provider') ?? ''
-    if (!isProvider(p) || p === 'telegram' || p === 'atproto' || !d.oauth[p]) throw fail('NotConfigured', 'Способ входа не настроен', 404)
+    if (!isProvider(p) || p === 'atproto' || !d.oauth[p]) throw fail('NotConfigured', 'Способ входа не настроен', 404)
     return p
   }
 
@@ -340,7 +341,7 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
     if (error || !code) return back({ error: 'ProviderDenied', provider })
 
     try {
-      const profile = await d.oauth[provider]!.exchangeCode(code, redirectUri(provider))
+      const profile = await d.oauth[provider]!.exchangeCode(code, redirectUri(provider), s.pkce)
       if (s.mode === 'link') {
         const user = s.did ? await d.users.findByDid(s.did) : undefined
         if (!user || !s.accessJwt) return back({ error: 'InvalidState' })
@@ -362,33 +363,6 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
       return c.json({ error: 'InvalidCode', message: 'Ссылка входа устарела, попробуйте ещё раз' }, 400)
     }
     return c.json(await h.gate(entry.body))
-  })
-
-  // ── Telegram Login Widget (подпись HMAC вместо OAuth-кода) ─────────────
-  const telegramProfile = async (c: Context) => {
-    if (!d.telegramBotToken) throw fail('NotConfigured', 'Вход через Telegram не настроен', 404)
-    const body = TelegramBody.safeParse(await c.req.json().catch(() => null))
-    const profile = body.success ? verifyTelegram(body.data as TelegramAuth, d.telegramBotToken) : null
-    if (!profile) throw fail('InvalidSignature', 'Данные Telegram не прошли проверку или устарели')
-    return profile
-  }
-
-  app.get('/auth/telegram/config', (c) => {
-    if (!d.telegramBotToken) throw fail('NotConfigured', 'Вход через Telegram не настроен', 404)
-    return c.json({ botId: d.telegramBotToken.split(':')[0] })
-  })
-
-  app.post('/auth/telegram/login', async (c) => {
-    if (!providerAllowed('telegram', d.config.CONTOUR)) {
-      throw fail('ProviderForbidden', 'В РФ-контуре этот способ входа недоступен', 403)
-    }
-    return c.json(await h.gate(await loginWith('telegram', await telegramProfile(c), c)))
-  })
-
-  app.post('/me/identities/telegram', async (c) => {
-    const { user, token } = await requireUser(c)
-    await linkTo(user, token, 'telegram', await telegramProfile(c))
-    return c.json({ ok: true }, 201)
   })
 
   // ── список и отвязка ──────────────────────────────────────────────────

@@ -3,13 +3,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router'
 import { ArrowLeft, AtSign, KeyRound, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { safeReturnTo } from '@/lib/safeUrl'
-import { api, ApiError, atprotoStartUrl, countryLabel, oauthStartUrl, PROVIDER_LABEL, telegramAuthUrl, type GeoInfo, type LoginResult, type Provider } from '@/lib/api'
+import { api, ApiError, atprotoStartUrl, countryLabel, oauthStartUrl, PROVIDER_LABEL, type GeoInfo, type LoginResult, type Provider } from '@/lib/api'
 import { authErrorText } from '@/lib/authErrors'
 import ProviderIcon from '@/components/ProviderIcon'
 import Reveal from '@/components/Reveal'
 import { HANDLE_DOMAIN, SITE_NAME, SITE_URL } from '@/config/site'
 
-/** TelegramAuthPage кладёт сюда mfaToken, если вход требует TOTP */
+/** сюда кладётся mfaToken, если вход после редиректа требует TOTP */
 export const MFA_PENDING_KEY = 'indie-media:mfa-pending'
 
 export default function LoginPage() {
@@ -82,15 +82,7 @@ export default function LoginPage() {
 
   const startProvider = async (p: Provider) => {
     if (p === 'atproto') return
-    if (p !== 'telegram') {
-      window.location.assign(oauthStartUrl(p, returnTo, providerConsent))
-      return
-    }
-    try {
-      window.location.assign(await telegramAuthUrl('login', returnTo))
-    } catch (err) {
-      setHandoffError(err instanceof Error ? err.message : 'Telegram недоступен')
-    }
+    window.location.assign(oauthStartUrl(p, returnTo, providerConsent))
   }
 
   // РФ-контур ограничивает только регистрацию; вход открыт из любой страны

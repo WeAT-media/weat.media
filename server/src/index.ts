@@ -61,12 +61,12 @@ const app = createApp({
         ['yandex', config.YANDEX_CLIENT_ID, config.YANDEX_CLIENT_SECRET],
         ['google', config.GOOGLE_CLIENT_ID, config.GOOGLE_CLIENT_SECRET],
         ['github', config.GITHUB_CLIENT_ID, config.GITHUB_CLIENT_SECRET],
+        ['telegram', config.TELEGRAM_CLIENT_ID, config.TELEGRAM_CLIENT_SECRET],
       ] as const
     )
       .filter(([, id, secret]) => id && secret)
       .map(([p, id, secret]) => [p, createOAuthClient(p, { clientId: id!, clientSecret: secret!, baseUrl: config.OAUTH_STUB_URL })]),
   ),
-  telegramBotToken: config.TELEGRAM_BOT_TOKEN || undefined,
   atproto: config.ATPROTO_OAUTH
     ? createAtprotoAuth({
         publicUrl: config.PUBLIC_URL,

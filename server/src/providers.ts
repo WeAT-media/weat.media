@@ -1,7 +1,8 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
 
 export type Provider = 'yandex' | 'google' | 'github' | 'telegram' | 'atproto'
-export type OAuthProviderId = Exclude<Provider, 'telegram' | 'atproto'>
+export type OAuthProviderId = Exclude<Provider, 'atproto'>
 
 export const PROVIDERS: Provider[] = ['yandex', 'atproto', 'google', 'github', 'telegram']
 
@@ -35,16 +36,26 @@ export interface ExternalProfile {
 }
 
 export interface OAuthClient {
-  authorizeUrl(state: string, redirectUri: string): string
-  exchangeCode(code: string, redirectUri: string): Promise<ExternalProfile>
+  /** true — провайдер требует PKCE: verifier хранится в состоянии входа и уходит в exchangeCode */
+  pkce?: boolean
+  authorizeUrl(state: string, redirectUri: string, codeVerifier?: string): string
+  exchangeCode(code: string, redirectUri: string, codeVerifier?: string): Promise<ExternalProfile>
 }
+
+/** PKCE (RFC 7636): verifier — случайная строка, challenge — base64url(SHA-256(verifier)) */
+export const newCodeVerifier = () => randomBytes(32).toString('base64url')
+const codeChallenge = (verifier: string) => createHash('sha256').update(verifier).digest('base64url')
 
 interface Spec {
   authorize: string
   token: string
   scope: string
   extraAuthorize?: Record<string, string>
-  profile(accessToken: string): Promise<ExternalProfile>
+  pkce?: boolean
+  /** client_id:client_secret в заголовке Basic, а не в теле */
+  basicAuth?: boolean
+  /** профиль из ответа токена: id_token (OIDC без userinfo) или access_token */
+  profile(token: { access_token?: string; id_token?: string }): Promise<ExternalProfile>
 }
 
 async function getJson(url: string, headers: Record<string, string>): Promise<Record<string, unknown>> {
@@ -57,7 +68,7 @@ async function getJson(url: string, headers: Record<string, string>): Promise<Re
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null)
 
 /** base переопределяет хосты провайдера на тестовом стенде */
-function specFor(p: OAuthProviderId, base?: string): Spec {
+function specFor(p: OAuthProviderId, clientId: string, base?: string): Spec {
   const at = (real: string) => (base ? new URL(new URL(real).pathname, base).toString() : real)
   switch (p) {
     case 'yandex':
@@ -66,7 +77,7 @@ function specFor(p: OAuthProviderId, base?: string): Spec {
         token: at('https://oauth.yandex.ru/token'),
         scope: 'login:email login:info',
         extraAuthorize: { force_confirm: 'no' },
-        async profile(t) {
+        async profile({ access_token: t }) {
           const i = await getJson(at('https://login.yandex.ru/info?format=json'), { authorization: `OAuth ${t}` })
           return { id: String(i.id), login: String(i.login), email: str(i.default_email), displayName: str(i.display_name) }
         },
@@ -77,7 +88,7 @@ function specFor(p: OAuthProviderId, base?: string): Spec {
         token: at('https://oauth2.googleapis.com/token'),
         scope: 'openid email profile',
         extraAuthorize: { prompt: 'select_account' },
-        async profile(t) {
+        async profile({ access_token: t }) {
           const i = await getJson(at('https://openidconnect.googleapis.com/v1/userinfo'), { authorization: `Bearer ${t}` })
           const email = i.email_verified === true ? str(i.email) : null
           return { id: String(i.sub), login: email ?? String(i.sub), email, displayName: str(i.name) }
@@ -88,12 +99,30 @@ function specFor(p: OAuthProviderId, base?: string): Spec {
         authorize: at('https://github.com/login/oauth/authorize'),
         token: at('https://github.com/login/oauth/access_token'),
         scope: 'read:user user:email',
-        async profile(t) {
+        async profile({ access_token: t }) {
           const h = { authorization: `Bearer ${t}`, 'user-agent': 'indie-media-appview', accept: 'application/vnd.github+json' }
           const i = await getJson(at('https://api.github.com/user'), h)
           return { id: String(i.id), login: String(i.login), email: str(i.email), displayName: str(i.name) }
         },
       }
+    case 'telegram': {
+      // Telegram Login (OpenID Connect): код + PKCE, профиль — в подписанном id_token, userinfo нет.
+      // aud — id бота (= client_id), подпись — ключами oauth.telegram.org. Email Telegram не отдаёт.
+      const jwks = createRemoteJWKSet(new URL(at('https://oauth.telegram.org/.well-known/jwks.json')))
+      return {
+        authorize: at('https://oauth.telegram.org/auth'),
+        token: at('https://oauth.telegram.org/token'),
+        scope: 'openid profile',
+        pkce: true,
+        basicAuth: true,
+        async profile({ id_token }) {
+          if (!id_token) throw new Error('telegram: нет id_token')
+          const { payload: i } = await jwtVerify(id_token, jwks, { issuer: 'https://oauth.telegram.org', audience: clientId })
+          const id = String(i.id ?? i.sub)
+          return { id, login: str(i.preferred_username) ?? `tg-${id}`, email: null, displayName: str(i.name) }
+        },
+      }
+    }
   }
 }
 
@@ -101,9 +130,10 @@ export function createOAuthClient(
   p: OAuthProviderId,
   opts: { clientId: string; clientSecret: string; baseUrl?: string },
 ): OAuthClient {
-  const spec = specFor(p, opts.baseUrl)
+  const spec = specFor(p, opts.clientId, opts.baseUrl)
   return {
-    authorizeUrl(state, redirectUri) {
+    pkce: spec.pkce,
+    authorizeUrl(state, redirectUri, codeVerifier) {
       const u = new URL(spec.authorize)
       u.search = new URLSearchParams({
         response_type: 'code',
@@ -111,52 +141,31 @@ export function createOAuthClient(
         redirect_uri: redirectUri,
         state,
         scope: spec.scope,
+        ...(spec.pkce && codeVerifier ? { code_challenge: codeChallenge(codeVerifier), code_challenge_method: 'S256' } : {}),
         ...spec.extraAuthorize,
       }).toString()
       return u.toString()
     },
-    async exchangeCode(code, redirectUri) {
+    async exchangeCode(code, redirectUri, codeVerifier) {
       const res = await fetch(spec.token, {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          accept: 'application/json',
+          ...(spec.basicAuth ? { authorization: `Basic ${Buffer.from(`${opts.clientId}:${opts.clientSecret}`).toString('base64')}` } : {}),
+        },
         body: new URLSearchParams({
           grant_type: 'authorization_code',
           code,
           client_id: opts.clientId,
-          client_secret: opts.clientSecret,
+          ...(spec.basicAuth ? {} : { client_secret: opts.clientSecret }),
           redirect_uri: redirectUri,
+          ...(spec.pkce && codeVerifier ? { code_verifier: codeVerifier } : {}),
         }),
       })
-      const token = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string }
-      if (!res.ok || !token.access_token) throw new Error(`${p} token: ${token.error ?? res.status}`)
-      return spec.profile(token.access_token)
+      const token = (await res.json().catch(() => ({}))) as { access_token?: string; id_token?: string; error?: string }
+      if (!res.ok || !(token.access_token || token.id_token)) throw new Error(`${p} token: ${token.error ?? res.status}`)
+      return spec.profile(token)
     },
   }
-}
-
-/** Данные Telegram Login Widget: https://core.telegram.org/widgets/login#checking-authorization */
-export interface TelegramAuth {
-  id: number
-  first_name?: string
-  last_name?: string
-  username?: string
-  photo_url?: string
-  auth_date: number
-  hash: string
-}
-
-export function verifyTelegram(data: TelegramAuth, botToken: string, maxAgeSec = 600, now = Date.now()): ExternalProfile | null {
-  const { hash, ...fields } = data
-  const checkString = Object.entries(fields)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n')
-  const secret = createHash('sha256').update(botToken).digest()
-  const expected = createHmac('sha256', secret).update(checkString).digest()
-  const got = Buffer.from(hash, 'hex')
-  if (got.length !== expected.length || !timingSafeEqual(got, expected)) return null
-  if (now / 1000 - data.auth_date > maxAgeSec) return null
-  const name = [data.first_name, data.last_name].filter(Boolean).join(' ') || null
-  return { id: String(data.id), login: data.username ?? String(data.id), email: null, displayName: name }
 }

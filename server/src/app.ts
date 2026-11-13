@@ -65,7 +65,6 @@ export interface Deps {
   secrets: SecretBox
   /** настроенные OAuth-провайдеры; отсутствующий — выключен */
   oauth: Partial<Record<OAuthProviderId, OAuthClient>>
-  telegramBotToken?: string
   atproto?: AtprotoAuth
   /** соседний контур того же ресурса (global <-> ru) */
   peer?: PeerContour

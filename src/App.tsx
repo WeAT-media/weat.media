@@ -29,7 +29,6 @@ const PayoutsSettingsPage = lazy(() => import('@/pages/settings/PayoutsSettingsP
 const ModerationSettingsPage = lazy(() => import('@/pages/settings/ModerationSettingsPage'))
 const EditorSettingsPage = lazy(() => import('@/pages/settings/EditorSettingsPage'))
 const LinkedAccountsSettingsPage = lazy(() => import('@/pages/settings/LinkedAccountsSettingsPage'))
-const TelegramAuthPage = lazy(() => import('@/pages/TelegramAuthPage'))
 const PasswordResetPage = lazy(() => import('@/pages/PasswordResetPage'))
 const AdminCrawlerPage = lazy(() => import('@/pages/admin/AdminCrawlerPage'))
 const AdminClaimsPage = lazy(() => import('@/pages/admin/AdminClaimsPage'))
@@ -120,7 +119,6 @@ export default function App() {
             <Route path="/compose" element={<ComposePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/login/reset" element={<PasswordResetPage />} />
-            <Route path="/auth/telegram" element={<TelegramAuthPage />} />
             <Route path="/api" element={<ApiDocsPage />} />
             <Route path="/docs" element={<DocsPage />} />
             <Route path="/design" element={<DesignPage />} />

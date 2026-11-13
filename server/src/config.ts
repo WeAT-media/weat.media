@@ -50,7 +50,9 @@ const Env = z.object({
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
   /** токен бота из @BotFather; домен сайта задаётся там же командой /setdomain */
-  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  /** Telegram Login (OpenID Connect): Client ID (= id бота) и Client Secret из @BotFather → Login Widget */
+  TELEGRAM_CLIENT_ID: z.string().optional(),
+  TELEGRAM_CLIENT_SECRET: z.string().optional(),
   /** вход через внешний AT-аккаунт (bsky.social, свой PDS) */
   ATPROTO_OAUTH: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
   /** локальный стенд: свой PLC и резолвер handle вместо публичных */

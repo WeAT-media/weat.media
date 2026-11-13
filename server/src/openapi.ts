@@ -127,15 +127,6 @@ const ops: Op[] = [
     errors: [[400, 'InvalidCode']],
   },
   {
-    method: 'get', path: '/auth/telegram/config', tag: 'external', summary: 'Параметры Telegram Login',
-    ok: { status: 200, schema: z.object({ botId: z.string() }), description: 'ID бота' }, errors: [[404, 'NotConfigured']],
-  },
-  {
-    method: 'post', path: '/auth/telegram/login', tag: 'external', summary: 'Вход через Telegram',
-    body: S.TelegramBody, ok: { status: 200, schema: S.GatedSessionSchema, description: 'Сессия или второй шаг' },
-    errors: [[400, 'InvalidSignature'], [403, 'ProviderForbidden'], [404, 'NotLinked']],
-  },
-  {
     method: 'get', path: '/me/identities', tag: 'external', summary: 'Связанные аккаунты', auth: 'bearer',
     ok: { status: 200, schema: S.IdentitiesSchema, description: 'Провайдеры и статус привязки' },
   },
@@ -148,11 +139,6 @@ const ops: Op[] = [
     method: 'post', path: '/me/identities/atproto/link', tag: 'external', summary: 'Привязать AT-аккаунт', auth: 'bearer',
     body: S.AtprotoLinkBody, ok: { status: 200, schema: z.object({ url: z.string() }), description: 'Куда перейти' },
     errors: [[404, 'HandleNotFound']],
-  },
-  {
-    method: 'post', path: '/me/identities/telegram', tag: 'external', summary: 'Привязать Telegram', auth: 'bearer',
-    body: S.TelegramBody, ok: { status: 201, schema: z.object({ ok: z.literal(true) }), description: 'Привязан' },
-    errors: [[400, 'InvalidSignature'], [409, 'IdentityInUse · AlreadyLinked']],
   },
   {
     method: 'delete', path: '/me/identities/{provider}', tag: 'external', summary: 'Отвязать', auth: 'bearer',

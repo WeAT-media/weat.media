@@ -73,15 +73,6 @@ export const ForgotPasswordBody = z.object({ email: z.email() })
 export const ResetPasswordBody = z.object({ token: EmailCode, password: z.string().min(8).max(256) })
 
 // ── внешние аккаунты ────────────────────────────────────────────────────
-export const TelegramBody = z.object({
-  id: z.coerce.number().int().positive(),
-  first_name: z.string().optional(),
-  last_name: z.string().optional(),
-  username: z.string().optional(),
-  photo_url: z.string().optional(),
-  auth_date: z.coerce.number().int().describe('Unix-время; данные старше 10 минут отклоняются'),
-  hash: z.string().regex(/^[0-9a-f]{64}$/).describe('HMAC-SHA256 подпись Telegram Login Widget'),
-})
 export const OAuthLinkBody = z.object({ returnTo: ReturnTo })
 export const AtprotoLinkBody = z.object({ handle: Handle, returnTo: ReturnTo })
 
