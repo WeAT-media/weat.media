@@ -1,0 +1,147 @@
+# Деплой узла: собрать образы на раннерах GitHub, опубликовать в GHCR, обновить узел по SSH.
+#
+# Окружения (Settings → Environments) — по одному на узел, у каждого свои:
+#   secrets  SSH_HOST         адрес узла
+#            SSH_KEY          приватный ключ деплоя (только для этого узла; публичный — в authorized_keys)
+#            SSH_KNOWN_HOSTS  отпечаток хоста: ssh-keyscan <адрес>
+#   vars     CONTOUR          global | ru
+#            PDS_URL          https://pds.weat.media | https://pds-ru.weat.media
+#            SITE_URL         https://weat.media
+#            SITE_VERIFY_GOOGLE / SITE_VERIFY_YANDEX / SITE_VERIFY_BING — коды поисковых кабинетов (необязательно)
+#
+# Секреты узла (.env, .env.pds) живут только на самом узле в /opt/weat/deploy/node — сюда не попадают.
+# Self-hosted runner намеренно не используется: репозиторий публичный, а раннер на проде выполнял бы чужой код.
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Узел
+        type: choice
+        options:
+          - Production (NL-1)
+          - Production (RU-1)
+          - Production (RU-2)
+
+# два деплоя одного узла одновременно не идут
+concurrency: deploy-${{ inputs.environment }}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/weat-media/weat.media
+
+jobs:
+  images:
+    name: Образы · ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { name: appview, context: server }
+          - { name: feed, context: services/feed }
+          - { name: analytics, context: services/analytics }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    name: Деплой · ${{ inputs.environment }}
+    needs: images
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # edge зависит от контура (адрес PDS вшит в сборку фронта) — свой образ на контур
+      - name: Образ edge (${{ vars.CONTOUR }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/node/Dockerfile.edge
+          push: true
+          tags: ${{ env.REGISTRY }}/edge-${{ vars.CONTOUR }}:${{ github.sha }}
+          build-args: |
+            VITE_SITE_NAME=weAT.media
+            VITE_HANDLE_DOMAIN=weat.media
+            VITE_SITE_URL=${{ vars.SITE_URL }}
+            VITE_PDS_URL=${{ vars.PDS_URL }}
+            VITE_SOURCE_URL=https://github.com/${{ github.repository }}
+            SITE_VERIFY_GOOGLE=${{ vars.SITE_VERIFY_GOOGLE }}
+            SITE_VERIFY_YANDEX=${{ vars.SITE_VERIFY_YANDEX }}
+            SITE_VERIFY_BING=${{ vars.SITE_VERIFY_BING }}
+          cache-from: type=gha,scope=edge-${{ vars.CONTOUR }}
+          cache-to: type=gha,mode=max,scope=edge-${{ vars.CONTOUR }}
+
+      - name: SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy
+
+      - name: Обновить узел
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+          SHA: ${{ github.sha }}
+          EDGE: ${{ env.REGISTRY }}/edge-${{ vars.CONTOUR }}:${{ github.sha }}
+          APPVIEW: ${{ env.REGISTRY }}/appview:${{ github.sha }}
+          FEED: ${{ env.REGISTRY }}/feed:${{ github.sha }}
+          ANALYTICS: ${{ env.REGISTRY }}/analytics:${{ github.sha }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # токен GHCR живёт, пока идёт джоб; на узле не остаётся (docker logout в конце)
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" \
+            SHA="$SHA" EDGE="$EDGE" APPVIEW="$APPVIEW" FEED="$FEED" ANALYTICS="$ANALYTICS" GHCR_USER="$GHCR_USER" GHCR_TOKEN="$GHCR_TOKEN" \
+            'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/weat
+          git fetch --quiet origin
+          git checkout --quiet --force "$SHA"
+          cd deploy/node
+          printf 'EDGE_IMAGE=%s\nAPPVIEW_IMAGE=%s\nFEED_IMAGE=%s\nANALYTICS_IMAGE=%s\n' "$EDGE" "$APPVIEW" "$FEED" "$ANALYTICS" > .env.images
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null
+          compose() { docker compose --env-file .env --env-file .env.images "$@"; }
+          compose pull --quiet edge appview feed analytics
+          compose up -d --remove-orphans
+          docker image prune -f >/dev/null
+          compose ps --format '{{.Service}}: {{.Status}}'
+          REMOTE
+
+      - name: Проверка
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          # AppView изнутри узла: DNS и сертификат могут ещё не быть готовы, а сервис — уже должен
+          for i in $(seq 1 20); do
+            if ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" \
+              'cd /opt/weat/deploy/node && docker compose --env-file .env --env-file .env.images exec -T appview wget -qO- http://127.0.0.1:8787/api/health' ; then
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "AppView не ответил на /api/health" >&2
+          exit 1

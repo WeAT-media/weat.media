@@ -119,6 +119,8 @@ services:
     ports: ["${PG_BIND:-127.0.0.1}:5432:5432"]
     volumes:
       - pg-data:/var/lib/postgresql/data
+      # базы ленты и аналитики — при первом создании тома
+      - ./db-init:/docker-entrypoint-initdb.d:ro
     profiles: ["selfhosted-db"]
 
 volumes:
