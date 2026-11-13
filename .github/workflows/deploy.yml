@@ -1,15 +1,24 @@
 # Деплой узла: собрать образы на раннерах GitHub, опубликовать в GHCR, обновить узел по SSH.
+# Секреты узла (.env, .env.pds) собираются здесь из секретов GitHub и кладутся на узел с правами 600.
 #
-# Окружения (Settings → Environments) — по одному на узел, у каждого свои:
-#   secrets  SSH_HOST         адрес узла
-#            SSH_KEY          приватный ключ деплоя (только для этого узла; публичный — в authorized_keys)
-#            SSH_KNOWN_HOSTS  отпечаток хоста: ssh-keyscan <адрес>
-#   vars     CONTOUR          global | ru
-#            PDS_URL          https://pds.weat.media | https://pds-ru.weat.media
-#            SITE_URL         https://weat.media
-#            SITE_VERIFY_GOOGLE / SITE_VERIFY_YANDEX / SITE_VERIFY_BING — коды поисковых кабинетов (необязательно)
+# Уровни (секрет окружения перекрывает одноимённый секрет репозитория):
+#   репозиторий — общее для всех узлов
+#     secrets  ACME_DNS_USERNAME, ACME_DNS_PASSWORD, ACME_DNS_SUBDOMAIN   одна учётка acme-dns на оба контура
+#              LAVA_API_KEY, LAVA_OFFER_ID, LAVA_WEBHOOK_SECRET          оплата (пока не задано)
+#              YANDEX_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, GITHUB_CLIENT_ID/SECRET, TELEGRAM_BOT_TOKEN
+#     vars     ACME_EMAIL, SITE_URL, SITE_VERIFY_GOOGLE / _YANDEX / _BING
+#   окружение — узел (у primary и standby одного контура секреты AppView и PDS ОДИНАКОВЫЕ, иначе после
+#   переключения не расшифруются привязанные аккаунты и TOTP)
+#     secrets  SSH_HOST, SSH_KEY, SSH_KNOWN_HOSTS                         доступ к узлу
+#              PG_PASSWORD | DATABASE_URL (+ FEED_DATABASE_URL, ANALYTICS_DATABASE_URL для managed БД)
+#              REPLICATION_PRIMARY_DSN                                    только standby
+#              SECRETS_KEY, ADMIN_TOKEN, PAID_CONTENT_KEY, ANALYTICS_VISITOR_SECRET
+#              PDS_JWT_SECRET, PDS_ADMIN_PASSWORD, PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX
+#              PDS_EMAIL_SMTP_URL                                         почта контура (пока не задано)
+#              RESTIC_REPOSITORY, RESTIC_PASSWORD, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#     vars     CONTOUR (global|ru), NODE_ROLE (primary|standby), COMPOSE_PROFILES, SITE_DOMAINS, PDS_HOST,
+#              PDS_URL, PEER_CONTOUR_URL
 #
-# Секреты узла (.env, .env.pds) живут только на самом узле в /opt/weat/deploy/node — сюда не попадают.
 # Self-hosted runner намеренно не используется: репозиторий публичный, а раннер на проде выполнял бы чужой код.
 name: Deploy
 
@@ -100,6 +109,90 @@ jobs:
           printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy
           printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/deploy
+
+      - name: Секреты узла
+        env:
+          # репозиторий
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          ACME_DNS_USERNAME: ${{ secrets.ACME_DNS_USERNAME }}
+          ACME_DNS_PASSWORD: ${{ secrets.ACME_DNS_PASSWORD }}
+          ACME_DNS_SUBDOMAIN: ${{ secrets.ACME_DNS_SUBDOMAIN }}
+          LAVA_API_KEY: ${{ secrets.LAVA_API_KEY }}
+          LAVA_OFFER_ID: ${{ secrets.LAVA_OFFER_ID }}
+          LAVA_WEBHOOK_SECRET: ${{ secrets.LAVA_WEBHOOK_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          # окружение
+          CONTOUR: ${{ vars.CONTOUR }}
+          NODE_ROLE: ${{ vars.NODE_ROLE }}
+          COMPOSE_PROFILES: ${{ vars.COMPOSE_PROFILES }}
+          SITE_DOMAINS: ${{ vars.SITE_DOMAINS }}
+          PDS_HOST: ${{ vars.PDS_HOST }}
+          PEER_CONTOUR_URL: ${{ vars.PEER_CONTOUR_URL }}
+          PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FEED_DATABASE_URL: ${{ secrets.FEED_DATABASE_URL }}
+          ANALYTICS_DATABASE_URL: ${{ secrets.ANALYTICS_DATABASE_URL }}
+          REPLICATION_PRIMARY_DSN: ${{ secrets.REPLICATION_PRIMARY_DSN }}
+          SECRETS_KEY: ${{ secrets.SECRETS_KEY }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          PAID_CONTENT_KEY: ${{ secrets.PAID_CONTENT_KEY }}
+          ANALYTICS_VISITOR_SECRET: ${{ secrets.ANALYTICS_VISITOR_SECRET }}
+          PDS_JWT_SECRET: ${{ secrets.PDS_JWT_SECRET }}
+          PDS_ADMIN_PASSWORD: ${{ secrets.PDS_ADMIN_PASSWORD }}
+          PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX: ${{ secrets.PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX }}
+          PDS_EMAIL_SMTP_URL: ${{ secrets.PDS_EMAIL_SMTP_URL }}
+          RESTIC_REPOSITORY: ${{ secrets.RESTIC_REPOSITORY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          set -euo pipefail
+          umask 077
+          missing=""
+          for k in CONTOUR NODE_ROLE SITE_DOMAINS PDS_HOST SITE_URL ACME_EMAIL ACME_DNS_USERNAME ACME_DNS_PASSWORD ACME_DNS_SUBDOMAIN \
+                   SECRETS_KEY ADMIN_TOKEN PAID_CONTENT_KEY ANALYTICS_VISITOR_SECRET PDS_JWT_SECRET PDS_ADMIN_PASSWORD PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX; do
+            [ -n "${!k:-}" ] || missing="$missing $k"
+          done
+          [ -n "${DATABASE_URL:-}${PG_PASSWORD:-}" ] || missing="$missing PG_PASSWORD|DATABASE_URL"
+          if [ -n "$missing" ]; then echo "Не заданы:$missing" >&2; exit 1; fi
+          # свой Postgres узла (selfhosted-db) — адреса из PG_PASSWORD; managed — заданы целиком
+          pg() { printf 'postgres://indie:%s@postgres:5432/%s' "$PG_PASSWORD" "$1"; }
+          DATABASE_URL=${DATABASE_URL:-$(pg indie)}
+          FEED_DATABASE_URL=${FEED_DATABASE_URL:-$(pg feed)}
+          ANALYTICS_DATABASE_URL=${ANALYTICS_DATABASE_URL:-$(pg analytics)}
+          # пустое — строку не пишем: необязательное остаётся «не задано»
+          line() { [ -n "${!1:-}" ] && printf '%s=%s\n' "$1" "${!1}" || true; }
+          {
+            for k in CONTOUR NODE_ROLE COMPOSE_PROFILES SITE_DOMAINS PDS_HOST PEER_CONTOUR_URL ACME_EMAIL ACME_DNS_USERNAME ACME_DNS_PASSWORD ACME_DNS_SUBDOMAIN \
+                     PG_PASSWORD DATABASE_URL FEED_DATABASE_URL ANALYTICS_DATABASE_URL REPLICATION_PRIMARY_DSN \
+                     SECRETS_KEY ADMIN_TOKEN PAID_CONTENT_KEY PDS_ADMIN_PASSWORD ANALYTICS_VISITOR_SECRET \
+                     LAVA_API_KEY LAVA_OFFER_ID LAVA_WEBHOOK_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+                     GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET TELEGRAM_BOT_TOKEN RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+              line "$k"
+            done
+            printf 'PUBLIC_URL=%s\nCORS_ORIGIN=%s\nPDS_HANDLE_DOMAIN=weat.media\nACME_DNS_SERVER=https://auth.acme-dns.io\nGEOIP_DB_PATH=/geoip/country.mmdb\nADMIN_ALLOW_IPS=127.0.0.1/32\nBACKUP_INTERVAL_SEC=300\n' "$SITE_URL" "$SITE_URL"
+          } > node.env
+          {
+            printf 'PDS_HOSTNAME=%s\nPDS_SERVICE_HANDLE_DOMAINS=.weat.media\n' "$PDS_HOST"
+            for k in PDS_JWT_SECRET PDS_ADMIN_PASSWORD PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX; do line "$k"; done
+            printf 'PDS_DID_PLC_URL=https://plc.directory\nPDS_BSKY_APP_VIEW_URL=https://api.bsky.app\nPDS_BSKY_APP_VIEW_DID=did:web:api.bsky.app\n'
+            printf 'PDS_REPORT_SERVICE_URL=https://mod.bsky.app\nPDS_REPORT_SERVICE_DID=did:plc:ar7c4by46qjdydhdevvrndac\nPDS_CRAWLERS=https://bsky.network\n'
+            # PDS требует адрес отправителя и SMTP вместе — без почты не пишем ни то, ни другое
+            if [ -n "${PDS_EMAIL_SMTP_URL:-}" ]; then printf 'PDS_EMAIL_SMTP_URL=%s\nPDS_EMAIL_FROM_ADDRESS=noreply@weat.media\n' "$PDS_EMAIL_SMTP_URL"; fi
+          } > node.env.pds
+          # на узел — во временные файлы, затем атомарная замена; на раннере не оставляем
+          scp -q -i ~/.ssh/deploy -o BatchMode=yes node.env "root@$HOST:/opt/weat/deploy/node/.env.new"
+          scp -q -i ~/.ssh/deploy -o BatchMode=yes node.env.pds "root@$HOST:/opt/weat/deploy/node/.env.pds.new"
+          rm -f node.env node.env.pds
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'cd /opt/weat/deploy/node && chmod 600 .env.new .env.pds.new && mv .env.new .env && mv .env.pds.new .env.pds'
 
       - name: Обновить узел
         env:
