@@ -1,0 +1,6 @@
+# На узле: Zitadel в сети стека deploy/node — Caddy узла проксирует auth.weat.media на zitadel-api/zitadel-login.
+# Свой прокси (profile dev) не нужен: TLS и адрес даёт edge узла.
+networks:
+  default:
+    name: node_default
+    external: true

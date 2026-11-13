@@ -4,8 +4,10 @@
 # Это сервис инфраструктуры, не узла: один на площадку, адрес — auth.weat.media (deploy/dns.zone.example).
 # Где держать: рядом с контуром, где работают сотрудники, — их данные тоже персональные (для граждан РФ — в РФ).
 #
-#   cp .env.example .env   # и задать секреты
-#   docker compose up -d --wait
+#   локально: cp .env.example .env   # и задать секреты
+#             docker compose --profile dev up -d --wait
+#   на узле:  docker compose -f docker-compose.yml -f docker-compose.node.yml up -d --wait
+#             (сеть узла, маршрут auth.weat.media — в deploy/node/Caddyfile)
 #   консоль: ${ZITADEL_PUBLIC_URL}/ui/console  (zitadel-admin@zitadel.${ZITADEL_DOMAIN})
 #
 # Схема как у официального compose, но вместо Traefik — Caddy (без docker.sock).
@@ -30,7 +32,7 @@ services:
       ZITADEL_EXTERNALPORT: ${ZITADEL_EXTERNALPORT}
       ZITADEL_EXTERNALSECURE: ${ZITADEL_EXTERNALSECURE}
       ZITADEL_TLS_ENABLED: false
-      ZITADEL_DATABASE_POSTGRES_DSN: postgresql://zitadel:${POSTGRES_PASSWORD}@postgres:5432/zitadel?sslmode=disable
+      ZITADEL_DATABASE_POSTGRES_DSN: postgresql://zitadel:${POSTGRES_PASSWORD}@zitadel-db:5432/zitadel?sslmode=disable
 
       # первый админ (меняет пароль при первом входе на проде)
       ZITADEL_FIRSTINSTANCE_ORG_NAME: ${ZITADEL_ORG_NAME}
@@ -65,7 +67,7 @@ services:
     volumes:
       - bootstrap:/zitadel/bootstrap:rw
     depends_on:
-      postgres:
+      zitadel-db:
         condition: service_healthy
       bootstrap-perms:
         condition: service_completed_successfully
@@ -93,7 +95,8 @@ services:
         condition: service_healthy
 
   # своя БД: пользователи Zitadel не смешиваются с данными AppView
-  postgres:
+  # (имя не «postgres»: на узле стек делит сеть с Postgres AppView)
+  zitadel-db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
@@ -111,6 +114,7 @@ services:
 
   # локально — http на ${PROXY_PORT}; на узлах этот маршрут живёт в общем Caddyfile (auth.weat.media)
   proxy:
+    profiles: ["dev"]
     image: caddy:2-alpine
     restart: unless-stopped
     command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
