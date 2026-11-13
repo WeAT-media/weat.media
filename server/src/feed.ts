@@ -60,8 +60,10 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
       return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey' }, 400)
     }
     const limit = String(Math.min(20, Math.max(1, Number(c.req.query('limit')) || 3)))
+    const kind = c.req.query('kind')
     if (!d.feedUrl) return c.json({ articles: [] })
-    const res = await fetch(`${d.feedUrl}/feed-api/related?${new URLSearchParams({ uri, limit })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+    const q = new URLSearchParams({ uri, limit, ...(kind === 'video' || kind === 'text' ? { kind } : {}) })
+    const res = await fetch(`${d.feedUrl}/feed-api/related?${q}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
     // рекомендации — не главное на странице: индекс недоступен — пустой блок, а не ошибка
     if (!res?.ok) return c.json({ articles: [] })
     c.header('cache-control', 'public, max-age=60')
@@ -94,7 +96,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     if (d.feedUrl) {
       // фильтры и курсор — как есть; ответ той же формы { articles, cursor }
       const q = new URLSearchParams()
-      for (const k of ['cursor', 'tags', 'lang', 'source', 'author', 'view', 'sort', 'metric', 'period']) {
+      for (const k of ['cursor', 'tags', 'lang', 'source', 'author', 'view', 'sort', 'metric', 'period', 'kind']) {
         const v = c.req.query(k)
         if (v) q.set(k, v)
       }

@@ -17,9 +17,9 @@ pub async fn upsert(
     record: &Value,
 ) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO articles (uri, did, rkey, cid, created_at, title, tags, langs, source_site, paid, record, published_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         ON CONFLICT (uri) DO UPDATE SET cid = EXCLUDED.cid, created_at = EXCLUDED.created_at, published_at = EXCLUDED.published_at, title = EXCLUDED.title,
+        "INSERT INTO articles (uri, did, rkey, cid, created_at, title, tags, langs, source_site, paid, record, published_at, kind)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (uri) DO UPDATE SET cid = EXCLUDED.cid, created_at = EXCLUDED.created_at, published_at = EXCLUDED.published_at, kind = EXCLUDED.kind, title = EXCLUDED.title,
            tags = EXCLUDED.tags, langs = EXCLUDED.langs, source_site = EXCLUDED.source_site, paid = EXCLUDED.paid,
            record = EXCLUDED.record, indexed_at = now()
          WHERE articles.cid IS DISTINCT FROM EXCLUDED.cid",
@@ -36,6 +36,7 @@ pub async fn upsert(
     .bind(a.paid)
     .bind(record)
     .bind(a.published_at)
+    .bind(if a.video { "video" } else { "text" })
     .execute(pool)
     .await?;
     Ok(())
@@ -189,10 +190,17 @@ pub async fn comments_by(
 }
 
 /// рекомендации к статье — формула в rank::related_sql
-pub async fn related(pool: &PgPool, uri: &str, limit: i64) -> sqlx::Result<Vec<Row>> {
+/// kind — только видео или только тексты (к видео-записи советуем видео)
+pub async fn related(
+    pool: &PgPool,
+    uri: &str,
+    limit: i64,
+    kind: Option<&str>,
+) -> sqlx::Result<Vec<Row>> {
     sqlx::query_as(&crate::rank::related_sql())
         .bind(uri)
         .bind(limit)
+        .bind(kind)
         .fetch_all(pool)
         .await
 }
@@ -282,6 +290,8 @@ pub struct Query {
     /** true — запись целиком; false — карточка ленты без текста статьи */
     pub full: bool,
     pub sort: crate::rank::Sort,
+    /// Some("video") | Some("text") — только этого типа
+    pub kind: Option<&'static str>,
     /// для hot и best: сколько записей пропустить (after у них не используется)
     pub offset: i64,
 }
@@ -315,7 +325,7 @@ pub async fn feed(pool: &PgPool, q: &Query) -> sqlx::Result<Vec<Row>> {
     // затем карточки лишь для этой страницы. В условиях — только включённые фильтры: упоминание любой
     // другой колонки лишило бы Postgres index-only scan.
     let mut b = sqlx::QueryBuilder::<sqlx::Postgres>::new(format!(
-        "WITH top AS (SELECT a.uri, a.created_at, a.published_at, a.like_score, a.comment_count, {score} AS score
+        "WITH top AS (SELECT a.uri, a.created_at, a.published_at, a.like_score, a.comment_count, a.completes, {score} AS score
          FROM articles a WHERE true {window}"
     ));
     if let Some((at, uri)) = &q.after {
@@ -340,6 +350,9 @@ pub async fn feed(pool: &PgPool, q: &Query) -> sqlx::Result<Vec<Row>> {
     }
     if let Some(did) = &q.did {
         b.push(" AND a.did = ").push_bind(did.clone());
+    }
+    if let Some(kind) = q.kind {
+        b.push(" AND a.kind = ").push_bind(kind);
     }
     b.push(format!(" ORDER BY {order} LIMIT "))
         .push_bind(q.limit)

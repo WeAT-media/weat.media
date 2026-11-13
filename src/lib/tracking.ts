@@ -25,6 +25,37 @@ function send(payload: Record<string, unknown>) {
 const landing = typeof window !== 'undefined' ? window.location.pathname : ''
 let navigated = false
 
+/** доля длительности, которую нужно реально просмотреть, чтобы досмотр засчитался */
+export const COMPLETE_SHARE = 0.9
+
+/**
+ * Запуск и досмотр видео — сигнал ранжирования видео (services/feed/src/completions.rs).
+ * Досмотр — по накопленному времени воспроизведения, а не по позиции: перемотка в конец не засчитывается.
+ * Возвращает обработчики для плеера; повторы в пределах ролика не шлём (дедуп ещё и на сервере).
+ */
+export function videoTracker(articleId: string) {
+  let played = false
+  let completed = false
+  let watched = 0
+  let last: number | null = null
+  return {
+    onPlay() {
+      if (played) return
+      played = true
+      send({ a: articleId, k: 'play' })
+    },
+    /** t — текущая позиция; шаг больше 2 с — перемотка, его не считаем */
+    onTime(t: number, duration: number) {
+      if (last !== null && t > last && t - last <= 2) watched += t - last
+      last = t
+      if (!completed && duration > 0 && watched >= duration * COMPLETE_SHARE) {
+        completed = true
+        send({ a: articleId, k: 'complete' })
+      }
+    },
+  }
+}
+
 /** просмотр, дочитывание (низ статьи в зоне видимости) и время на странице (только при видимой вкладке) */
 export function useArticleTracking(articleId: string | undefined, endRef: RefObject<Element | null>) {
   useEffect(() => {
@@ -92,5 +123,5 @@ export function useArticleStats(articleId: string | undefined, days = 14): RealS
     }
   }, [articleId, days])
   // undefined — ещё загружается
-  return stats?.id === articleId ? stats.data : undefined
+  return stats && stats.id === articleId ? stats.data : undefined
 }

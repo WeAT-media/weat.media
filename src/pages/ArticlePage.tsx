@@ -18,7 +18,7 @@ import UpvoteButton from '@/components/UpvoteButton'
 import BookmarkButton from '@/components/BookmarkButton'
 import { buildCommentsFeed } from '@/lib/rss'
 import { useArticleTracking } from '@/lib/tracking'
-import { commentAnchor, fetchArticleBody, fetchComments } from '@/lib/remoteFeed'
+import { commentAnchor, fetchArticleBody, fetchComments, remoteId } from '@/lib/remoteFeed'
 import { safeHref } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
 import BlocksEditor from '@/components/BlocksEditor'
@@ -236,6 +236,8 @@ export default function ArticlePage() {
   const playlist = normalizeVideos(article, videoSrc).map((v) =>
     v.source === 'native' && (!v.src || v.src.startsWith('demo://')) ? { ...v, src: DEMO_VIDEO } : v,
   )
+  // аналитика видео: у записи из индекса — её id в индексе (по нему ранжирование находит статью), иначе — локальный
+  const videoTrackId = article.fromIndex && article.atUri ? remoteId(article.atUri) : article.id
   // импорт краулера: handle crawler-<id>.<домен>
   const canTransfer = !!article.source && (article.sourceType === 'crawler' || article.author.handle.startsWith('crawler-'))
   const isOwnArticle = !!user && user.handle === article.author.handle
@@ -686,6 +688,7 @@ export default function ArticlePage() {
                                 title={v.title}
                                 previewRange={article.videoPreviewRange}
                                 onPreviewEnd={() => setPreviewEnded(true)}
+                                trackId={videoTrackId}
                               />
                               <p className="meta -mt-5 mb-2 inline-flex items-center gap-1.5 text-accent">
                                 <Eye size={11} aria-hidden="true" /> Бесплатное превью: {article.videoPreviewRange!.start}–
@@ -703,7 +706,7 @@ export default function ArticlePage() {
                               <p className="meta !text-primary-foreground/60">Полное видео доступно после покупки</p>
                             </div>
                           ) : (
-                            <VideoPlayer ref={videoPlayerRef} src={v.src ?? videoSrc} title={v.title} />
+                            <VideoPlayer ref={videoPlayerRef} src={v.src ?? videoSrc} title={v.title} trackId={videoTrackId} />
                           )
                         ) : (
                           <div className="my-4 aspect-video w-full overflow-hidden rounded-md border border-border bg-primary/95">

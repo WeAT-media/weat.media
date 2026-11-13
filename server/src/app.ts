@@ -14,6 +14,7 @@ import { mountDeveloperRoutes, type DeveloperRepo } from './developer.js'
 import { mountFeedRoutes } from './feed.js'
 import { mountLikeRoutes } from './likes.js'
 import { mountCommentRoutes } from './comments.js'
+import { mountArticleRoutes } from './articles.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
 import type { AuditRepo, Staff, StaffRole, StaffVerifier } from './staff.js'
@@ -232,6 +233,7 @@ export function createApp(deps: Deps) {
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
+  mountArticleRoutes(app, { pds: d.pds }, { bearer })
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })
 

@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from 'react'
+import { videoTracker } from '@/lib/tracking'
 import videojs from 'video.js'
 import 'video.js/dist/video-js.css'
 
@@ -24,13 +25,15 @@ interface Props {
   overlay?: ReactNode
   /** подпись под плеером; false — без неё */
   caption?: string | false
+  /** id статьи для аналитики: запуск и досмотр видео (ранжирование видео) */
+  trackId?: string
 }
 
 const typeOf = (src: string) => (/\.webm(\?|$)/i.test(src) ? 'video/webm' : 'video/mp4')
 
 /** Плеер на video.js. Источник меняется без пересоздания плеера (нужно для ветвления интерактивного видео). */
 const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  { src, title, previewRange, onPreviewEnd, onTime, onEnded, onLoaded, overlay, caption },
+  { src, title, previewRange, onPreviewEnd, onTime, onEnded, onLoaded, overlay, caption, trackId },
   ref,
 ) {
   const holder = useRef<HTMLDivElement>(null)
@@ -41,6 +44,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     cb.current = { onPreviewEnd, onTime, onEnded, onLoaded }
   }, [onPreviewEnd, onTime, onEnded, onLoaded])
   const initialSrc = useRef(src)
+  const initialTrackId = useRef(trackId)
 
   useImperativeHandle(
     ref,
@@ -79,6 +83,12 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     playerRef.current = player
 
     player.on('timeupdate', () => cb.current.onTime?.(player.currentTime() ?? 0))
+    // аналитика видео: трекер на ролик — один запуск и один досмотр за показ плеера
+    const track = initialTrackId.current ? videoTracker(initialTrackId.current) : null
+    if (track) {
+      player.on('play', () => track.onPlay())
+      player.on('timeupdate', () => track.onTime(player.currentTime() ?? 0, player.duration() ?? 0))
+    }
     player.on('ended', () => cb.current.onEnded?.())
     player.on('loadedmetadata', () => cb.current.onLoaded?.())
 

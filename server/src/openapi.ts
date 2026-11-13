@@ -26,6 +26,7 @@ import { PurchaseBody } from './lava.js'
 import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
+import { PublishArticleBody } from './articles.js'
 import { ApiArticleBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
 
 const TAGS = {
@@ -352,6 +353,7 @@ const ops: Op[] = [
       sort: { description: 'new (по умолчанию) | hot | best' },
       metric: { description: 'для best: likes | comments' },
       period: { description: 'для best: day | week (по умолчанию) | month | all' },
+      kind: { description: 'all | video | text' },
       view: { description: 'full — записи целиком; по умолчанию карточки без текста (record без text, textLength — длина текста)' },
     },
     ok: { status: 200, description: '{ articles: [{ uri, cid, did, handle, createdAt, indexedAt, record }], cursor }' },
@@ -360,6 +362,12 @@ const ops: Op[] = [
     method: 'get', path: '/feed/article', tag: 'profile', summary: 'Статья целиком',
     query: { uri: { description: 'at://did/media.weat.article/rkey', required: true } },
     ok: { status: 200, description: '{ uri, cid, did, handle, createdAt, record, textLength }' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
+  },
+  {
+    method: 'post', path: '/me/articles', tag: 'profile', summary: 'Опубликовать статью или видео', auth: 'bearer',
+    description: 'Запись media.weat.article в репозитории автора. kind=video — с плейлистом videos (native — https-адрес файла, youtube/loom — videoId). Платные — через /me/articles/paid.',
+    body: PublishArticleBody, ok: { status: 201, schema: z.object({ uri: z.string(), cid: z.string() }), description: 'Опубликовано' },
+    errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },
   // ── комментарии
   {
@@ -396,7 +404,7 @@ const ops: Op[] = [
   {
     method: 'get', path: '/feed/related', tag: 'profile', summary: 'Читать дальше',
     description: 'Статьи с общими тегами (3 за тег) и общими читателями (2 за читателя, только лайки с весом > 0), делённые на √(дни + 1). Индекс недоступен — пустой список.',
-    query: { uri: { description: 'at://did/media.weat.article/rkey', required: true }, limit: { description: '1–20, по умолчанию 3' } },
+    query: { uri: { description: 'at://did/media.weat.article/rkey', required: true }, limit: { description: '1–20, по умолчанию 3' }, kind: { description: 'video | text — только этого типа' } },
     ok: { status: 200, description: '{ articles: [...] } — карточки без текста, со score' }, errors: [[400, 'InvalidRequest']],
   },
   // ── служебное

@@ -20,7 +20,8 @@ import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, clearSession, comments, hasSession, likes, type ServerSettings } from '@/lib/api'
+import { api, articles as articlesApi, clearSession, comments, hasSession, likes, type ServerSettings } from '@/lib/api'
+import { videoFromLink, type RecordVideo } from '@/lib/videoLink'
 
 type SettingsSection = keyof ServerSettings
 
@@ -128,7 +129,12 @@ interface StoreValue extends Persisted {
   setPrefs: (patch: Partial<Preferences>) => void
   setEditorPrefs: (patch: Partial<EditorPreferences>) => void
   setBlockDefs: (defs: BlockDef[]) => void
-  publishArticle: (article: Article) => void
+  /**
+   * text — markdown для репозитория. С сессией бесплатная запись (не отложенная) уходит в PDS, и копия
+   * в браузере получает настоящий AT URI; ошибка API пробрасывается. Без сессии, платная, отложенная
+   * или видео-файл (его некуда загрузить) — только локально.
+   */
+  publishArticle: (article: Article, text?: string) => Promise<void>
   /** у статьи из индекса — запись в репозиторий читателя; ошибка API пробрасывается (ApiError) */
   addComment: (articleId: string, text: string, parentId?: string) => Promise<void>
   /** свой комментарий: из репозитория читателя (AT URI) или локальный; ошибка API пробрасывается */
@@ -610,11 +616,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setEditorPrefs: (p) => patch({ editorPrefs: { ...persisted.editorPrefs, ...p } }),
       setBlockDefs: (defs) => patch({ blockDefs: defs }),
       unlock: (articleId) => patch({ unlocked: { ...persisted.unlocked, [articleId]: true } }),
-      publishArticle: (article) =>
-        patch({
+      publishArticle: async (article, text) => {
+        const now = new Date().toISOString()
+        const video = article.kind === 'video'
+        // видео-ссылка; пустая — демо-ролик площадки (DEMO_VIDEO на странице статьи)
+        const clip: RecordVideo | null = video
+          ? article.videoSource === 'file'
+            ? null
+            : videoFromLink(article.videoUrl || `${window.location.origin}/demo-video.mp4`)
+          : null
+        const toPds =
+          text !== undefined && hasSession() && !article.paywall && (!article.publishAt || article.publishAt <= now) && (!video || !!clip)
+        let remote: { uri: string; cid: string } | null = null
+        if (toPds) {
+          remote = await articlesApi.publish({
+            title: article.title,
+            ...(article.subtitle ? { subtitle: article.subtitle } : {}),
+            text,
+            ...(article.excerpt ? { excerpt: article.excerpt.slice(0, 500) } : {}),
+            tags: article.tags,
+            langs: article.language ? [article.language] : [],
+            kind: video ? 'video' : 'text',
+            videos: clip
+              ? [
+                  {
+                    ...clip,
+                    title: article.title,
+                    ...(article.videoDescription ? { description: article.videoDescription } : {}),
+                    ...(article.videoPreviewRange ? { preview: article.videoPreviewRange } : {}),
+                  },
+                ]
+              : [],
+          })
+        }
+        setPersisted((prev) => ({
+          ...prev,
           extraArticles: [
             {
               ...article,
+              // в репозитории — настоящие uri и cid; лайки и комментарии сразу работают через индекс
+              ...(remote ? { atUri: remote.uri, cid: remote.cid, fromIndex: true, likeCount: 0, commentCount: 0 } : {}),
               // локальный демо-AT URI и canonicalId для новой записи
               atUri: article.atUri ?? `at://${user?.did ?? 'did:plc:reader001'}/media.weat.article/${article.id}`,
               cid: article.cid ?? `bafy…demo…${article.id}`,
@@ -623,11 +664,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               // полное время: по нему сортируют «Свежее» и «Горячее» (одна дата ставила запись в полночь)
               publishedAtFull: article.publishedAtFull ?? article.publishAt ?? new Date().toISOString(),
               sourceType: article.sourceType ?? 'native-pds',
-              canonicalId: article.canonicalId ?? `at://${user?.did ?? 'did:plc:reader001'}/media.weat.article/${article.id}`,
+              canonicalId:
+                remote?.uri ?? article.canonicalId ?? `at://${user?.did ?? 'did:plc:reader001'}/media.weat.article/${article.id}`,
             },
-            ...persisted.extraArticles,
+            ...prev.extraArticles,
           ],
-        }),
+        }))
+      },
       addComment: async (articleId, text, parentId) => {
         const a = articles.find((x) => x.id === articleId)
         const comment: Comment =

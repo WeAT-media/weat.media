@@ -70,6 +70,23 @@
           "privateContent": {
             "type": "ref",
             "ref": "#privateContent"
+          },
+          "kind": {
+            "type": "string",
+            "knownValues": [
+              "text",
+              "video"
+            ],
+            "description": "Тип записи; video — главное в ней видео из videos. Нет поля — text"
+          },
+          "videos": {
+            "type": "array",
+            "maxLength": 10,
+            "items": {
+              "type": "ref",
+              "ref": "#video"
+            },
+            "description": "Плейлист видео-записи"
           }
         }
       },
@@ -156,6 +173,71 @@
         "id": {
           "type": "string",
           "maxLength": 64
+        }
+      }
+    },
+    "video": {
+      "type": "object",
+      "description": "Видео записи: файл по ссылке (native) или ролик внешней площадки",
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "knownValues": [
+            "native",
+            "youtube",
+            "loom"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "native: https-адрес файла"
+        },
+        "videoId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "youtube | loom: id ролика на площадке"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 3000,
+          "maxGraphemes": 300
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 30000,
+          "maxGraphemes": 5000,
+          "description": "Описание с таймкодами 00:00"
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Секунды"
+        },
+        "preview": {
+          "type": "ref",
+          "ref": "#previewRange"
+        }
+      }
+    },
+    "previewRange": {
+      "type": "object",
+      "description": "Бесплатный отрезок платного видео, секунды",
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }

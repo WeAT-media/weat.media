@@ -86,6 +86,8 @@ pub struct Params {
     metric: Option<String>,
     /// для best: day | week | month | all
     period: Option<String>,
+    /// video | text — только видео-записи или только тексты
+    kind: Option<String>,
 }
 
 /// курсор — позиция последней записи страницы: base64url("<микросекунды>|<uri>")
@@ -137,6 +139,12 @@ pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
     let lang = p.lang.filter(|l| l != "all" && l.len() <= 10);
     let did = p.author.filter(|a| a.starts_with("did:") && a.len() <= 200);
     let full = p.view.as_deref() == Some("full");
+    let kind = match p.kind.as_deref() {
+        None | Some("") | Some("all") => None,
+        Some("video") => Some("video"),
+        Some("text") => Some("text"),
+        Some(_) => return Err("kind: all | video | text"),
+    };
     Ok(index::Query {
         limit: p.limit.unwrap_or(30).clamp(1, 100),
         after,
@@ -146,6 +154,7 @@ pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
         did,
         full,
         sort,
+        kind,
         offset,
     })
 }
@@ -223,6 +232,8 @@ async fn one(State(s): State<AppState>, Query(q): Query<One>) -> Response {
 pub struct RelatedParams {
     uri: String,
     limit: Option<i64>,
+    /// video | text
+    kind: Option<String>,
 }
 
 /// «Читать дальше»: общие теги и общие читатели (rank::related_sql)
@@ -231,12 +242,17 @@ async fn related(State(s): State<AppState>, Query(p): Query<RelatedParams>) -> R
         return StatusCode::BAD_REQUEST.into_response();
     }
     let limit = p.limit.unwrap_or(3).clamp(1, 20);
-    let key = format!("related:{}:{limit}", p.uri);
+    let kind = match p.kind.as_deref() {
+        Some("video") => Some("video"),
+        Some("text") => Some("text"),
+        _ => None,
+    };
+    let key = format!("related:{}:{limit}:{kind:?}", p.uri);
     let now = std::time::Instant::now();
     if let Some(body) = s.cache.get(&key, crate::cache::RELATED_TTL, now) {
         return json_body(body, "public, max-age=60", true);
     }
-    match index::related(&s.pool, &p.uri, limit).await {
+    match index::related(&s.pool, &p.uri, limit, kind).await {
         Ok(rows) => {
             log_timing("related", &key, now.elapsed(), rows.len());
             let body = serde_json::json!({ "articles": rows }).to_string();

@@ -4,6 +4,7 @@
 mod api;
 mod backfill;
 mod cache;
+mod completions;
 mod firehose;
 mod index;
 mod rank;
@@ -66,6 +67,13 @@ async fn main() {
         });
     }
     tokio::spawn(firehose::run(pool.clone(), pds, firehose_url));
+    // досмотры видео для ранжирования; без ANALYTICS_URL видео ранжируются по лайкам и комментариям
+    if let Ok(url) = std::env::var("ANALYTICS_URL") {
+        tokio::spawn(completions::run(
+            pool.clone(),
+            url.trim_end_matches('/').to_string(),
+        ));
+    }
 
     let state = api::AppState {
         pool,

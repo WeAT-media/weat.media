@@ -176,19 +176,19 @@ export default function Feed() {
   }, [articles, upvotes, bookmarks, authorSubscriptions, feedTags, tagCounts])
 
   // «Горячее» ранжирует сервер по всему индексу с теми же тегами и языком; null — ещё не ответил
-  const hotKey = `${feedTags.join(',')}|${lang}`
+  const hotKey = `${feedTags.join(',')}|${lang}|${kind}`
   const [serverHot, setServerHot] = useState<{ key: string; list: { article: Article; score: number }[] } | null>(null)
   const wantHot = prefs.feedSort === 'hot'
   useEffect(() => {
     if (!wantHot) return
     let alive = true
-    fetchRanked({ sort: 'hot', limit: 100, tags: feedTags, ...(lang === 'all' ? {} : { lang }) }).then(
+    fetchRanked({ sort: 'hot', limit: 100, tags: feedTags, ...(lang === 'all' ? {} : { lang }), ...(kind === 'all' ? {} : { kind }) }).then(
       (list) => alive && setServerHot({ key: hotKey, list }),
     )
     return () => {
       alive = false
     }
-  }, [wantHot, hotKey, feedTags, lang])
+  }, [wantHot, hotKey, feedTags, lang, kind])
 
   const visible = useMemo(() => {
     const now = new Date().toISOString()

@@ -1,6 +1,7 @@
-import type { Article, ArticleBlock, Comment } from '@/types/types'
+import type { Article, ArticleBlock, Comment, VideoItem } from '@/types/types'
 import { comments, type ThreadComment } from '@/lib/api'
 import { customFenceBlock, isCustomFence } from '@/lib/customFences'
+import type { RecordVideo } from '@/lib/videoLink'
 
 /** Записи media.weat.article из /api/feed → статьи ленты */
 
@@ -25,7 +26,30 @@ interface FeedItem {
     paywall?: { accessType?: 'one-time' | 'subscription'; price?: number; currency?: 'RUB' | 'USD' | 'EUR'; tierId?: string }
     privateContent?: { id?: string }
     source?: { url?: string; site?: string; author?: string; publishedAt?: string }
+    kind?: string
+    videos?: RecordVideo[]
   }
+}
+
+/** видео из записи → плейлист страницы; адреса — только http(s), id площадок — как в лексиконе */
+function toVideos(i: FeedItem): VideoItem[] {
+  return (i.record.videos ?? []).flatMap((v, n) => {
+    const native = v.source === 'native'
+    if (native ? !v.url || !/^https?:\/\//.test(v.url) : !v.videoId || !/^[A-Za-z0-9_-]{1,64}$/.test(v.videoId)) return []
+    if (!['native', 'youtube', 'loom'].includes(v.source)) return []
+    return [
+      {
+        id: `${i.uri}#v${n}`,
+        title: v.title ?? i.record.title ?? '',
+        description: v.description,
+        source: v.source,
+        ...(native ? { src: v.url } : { videoId: v.videoId }),
+        duration: v.duration,
+        // своё видео даёт площадке удержание и CTR; внешние площадки — нет
+        analyticsCapabilities: { retention: native, ctr: native },
+      },
+    ]
+  })
 }
 
 // import.meta.env?. — модуль используется и вне Vite (проверки разбора)
@@ -100,6 +124,8 @@ export function toArticle(i: FeedItem): Article | null {
   const words = r.text ? r.text.split(/\s+/).length : Math.round((i.textLength ?? 0) / 6)
   const created = r.createdAt ?? new Date().toISOString()
   const crawled = !!r.source?.url
+  const videos = toVideos(i)
+  const preview = r.videos?.[0]?.preview
   return {
     id: remoteId(i.uri),
     title: r.title,
@@ -116,6 +142,14 @@ export function toArticle(i: FeedItem): Article | null {
     comments: [],
     atUri: i.uri,
     fromIndex: true,
+    ...(r.kind === 'video' || videos.length
+      ? {
+          kind: 'video' as const,
+          videos,
+          videoDescription: videos[0]?.description,
+          ...(preview && preview.end > preview.start ? { videoPreviewRange: preview } : {}),
+        }
+      : {}),
     likeCount: i.likeCount ?? 0,
     commentCount: i.commentCount ?? 0,
     ...(r.text ? {} : { bodyPending: true }),
@@ -181,13 +215,14 @@ export interface RankQuery {
   /** любой из тегов */
   tags?: string[]
   lang?: string
+  kind?: 'video' | 'text'
   limit?: number
 }
 
 /** ранжирование индекса (services/feed/src/rank.rs); ошибка или пустой индекс — [] */
 export async function fetchRanked(q: RankQuery): Promise<{ article: Article; score: number }[]> {
   const params = new URLSearchParams({ limit: String(q.limit ?? 50), sort: q.sort })
-  for (const k of ['metric', 'period', 'source', 'lang'] as const) if (q[k]) params.set(k, q[k]!)
+  for (const k of ['metric', 'period', 'source', 'lang', 'kind'] as const) if (q[k]) params.set(k, q[k]!)
   if (q.tags?.length) params.set('tags', q.tags.join(','))
   try {
     const res = await fetch(`${BASE}/feed?${params}`)
@@ -203,9 +238,9 @@ export async function fetchRanked(q: RankQuery): Promise<{ article: Article; sco
 }
 
 /** «Читать дальше» к статье из индекса; пусто — индекс не нашёл похожих или недоступен */
-export async function fetchRelated(uri: string, limit = 3): Promise<Article[]> {
+export async function fetchRelated(uri: string, limit = 3, kind?: 'video' | 'text'): Promise<Article[]> {
   try {
-    const res = await fetch(`${BASE}/feed/related?${new URLSearchParams({ uri, limit: String(limit) })}`)
+    const res = await fetch(`${BASE}/feed/related?${new URLSearchParams({ uri, limit: String(limit), ...(kind ? { kind } : {}) })}`)
     if (!res.ok) return []
     const page = (await res.json()) as { articles: FeedItem[] }
     return page.articles.map(toArticle).filter((a): a is Article => a !== null)

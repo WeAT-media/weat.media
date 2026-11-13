@@ -13,15 +13,17 @@ export default function Recommendations({ excludeId }: { excludeId?: string }) {
   const { articles } = useStore()
   const current = articles.find((a) => a.id === excludeId)
   const uri = current?.fromIndex ? current.atUri : undefined
+  // к видео — видео: «досмотрел — смотри дальше»
+  const kind = current?.kind === 'video' ? 'video' : undefined
   const [server, setServer] = useState<{ uri: string; list: Article[] } | null>(null)
   useEffect(() => {
     if (!uri) return
     let alive = true
-    fetchRelated(uri).then((list) => alive && setServer({ uri, list }))
+    fetchRelated(uri, 3, kind).then((list) => alive && setServer({ uri, list }))
     return () => {
       alive = false
     }
-  }, [uri])
+  }, [uri, kind])
 
   const local = current
     ? articles

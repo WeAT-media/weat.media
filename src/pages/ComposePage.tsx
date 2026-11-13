@@ -348,7 +348,9 @@ export default function ComposePage() {
     }
   }
 
-  const onPublish = (e: FormEvent) => {
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState('')
+  const onPublish = async (e: FormEvent) => {
     e.preventDefault()
     // публикует только кнопка «Опубликовать»: кнопки/Enter внутри блоков редактора форму не отправляют
     const submitter = (e.nativeEvent as SubmitEvent).submitter
@@ -388,8 +390,19 @@ export default function ComposePage() {
     const blocks = draft.blocks.map((b) =>
       b.type === 'poll' ? { ...b, text: JSON.stringify({ ...parsePoll(b.text), startsAt }) } : b,
     )
-    publishArticle({ ...draft, blocks, id, title: title.trim() })
-    navigate(`/article/${id}`)
+    // в репозиторий — markdown тела без строки-заголовка редактора
+    const text = fullText.replace(/^#\s+.*(?:\n+|$)/, '').trim()
+    setPublishing(true)
+    setPublishError('')
+    try {
+      await publishArticle({ ...draft, blocks, id, title: title.trim() }, text)
+      navigate(`/article/${id}`)
+    } catch (err) {
+      // запись не ушла в репозиторий — черновик остаётся в форме, можно повторить
+      setPublishError(err instanceof Error ? err.message : 'Не удалось опубликовать. Попробуйте ещё раз.')
+    } finally {
+      setPublishing(false)
+    }
   }
 
   const field =
@@ -611,7 +624,7 @@ export default function ComposePage() {
                     value={videoUrl}
                     onChange={(e) => setVideoUrl(e.target.value)}
                     className={`${field} mt-2 font-mono text-sm`}
-                    placeholder="https://… (в прототипе откроется мок-плеер)"
+                    placeholder="https://… — YouTube, Loom или файл .mp4; пусто — демо-ролик"
                   />
                   {errors.videoUrl && <p className="mt-2 text-sm text-destructive">{errors.videoUrl}</p>}
                 </div>
@@ -634,6 +647,9 @@ export default function ComposePage() {
                     className="mt-2 flex cursor-pointer flex-col items-center gap-2 rounded-md border border-dashed border-border bg-secondary/40 px-5 py-8 text-center transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <UploadCloud size={20} className="text-accent" aria-hidden="true" />
+                    <span className="meta !normal-case tracking-normal">
+                      файл живёт только в этой вкладке и в ленту сети не попадёт — для публикации дайте ссылку
+                    </span>
                     <span className="text-sm text-muted-foreground">
                       Перетащите видео сюда или нажмите, чтобы выбрать · до {formatFileSize(MAX_VIDEO_SIZE)}
                     </span>
@@ -1061,8 +1077,13 @@ export default function ComposePage() {
             </div>
 
                       <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" data-publish className="btn-primary">
-              Опубликовать в репозиторий
+            {publishError && (
+              <p role="alert" className="w-full text-sm text-destructive">
+                {publishError}
+              </p>
+            )}
+            <button type="submit" data-publish className="btn-primary" disabled={publishing}>
+              {publishing ? 'Публикуем…' : 'Опубликовать в репозиторий'}
             </button>
             <button
               type="button"

@@ -29,6 +29,9 @@ pub struct AppState {
     pub views: Mutex<Dedupe>,
     pub reads: Mutex<Dedupe>,
     pub times: Mutex<Dedupe>,
+    /// запуск и досмотр видео: один на посетителя и статью за окно — перемотка в начало не накручивает
+    pub plays: Mutex<Dedupe>,
+    pub completes: Mutex<Dedupe>,
     pub limit: Mutex<RateLimit>,
 }
 
@@ -44,6 +47,7 @@ pub fn router(state: Shared) -> Router {
         .route("/analytics-api/health", get(|| async { Json(serde_json::json!({ "ok": true })) }))
         .route("/analytics-api/collect", post(collect))
         .route("/analytics-api/articles/{id}", get(article_stats))
+        .route("/analytics-api/completions", get(completions))
         .with_state(state)
 }
 
@@ -68,13 +72,14 @@ pub struct Collect {
     auth: bool,
 }
 
-/// id статьи: AT URI `at://did:<method>:<id>/media.weat.article/<rkey>` или короткий локальный id (демо: a12)
+/// id статьи: AT URI `at://did:<method>:<id>/media.weat.article/<rkey>`, id из индекса (rkey-хвост DID) или локальный (u-…)
 fn valid_article(id: &str) -> bool {
     if let Some(rest) = id.strip_prefix("at://did:") {
         return id.len() <= 300 && valid_at(rest);
     }
     let b = id.as_bytes();
-    (1..=32).contains(&b.len()) && b[0].is_ascii_lowercase() && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'_' || *c == b'-')
+    // первым может быть цифра: id статьи из индекса — rkey (TID, «3n26…») и хвост DID, как remoteId на сайте
+    (1..=32).contains(&b.len()) && b[0].is_ascii_alphanumeric() && !b[0].is_ascii_uppercase() && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'_' || *c == b'-')
 }
 
 fn valid_at(rest: &str) -> bool {
@@ -160,6 +165,18 @@ async fn collect(State(s): State<Shared>, ConnectInfo(peer): ConnectInfo<SocketA
             }
             Kind::Read
         }
+        "play" => {
+            if !lock(&s.plays).fresh(&c.a, visitor, now) {
+                return StatusCode::NO_CONTENT;
+            }
+            Kind::Play
+        }
+        "complete" => {
+            if !lock(&s.completes).fresh(&c.a, visitor, now) {
+                return StatusCode::NO_CONTENT;
+            }
+            Kind::Complete
+        }
         // время на странице: от 1 с до 2 ч, иначе вкладка висела в фоне
         "time" => match c.ms {
             // одно время на посетителя и статью за окно — иначе avg_time накручивается
@@ -177,6 +194,34 @@ async fn collect(State(s): State<Shared>, ConnectInfo(peer): ConnectInfo<SocketA
     match s.tx.try_send(Event { article_id: c.a, day, visitor, kind }) {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(_) => StatusCode::SERVICE_UNAVAILABLE,
+    }
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct CompletionOut {
+    id: String,
+    plays: i64,
+    completes: i64,
+}
+
+/// досмотры видео за days дней (по умолчанию 14 — окно hot) — их забирает ранжирование ленты (services/feed)
+async fn completions(State(s): State<Shared>, Query(q): Query<StatsQuery>) -> Response {
+    let days = q.days.unwrap_or(14).clamp(1, 90);
+    let since = Utc::now().date_naive().checked_sub_days(Days::new(u64::from(days - 1))).unwrap_or_default();
+    let rows: sqlx::Result<Vec<CompletionOut>> = sqlx::query_as(
+        "SELECT article_id AS id, sum(plays)::int8 AS plays, sum(completes)::int8 AS completes
+         FROM article_daily WHERE day >= $1 GROUP BY article_id HAVING sum(plays) > 0
+         ORDER BY completes DESC LIMIT 10000",
+    )
+    .bind(since)
+    .fetch_all(&s.pool)
+    .await;
+    match rows {
+        Ok(items) => ([(header::CACHE_CONTROL, "public, max-age=60")], Json(serde_json::json!({ "items": items }))).into_response(),
+        Err(err) => {
+            tracing::error!(%err, "completions");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }
 
@@ -313,7 +358,8 @@ mod tests {
         assert!(valid_article("at://did:web:weat.media/media.weat.article/3k2a.b~c"));
         assert!(!valid_article(""));
         assert!(!valid_article("A12"), "локальный id — строчные");
-        assert!(!valid_article("1abc"));
+        assert!(valid_article("3n26tekng4k2f-o4auyh"), "id статьи из индекса: rkey-хвост DID");
+        assert!(!valid_article("-abc"));
         assert!(!valid_article(&format!("a{}", "b".repeat(32))), "длиннее 32");
         assert!(!valid_article("at://did:plc:abc/app.bsky.feed.post/3n24"), "чужая коллекция");
         assert!(!valid_article("at://did:plc:abc/media.weat.article/"));

@@ -43,6 +43,8 @@ pub struct Article {
     pub langs: Vec<String>,
     pub source_site: Option<String>,
     pub paid: bool,
+    /// видео-запись: kind = "video" или непустой videos
+    pub video: bool,
 }
 
 fn strings(v: Option<&Value>, max: usize, len: usize) -> Vec<String> {
@@ -88,6 +90,11 @@ pub fn parse_article(rec: &Value, now: DateTime<Utc>) -> Option<Article> {
             .and_then(Value::as_str)
             .map(str::to_string),
         paid: rec.get("paywall").is_some(),
+        video: rec.get("kind").and_then(Value::as_str) == Some("video")
+            || rec
+                .get("videos")
+                .and_then(Value::as_array)
+                .is_some_and(|v| !v.is_empty()),
     })
 }
 
@@ -168,6 +175,14 @@ mod tests {
         assert_eq!(
             a.published_at, a.created_at,
             "без source.publishedAt — время записи"
+        );
+        assert!(!a.video);
+        let v = parse_article(&json!({ "title": "t", "text": "", "videos": [{ "source": "youtube", "videoId": "x" }] }), now).unwrap();
+        assert!(v.video, "видео — по непустому videos, даже без kind");
+        assert!(
+            parse_article(&json!({ "title": "t", "text": "", "kind": "video" }), now)
+                .unwrap()
+                .video
         );
         let crawled = parse_article(&json!({ "title": "t", "text": "x", "createdAt": "2026-01-10T00:00:00Z", "source": { "publishedAt": "2026-01-02T00:00:00Z" } }), now).unwrap();
         assert_eq!(

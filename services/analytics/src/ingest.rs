@@ -16,6 +16,10 @@ pub enum Kind {
     View { source: Source, utm: Option<Utm>, anon: bool },
     Read,
     Time { ms: i64 },
+    /// видео запущено
+    Play,
+    /// видео досмотрено до конца (≥ 90% длительности)
+    Complete,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -40,6 +44,8 @@ pub struct Counters {
     pub reads: i64,
     pub time_ms_sum: i64,
     pub time_n: i64,
+    pub plays: i64,
+    pub completes: i64,
 }
 
 type Key = (String, NaiveDate);
@@ -120,6 +126,8 @@ impl Batch {
                 c.time_ms_sum += ms;
                 c.time_n += 1;
             }
+            Kind::Play => c.plays += 1,
+            Kind::Complete => c.completes += 1,
         }
     }
 }
@@ -156,6 +164,7 @@ pub async fn flush(pool: &PgPool, b: Batch) -> sqlx::Result<()> {
     let mut a = vec![];
     let mut d = vec![];
     let (mut views, mut uq, mut anon, mut reads, mut tms, mut tn) = (vec![], vec![], vec![], vec![], vec![], vec![]);
+    let (mut plays, mut completes) = (vec![], vec![]);
     for ((article, day), c) in &b.daily {
         a.push(article.clone());
         d.push(*day);
@@ -165,16 +174,19 @@ pub async fn flush(pool: &PgPool, b: Batch) -> sqlx::Result<()> {
         reads.push(c.reads);
         tms.push(c.time_ms_sum);
         tn.push(c.time_n);
+        plays.push(c.plays);
+        completes.push(c.completes);
     }
     sqlx::query(
-        "INSERT INTO article_daily AS t (article_id, day, views, uniques, anon_views, reads, time_ms_sum, time_n)
-         SELECT * FROM UNNEST($1::text[], $2::date[], $3::int8[], $4::int8[], $5::int8[], $6::int8[], $7::int8[], $8::int8[])
+        "INSERT INTO article_daily AS t (article_id, day, views, uniques, anon_views, reads, time_ms_sum, time_n, plays, completes)
+         SELECT * FROM UNNEST($1::text[], $2::date[], $3::int8[], $4::int8[], $5::int8[], $6::int8[], $7::int8[], $8::int8[], $9::int8[], $10::int8[])
          ON CONFLICT (article_id, day) DO UPDATE SET
            views = t.views + EXCLUDED.views, uniques = t.uniques + EXCLUDED.uniques,
            anon_views = t.anon_views + EXCLUDED.anon_views, reads = t.reads + EXCLUDED.reads,
-           time_ms_sum = t.time_ms_sum + EXCLUDED.time_ms_sum, time_n = t.time_n + EXCLUDED.time_n",
+           time_ms_sum = t.time_ms_sum + EXCLUDED.time_ms_sum, time_n = t.time_n + EXCLUDED.time_n,
+           plays = t.plays + EXCLUDED.plays, completes = t.completes + EXCLUDED.completes",
     )
-    .bind(&a).bind(&d).bind(&views).bind(&uq).bind(&anon).bind(&reads).bind(&tms).bind(&tn)
+    .bind(&a).bind(&d).bind(&views).bind(&uq).bind(&anon).bind(&reads).bind(&tms).bind(&tn).bind(&plays).bind(&completes)
     .execute(&mut *tx)
     .await?;
 
@@ -271,8 +283,10 @@ mod tests {
         b.add(ev(Kind::View { source: src, utm: Some(Utm { source: "tg".into(), medium: String::new(), campaign: "launch".into() }), anon: false }));
         b.add(ev(Kind::Read));
         b.add(ev(Kind::Time { ms: 30_000 }));
+        b.add(ev(Kind::Play));
+        b.add(ev(Kind::Complete));
         let c = b.daily.values().next().unwrap();
-        assert_eq!(*c, Counters { views: 2, anon_views: 1, reads: 1, time_ms_sum: 30_000, time_n: 1 });
+        assert_eq!(*c, Counters { views: 2, anon_views: 1, reads: 1, time_ms_sum: 30_000, time_n: 1, plays: 1, completes: 1 });
         assert_eq!(b.sources.values().sum::<i64>(), 2);
         assert_eq!(b.utm.len(), 1);
         assert_eq!(b.visitors.len(), 1, "один посетитель");

@@ -44,6 +44,8 @@ async fn main() {
         views: Mutex::new(ingest::Dedupe::new(Duration::from_secs(30 * 60))),
         reads: Mutex::new(ingest::Dedupe::new(Duration::from_secs(24 * 3600))),
         times: Mutex::new(ingest::Dedupe::new(Duration::from_secs(30 * 60))),
+        plays: Mutex::new(ingest::Dedupe::new(Duration::from_secs(30 * 60))),
+        completes: Mutex::new(ingest::Dedupe::new(Duration::from_secs(24 * 3600))),
         // 60 событий в минуту на IP; не больше 200k IP в таблице
         limit: Mutex::new(ratelimit::RateLimit::new(Duration::from_secs(60), 60, 200_000)),
     });

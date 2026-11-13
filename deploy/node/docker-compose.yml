@@ -61,6 +61,8 @@ services:
       PDS_URL: http://pds:2583
       # вся сеть ATmosphere: wss://bsky.network (по умолчанию — свой PDS)
       FIREHOSE_URL: ${FEED_FIREHOSE_URL:-ws://pds:2583}
+      # досмотры видео для ранжирования (раз в 5 минут)
+      ANALYTICS_URL: http://analytics:8789
     depends_on: [pds]
 
   # открытая аналитика: дневные агрегаты без IP и cookie; своя БД ANALYTICS_DATABASE_URL

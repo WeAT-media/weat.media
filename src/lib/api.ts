@@ -3,6 +3,8 @@ import type { BlockDef } from '@/lib/userBlocks'
 import type { EditorPreferences, LabelerSettings, Preferences, SubscriptionTier, User } from '@/types/types'
 
 /** Ответы AppView (server/src/app.ts) */
+import type { RecordVideo } from '@/lib/videoLink'
+
 export interface ApiUser {
   /** только в публичном профиле: число платных подписчиков */
   paidSubscribers?: number
@@ -300,6 +302,20 @@ export const likes = {
   mine: (subjects: string[]) => authed<{ likes: LikeRef[] }>(`/me/likes?${new URLSearchParams({ subjects: subjects.join(',') })}`),
   like: (subject: string, cid: string) => authed<LikeRef>('/me/likes', post({ subject, cid })),
   unlike: (subject: string) => authed<{ ok: true; removed: number }>(`/me/likes?${new URLSearchParams({ subject })}`, { method: 'DELETE' }),
+}
+
+/** Публикация с сайта: запись media.weat.article в репозиторий автора (платные — /me/articles/paid) */
+export const articles = {
+  publish: (b: {
+    title: string
+    subtitle?: string
+    text: string
+    excerpt?: string
+    tags: string[]
+    langs: string[]
+    kind: 'text' | 'video'
+    videos: RecordVideo[]
+  }) => authed<{ uri: string; cid: string }>('/me/articles', post(b)),
 }
 
 export interface ThreadComment {

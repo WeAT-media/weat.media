@@ -1251,6 +1251,33 @@ test('comments from site session: written to reader repo, reply keeps parent, ow
   assert.equal((await app.request(`/api/feed/comments?subject=${encodeURIComponent(subject)}`)).status, 503, 'без индекса ленты треда нет')
 })
 
+test('publish from the site: text and video records in the author repo, validation', async () => {
+  const app = makeApp()
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'videoauthor', email: 'va@example.com' }, '1.1.1.1'))).json()
+  const auth = { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }
+  const pub = (b: unknown, h: Record<string, string> = auth) => app.request('/api/me/articles', { method: 'POST', headers: h, body: JSON.stringify(b) })
+
+  assert.equal((await pub({ title: 't', text: 'x' }, { 'content-type': 'application/json' })).status, 401)
+  assert.equal((await pub({ title: 't', text: '' })).status, 400, 'текстовой записи нужен текст')
+  assert.equal((await pub({ title: 't', text: '', kind: 'video' })).status, 400, 'видео без ролика')
+  assert.equal((await pub({ title: 't', text: '', kind: 'video', videos: [{ source: 'native', url: 'javascript:alert(1)' }] })).status, 400)
+  assert.equal((await pub({ title: 't', text: '', kind: 'video', videos: [{ source: 'native', url: 'http://evil.example/x.mp4' }] })).status, 400, 'http — только localhost')
+  assert.equal((await pub({ title: 't', text: '', kind: 'video', videos: [{ source: 'youtube' }] })).status, 400, 'youtube без videoId')
+
+  const text = await pub({ title: 'Текст', text: 'Абзац', tags: ['rust'] })
+  assert.equal(text.status, 201)
+  const t = published.at(-1)!
+  assert.equal(t.collection, 'media.weat.article')
+  assert.equal(t.record.kind, undefined, 'у текста нет kind')
+
+  const video = await pub({ title: 'Ролик', text: '', kind: 'video', videos: [{ source: 'native', url: 'https://cdn.example/a.mp4', duration: 45 }, { source: 'youtube', videoId: 'dQw4w9WgXcQ' }] })
+  assert.equal(video.status, 201)
+  const v = published.at(-1)!
+  assert.equal(v.record.kind, 'video')
+  assert.equal((v.record.videos as unknown[]).length, 2)
+  assert.match((await video.json()).uri, /media\.weat\.article/)
+})
+
 test('lava.top: invoice, forged webhook refused, access only after API confirms, idempotent', async () => {
   const app = makeApp()
   const author = await (await app.request('/api/auth/register', json({ ...reg, username: 'lavaauthor', email: 'la@example.com' }, '1.1.1.1'))).json()

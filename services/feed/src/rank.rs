@@ -2,7 +2,8 @@
 //!
 //! - new  — новые сверху (keyset-курсор по времени);
 //! - hot  — «горячее»: очки делятся на возраст, (лайки + 2·комментарии + 1) / (часы + 2)^1.5;
-//!   лайки — взвешенные (like_score): самолайк 0, свежий аккаунт 0.25–0.5, см. 0006_like_weight.sql.
+//!   лайки — взвешенные (like_score): самолайк 0, свежий аккаунт 0.25–0.5, см. 0006_like_weight.sql;
+//!   у видео к очкам добавляются досмотры до конца (completes, COMPLETE_WEIGHT за каждый).
 //!   Свежая запись при равных очках выше, старая уходит вниз; комментарий весит вдвое — это усилие;
 //! - best — «лучшее» за период: по взвешенным лайкам или по комментариям.
 //!
@@ -14,6 +15,8 @@
 pub const HOT_WINDOW_DAYS: i32 = 14;
 pub const COMMENT_WEIGHT: f64 = 2.0;
 pub const GRAVITY: f64 = 1.5;
+/// досмотр видео до конца (≥ 90%) весит как лайк: смотреть до конца — сильнее, чем открыть
+pub const COMPLETE_WEIGHT: f64 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Metric {
@@ -84,7 +87,7 @@ impl Sort {
     pub fn sql(self) -> (String, String, String) {
         // float8: extract(epoch …) отдаёт numeric, а numeric-арифметика по окну заметно медленнее
         let hot = format!(
-            "(a.like_score + {COMMENT_WEIGHT} * a.comment_count + 1)::float8
+            "(a.like_score + {COMMENT_WEIGHT} * a.comment_count + {COMPLETE_WEIGHT} * a.completes + 1)::float8
              / power(greatest(extract(epoch FROM now() - a.published_at)::float8, 0) / 3600 + 2, {GRAVITY})"
         );
         match self {
@@ -146,7 +149,7 @@ pub fn related_sql() -> String {
          ),
          by_tags AS (
            SELECT a.uri, a.tags, a.published_at FROM articles a, src
-           WHERE a.tags && src.tags AND a.uri <> src.uri
+           WHERE a.tags && src.tags AND a.uri <> src.uri AND ($3::text IS NULL OR a.kind = $3)
            ORDER BY a.published_at DESC LIMIT {RELATED_TAG_CANDIDATES}
          ),
          -- общие читатели приходят вместе с кандидатом: отдельный join с co планировщик делал вложенным циклом
@@ -161,6 +164,7 @@ pub fn related_sql() -> String {
               + {CO_LIKE_WEIGHT} * cand.n)::float8
              / sqrt(greatest(extract(epoch FROM now() - a.published_at)::float8, 0) / 86400 + 1) AS score
            FROM cand JOIN articles a ON a.uri = cand.uri CROSS JOIN src
+           WHERE $3::text IS NULL OR a.kind = $3
            ORDER BY score DESC, a.published_at DESC
            LIMIT $2
          )
@@ -175,8 +179,8 @@ pub fn related_sql() -> String {
 
 /// та же формула, что в SQL, — для тестов и для тех, кто считает у себя
 #[cfg_attr(not(test), allow(dead_code))]
-pub fn hot_score(likes: i32, comments: i32, age_hours: f64) -> f64 {
-    (likes as f64 + COMMENT_WEIGHT * comments as f64 + 1.0)
+pub fn hot_score(likes: f64, comments: i32, completes: i32, age_hours: f64) -> f64 {
+    (likes + COMMENT_WEIGHT * comments as f64 + COMPLETE_WEIGHT * completes as f64 + 1.0)
         / (age_hours.max(0.0) + 2.0).powf(GRAVITY)
 }
 
@@ -187,13 +191,14 @@ mod tests {
     #[test]
     fn hot_prefers_fresh_and_discussed() {
         // свежая без реакций ниже, чем свежая с обсуждением
-        assert!(hot_score(0, 3, 1.0) > hot_score(0, 0, 1.0));
-        // комментарий весит как два лайка
-        assert_eq!(hot_score(2, 0, 5.0), hot_score(0, 1, 5.0));
+        assert!(hot_score(0.0, 3, 0, 1.0) > hot_score(0.0, 0, 0, 1.0));
+        // комментарий весит как два лайка, досмотр — как лайк
+        assert_eq!(hot_score(2.0, 0, 0, 5.0), hot_score(0.0, 1, 0, 5.0));
+        assert_eq!(hot_score(1.0, 0, 0, 5.0), hot_score(0.0, 0, 1, 5.0));
         // через сутки сильная запись уступает свежей средней
-        assert!(hot_score(5, 1, 1.0) > hot_score(20, 2, 24.0));
+        assert!(hot_score(5.0, 1, 0, 1.0) > hot_score(20.0, 2, 0, 24.0));
         // дата из будущего не даёт бонуса
-        assert_eq!(hot_score(1, 0, -10.0), hot_score(1, 0, 0.0));
+        assert_eq!(hot_score(1.0, 0, 0, -10.0), hot_score(1.0, 0, 0, 0.0));
     }
 
     #[test]
