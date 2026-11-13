@@ -171,6 +171,13 @@
 	reverse_proxy pds:2583
 }
 
+# www — постоянный 301 на основной адрес: для поисковиков это один сайт, а не два одинаковых.
+# Точный адрес важнее «*» ниже, поэтому www не уходит в профиль пользователя.
+www.{$PDS_HANDLE_DOMAIN} {
+	import tls_dns
+	redir https://{$PDS_HANDLE_DOMAIN}{uri} 301
+}
+
 # handle любого пользователя: alina.<PDS_HANDLE_DOMAIN>/.well-known/atproto-did.
 # Отвечает AppView по общему справочнику — пользователь может жить в любом контуре.
 *.{$PDS_HANDLE_DOMAIN} {
