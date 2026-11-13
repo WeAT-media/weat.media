@@ -19,6 +19,7 @@ import { claimRepo } from './claims.js'
 import { ticketRepo } from './tickets.js'
 import { sessionRepo } from './sessions.js'
 import { importRepo } from './imports.js'
+import { createMailboxClient } from './mailbox.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
@@ -37,6 +38,12 @@ const app = createApp({
   tickets: ticketRepo(sql),
   sessions: sessionRepo(sql),
   imports: importRepo(sql),
+  mail: createMailboxClient({
+    domain: config.MAIL_DOMAIN,
+    imapHost: config.MAIL_HOST,
+    smtpHost: config.MAIL_HOST,
+    passwords: { support: config.MAILBOX_SUPPORT_PASSWORD, legal: config.MAILBOX_LEGAL_PASSWORD, noreply: config.MAILBOX_NOREPLY_PASSWORD },
+  }),
   feedUrl: config.FEED_URL,
   staff:
     config.ZITADEL_ISSUER && config.ZITADEL_PROJECT_ID

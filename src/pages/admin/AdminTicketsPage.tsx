@@ -132,6 +132,7 @@ export default function AdminTicketsPage() {
         </div>
         <div className="flex gap-2">
           <Link to="/admin/users" className="btn-ghost !px-3 !py-2 !text-[11px]">Пользователи</Link>
+          <Link to="/admin/email" className="btn-ghost !px-3 !py-2 !text-[11px]">Почта</Link>
           <Link to="/admin/claims" className="btn-ghost !px-3 !py-2 !text-[11px]">Заявки на авторство</Link>
           <Link to="/admin/crawler" className="btn-ghost !px-3 !py-2 !text-[11px]">Краулер</Link>
         </div>

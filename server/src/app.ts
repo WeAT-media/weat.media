@@ -17,6 +17,7 @@ import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
+import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -44,6 +45,8 @@ export interface Deps {
   tickets: TicketRepo
   sessions: SessionRepo
   imports: ImportRepo
+  /** почта площадки (/admin/email); не задана — ящиков нет */
+  mail?: MailboxClient
   /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
   postSource?: PostSource
   /** сервис ленты; не задан — лента собирается обходом PDS */
@@ -248,6 +251,7 @@ export function createApp(deps: Deps) {
   mountClaimRoutes(app, { users: d.users, pds: d.pds, claims: d.claims }, { bearer, requireStaff, audit })
   mountTicketRoutes(app, { pds: d.pds, tickets: d.tickets, users: d.users }, { bearer, requireStaff, audit })
   mountSessionRoutes(app, { pds: d.pds, sessions: d.sessions }, { bearer, requireStaff, audit })
+  mountMailboxRoutes(app, { mail: d.mail }, { requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })

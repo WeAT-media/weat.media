@@ -27,6 +27,7 @@ import { PurchaseBody } from './lava.js'
 import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
 import { ImportDraftDto, ImportStatusBody } from './imports.js'
+import { MailMessageDto, MailSummaryDto, SendMailBody } from './mailbox.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
 import { DirectMessageBody, MessageBody, TicketBody, TicketDto, TicketPatch } from './tickets.js'
@@ -266,6 +267,22 @@ const ops: Op[] = [
     method: 'get', path: '/admin/claims', tag: 'admin', summary: 'Заявки на авторство', auth: 'staff',
     query: { status: { description: 'pending | approved | rejected | transferred' } },
     ok: { status: 200, description: 'Заявки с заявителем' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden — нужна роль support']],
+  },
+  // ── почта площадки: support@ — support и admin; legal@, noreply@ — admin
+  { method: 'get', path: '/admin/mail/boxes', tag: 'admin', summary: 'Доступные сотруднику ящики', auth: 'staff', ok: { status: 200, schema: z.object({ boxes: z.array(z.enum(['support', 'legal', 'noreply'])) }), description: 'Ящики по ролям' }, errors: [[401, 'AuthenticationRequired']] },
+  {
+    method: 'get', path: '/admin/mail/{box}/messages', tag: 'admin', summary: 'Входящие ящика', auth: 'staff',
+    query: { before: { description: 'UID: письма старше него (следующая страница)' }, limit: { description: '1–100, по умолчанию 50' } },
+    ok: { status: 200, schema: z.object({ messages: z.array(MailSummaryDto), nextBeforeUid: z.number().int().nullable() }), description: 'Новые сверху' },
+    errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden'], [404, 'NotFound'], [502, 'MailUnavailable']],
+  },
+  { method: 'get', path: '/admin/mail/{box}/messages/{uid}', tag: 'admin', summary: 'Письмо (текст; отмечается прочитанным)', auth: 'staff', ok: { status: 200, schema: MailMessageDto, description: 'Письмо' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden'], [404, 'NotFound']] },
+  { method: 'get', path: '/admin/mail/{box}/messages/{uid}/attachments/{id}', tag: 'admin', summary: 'Скачать вложение', auth: 'staff', ok: { status: 200, schema: z.string().describe('application/octet-stream'), description: 'Файл' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden'], [404, 'NotFound']] },
+  {
+    method: 'post', path: '/admin/mail/{box}/send', tag: 'admin', summary: 'Отправить или ответить', auth: 'staff',
+    description: 'С noreply@ не отправляем. replyToUid — ответ в ветке (In-Reply-To/References).',
+    body: SendMailBody, ok: { status: 201, schema: z.object({ messageId: z.string() }), description: 'Отправлено' },
+    errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [403, 'Forbidden'], [502, 'MailUnavailable']],
   },
   { method: 'post', path: '/admin/claims/{id}/approve', tag: 'admin', summary: 'Подтвердить авторство', auth: 'staff', body: DecideBody, ok: { status: 200, schema: ClaimDto, description: 'Подтверждено' }, errors: [[404, 'NotFound — нет или уже рассмотрена']] },
   { method: 'post', path: '/admin/claims/{id}/reject', tag: 'admin', summary: 'Отклонить заявку', auth: 'staff', body: DecideBody, description: 'note обязателен — причину увидит заявитель.', ok: { status: 200, schema: ClaimDto, description: 'Отклонено' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']] },

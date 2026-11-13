@@ -17,6 +17,7 @@ import type { ClaimRepo, ClaimRow } from '../src/claims.ts'
 import type { MessageRow, TicketRepo, TicketRow } from '../src/tickets.ts'
 import type { AtprotoAuth } from '../src/atprotoOAuth.ts'
 import type { ImportDraftRow, ImportRepo, PostSource } from '../src/imports.ts'
+import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
@@ -102,6 +103,33 @@ const fakePostSource: PostSource = {
       ],
     }
   },
+}
+
+/** почтовые ящики в памяти: письмо 1 в support@ и legal@; отправленное — в sent */
+let mailSent: { box: MailboxId; to: string; subject: string; inReplyTo?: string }[] = []
+function memMail(): MailboxClient {
+  const msg = (box: MailboxId): MailMessage => ({
+    uid: 1, from: 'Читатель <reader@example.com>', to: `${box}@weat.media`, subject: `Вопрос в ${box}`, date: '2026-11-13T10:00:00.000Z',
+    seen: false, hasAttachments: true, messageId: `<m1-${box}@example.com>`, replyTo: null, text: 'Здравствуйте', references: [],
+    attachments: [{ id: '0', filename: 'скан.pdf', contentType: 'application/pdf', size: 3 }],
+  })
+  return {
+    configured: () => ['support', 'legal', 'noreply'],
+    async list(box) {
+      const { text: _t, references: _r, attachments: _a, messageId: _m, replyTo: _p, ...summary } = msg(box)
+      return { messages: [summary], nextBeforeUid: null }
+    },
+    async get(box, uid) {
+      return uid === 1 ? { ...msg(box), seen: true } : null
+    },
+    async attachment(_box, uid, id) {
+      return uid === 1 && id === '0' ? { filename: 'скан.pdf', contentType: 'application/pdf', content: Buffer.from('pdf') } : null
+    },
+    async send(box, m) {
+      mailSent.push({ box, to: m.to, subject: m.subject, inReplyTo: m.inReplyTo })
+      return { messageId: '<sent@weat.media>' }
+    },
+  }
 }
 
 function memTickets(): TicketRepo {
@@ -588,6 +616,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     tickets: memTickets(),
     sessions: memSessions(),
     imports: memImports(),
+    mail: memMail(),
     postSource: fakePostSource,
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
@@ -847,6 +876,36 @@ test('imports: posts of linked AT account become drafts; re-import does not dupl
   assert.equal((await (await app.request('/api/me/imports?status=pending', { headers: auth })).json()).drafts.length, 0)
   // чужой черновик не виден
   assert.equal((await app.request(`/api/me/imports/${drafts[0].id}`, { headers: { authorization: `Bearer ${unlinked.accessJwt}` } })).status, 404)
+})
+
+test('admin mail: support sees support@ only, admin sees all; read/reply audited; noreply send refused', async () => {
+  const app = makeApp()
+  mailSent = []
+  const support = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }
+  assert.equal((await app.request('/api/admin/mail/boxes')).status, 401)
+  assert.deepEqual((await (await app.request('/api/admin/mail/boxes', { headers: support })).json()).boxes, ['support'])
+  assert.deepEqual((await (await app.request('/api/admin/mail/boxes', { headers: admin })).json()).boxes, ['support', 'legal', 'noreply'])
+
+  assert.equal((await app.request('/api/admin/mail/legal/messages', { headers: support })).status, 403, 'legal@ — только admin')
+  assert.equal((await app.request('/api/admin/mail/other/messages', { headers: admin })).status, 404)
+  const list = await (await app.request('/api/admin/mail/support/messages', { headers: support })).json()
+  assert.equal(list.messages[0].subject, 'Вопрос в support')
+  const msg = await (await app.request('/api/admin/mail/support/messages/1', { headers: support })).json()
+  assert.equal(msg.text, 'Здравствуйте')
+  assert.equal((await app.request('/api/admin/mail/support/messages/9', { headers: support })).status, 404)
+
+  const att = await app.request('/api/admin/mail/support/messages/1/attachments/0', { headers: support })
+  assert.equal(att.headers.get('content-type'), 'application/octet-stream')
+  assert.match(att.headers.get('content-disposition')!, /^attachment; filename\*=UTF-8''/)
+
+  const reply = await app.request('/api/admin/mail/support/send', { method: 'POST', headers: support, body: JSON.stringify({ to: 'reader@example.com', subject: 'Re: Вопрос', text: 'Ответ', replyToUid: 1 }) })
+  assert.equal(reply.status, 201)
+  assert.deepEqual(mailSent, [{ box: 'support', to: 'reader@example.com', subject: 'Re: Вопрос', inReplyTo: '<m1-support@example.com>' }])
+  assert.equal((await app.request('/api/admin/mail/support/send', { method: 'POST', headers: support, body: JSON.stringify({ to: 'bad', subject: 'x', text: 'y' }) })).status, 400)
+  assert.equal((await app.request('/api/admin/mail/noreply/send', { method: 'POST', headers: admin, body: JSON.stringify({ to: 'a@b.co', subject: 'x', text: 'y' }) })).status, 400)
+  const actions = auditLog.map((e) => e.action)
+  assert.ok(actions.includes('mail.read') && actions.includes('mail.reply') && actions.includes('mail.attachment'))
 })
 
 test('atproto: ru contour never registers', async () => {

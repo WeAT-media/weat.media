@@ -27,6 +27,12 @@ const Env = z.object({
   LAVA_WEBHOOK_SECRET: z.string().min(16).max(80).optional(),
   LAVA_API_URL: z.string().url().default('https://gate.lava.top'),
   /** Zitadel — вход сотрудников (и далее читателей). ISSUER — публичный адрес, JWKS_URL — внутренний (docker) */
+  /** почта площадки в админке (deploy/mail): пароли ящиков; ящик без пароля в /admin/email не виден */
+  MAIL_DOMAIN: z.string().default('weat.media'),
+  MAIL_HOST: z.string().default('mail.weat.media'),
+  MAILBOX_SUPPORT_PASSWORD: z.string().optional(),
+  MAILBOX_LEGAL_PASSWORD: z.string().optional(),
+  MAILBOX_NOREPLY_PASSWORD: z.string().optional(),
   ZITADEL_ISSUER: z.string().url().optional(),
   ZITADEL_PROJECT_ID: z.string().optional(),
   ZITADEL_JWKS_URL: z.string().url().optional(),
