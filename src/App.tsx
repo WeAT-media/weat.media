@@ -138,7 +138,7 @@ export default function App() {
             <Route path="/legal" element={<LegalIndexPage />} />
             <Route path="/purchase/:orderId" element={<PurchaseReturnPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
-            <Route path="/admin" element={<Navigate to="/admin/crawler" replace />} />
+            <Route path="/admin" element={<Navigate to="/admin/tickets" replace />} />
             <Route path="/legal/:slug" element={<LegalDocPage />} />
             <Route path="/shared-draft/:token" element={<SharedDraftPage />} />
             <Route path="*" element={<Feed />} />
