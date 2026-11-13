@@ -824,11 +824,11 @@ export default function ArticlePage() {
                   ) : (
                     <Block block={b} id={tocItems.find((t) => t.index === i)?.id} />
                   )}
-                  {i === 2 && <AdBanner />}
+                  {i === 2 && <AdBanner articleUri={article.atUri} />}
                 </div>
               ))}
               </div>
-              {visibleBlocks.length < 3 && <AdBanner />}
+              {visibleBlocks.length < 3 && <AdBanner articleUri={article.atUri} />}
               {article.paywall && (
                 <Paywall
                   article={article}

@@ -1,7 +1,24 @@
 import { useState, type FormEvent } from 'react'
-import { ImagePlus, Trash2 } from 'lucide-react'
+import { ImagePlus, Pin, Trash2 } from 'lucide-react'
+import { Link } from 'react-router'
 import { AdView } from '@/components/AdBanner'
-import { AD_IMAGE_MAX_BYTES, loadAds, readImageFile, safeAdImageSrc, saveAds, type AdCreative } from '@/lib/ads'
+import { useStore } from '@/lib/store'
+import { countryLabel } from '@/lib/api'
+import {
+  AD_IMAGE_MAX_BYTES,
+  AD_STATUS_LABEL,
+  BASE_CPM,
+  HIDE_FROM_BOARD_MARKUP,
+  PIN_MULTIPLIER,
+  adPrice,
+  loadAds,
+  needsErid,
+  readImageFile,
+  safeAdImageSrc,
+  saveAds,
+  type AdCreative,
+  type AdStatus,
+} from '@/lib/ads'
 import { safeHref } from '@/lib/safeUrl'
 
 const inputCls =
@@ -9,11 +26,30 @@ const inputCls =
 
 const newErid = () => `2Vtz${Math.random().toString(36).slice(2, 9).toUpperCase()}`
 
-/** Креативы: текст, ссылка, картинка или GIF; предпросмотр — тот же баннер, что увидят читатели */
-export default function AdCreativeEditor() {
+/** «RU, kz ge» → ['RU', 'KZ', 'GE']; мусор отбрасываем */
+const parseCountries = (raw: string) => [...new Set(raw.toUpperCase().split(/[\s,;]+/).filter((c) => /^[A-Z]{2}$/.test(c)))]
+
+const blank = (advertiser: string): AdCreative => ({
+  id: `ad-${Date.now()}`,
+  advertiser,
+  title: '',
+  text: '',
+  url: 'https://',
+  cta: 'Перейти',
+  status: 'running',
+  geo: { residence: [], registration: [] },
+  hiddenFromBoard: false,
+  createdAt: new Date().toISOString(),
+})
+
+/** Креативы: текст, ссылка, картинка или GIF, гео, маркировка; предпросмотр — тот же баннер, что увидят читатели */
+export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCreative[]) => void }) {
+  const { articles } = useStore()
   const [ads, setAds] = useState<AdCreative[]>(loadAds)
   const [draft, setDraft] = useState<AdCreative>(() => ads[0]!)
   const [imageUrl, setImageUrl] = useState('')
+  const [residence, setResidence] = useState(draft.geo.residence.join(', '))
+  const [registration, setRegistration] = useState(draft.geo.registration.join(', '))
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
 
@@ -21,6 +57,20 @@ export default function AdCreativeEditor() {
     setDraft((d) => ({ ...d, ...p }))
     setSaved(false)
   }
+  const open = (a: AdCreative) => {
+    setDraft(a)
+    setResidence(a.geo.residence.join(', '))
+    setRegistration(a.geo.registration.join(', '))
+    setImageUrl('')
+    setError('')
+    setSaved(false)
+  }
+
+  const geo = { residence: parseCountries(residence), registration: parseCountries(registration) }
+  const marked = needsErid(geo)
+  const price = adPrice(draft)
+  // закрепить можно за постом из индекса: закрепление уходит в его запись в PDS
+  const pinnable = articles.filter((a) => a.fromIndex && a.atUri)
 
   const pickFile = async (file: File | undefined) => {
     if (!file) return
@@ -44,20 +94,16 @@ export default function AdCreativeEditor() {
     e.preventDefault()
     if (!safeHref(draft.url) || !/^https?:/.test(draft.url)) return setError('Ссылка объявления — https://…')
     if (draft.image && !draft.image.alt.trim()) return setError('Опишите картинку (альтернативный текст)')
-    if (!draft.advertiser.trim()) return setError('Укажите рекламодателя — это обязательная часть маркировки')
+    if (!draft.advertiser.trim()) return setError('Укажите рекламодателя')
+    if (marked && !draft.erid?.trim()) return setError('Показ в РФ: нужен erid (маркировка по 38-ФЗ). Получите его в ОРД или уберите РФ из гео')
     setError('')
-    // показывается один креатив: активный выключает остальные
-    const next = ads.some((a) => a.id === draft.id) ? ads.map((a) => (a.id === draft.id ? draft : a)) : [draft, ...ads]
-    const list = draft.active ? next.map((a) => ({ ...a, active: a.id === draft.id })) : next
+    const next: AdCreative = { ...draft, geo, ...(marked ? {} : { erid: undefined }) }
+    const list = ads.some((a) => a.id === next.id) ? ads.map((a) => (a.id === next.id ? next : a)) : [next, ...ads]
     setAds(list)
     saveAds(list)
+    onChange?.(list)
+    setDraft(next)
     setSaved(true)
-  }
-
-  const create = () => {
-    setDraft({ id: `ad-${Date.now()}`, erid: newErid(), advertiser: draft.advertiser, title: '', text: '', url: 'https://', cta: 'Перейти', active: true })
-    setImageUrl('')
-    setSaved(false)
   }
 
   return (
@@ -66,11 +112,11 @@ export default function AdCreativeEditor() {
         <h2 id="creative-h" className="text-xl font-extrabold tracking-tight">Креатив</h2>
         <div className="flex flex-wrap gap-2">
           {ads.map((a) => (
-            <button key={a.id} type="button" onClick={() => { setDraft(a); setSaved(false) }} className={`btn-ghost !px-3 !py-1.5 !text-[11px] ${a.id === draft.id ? '!border-accent !text-accent' : ''}`}>
-              {a.title || 'без названия'}{a.active ? ' · показ' : ''}
+            <button key={a.id} type="button" onClick={() => open(a)} className={`btn-ghost !px-3 !py-1.5 !text-[11px] ${a.id === draft.id ? '!border-accent !text-accent' : ''}`}>
+              {a.title || 'без названия'} · {AD_STATUS_LABEL[a.status].toLowerCase()}
             </button>
           ))}
-          <button type="button" onClick={create} className="btn-ghost !px-3 !py-1.5 !text-[11px]">+ Новый</button>
+          <button type="button" onClick={() => open(blank(draft.advertiser))} className="btn-ghost !px-3 !py-1.5 !text-[11px]">+ Новый</button>
         </div>
       </div>
 
@@ -117,11 +163,95 @@ export default function AdCreativeEditor() {
             )}
           </fieldset>
 
-          <label className="flex w-fit items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4 shrink-0" checked={draft.active} onChange={(e) => set({ active: e.target.checked })} />
-            Показывать в статьях
-          </label>
-          <p className="meta !normal-case tracking-normal">erid: {draft.erid}</p>
+          {/* гео: две страны читателя — можно задать одну, обе или ни одной */}
+          <fieldset className="grid gap-2 rounded-md border border-border p-3">
+            <legend className="px-1 text-sm font-semibold">
+              Гео · <Link to="/legal/register-and-residency" className="font-normal text-accent hover:underline">чем отличаются страны</Link>
+            </legend>
+            <label className="grid gap-1 text-sm">По стране резидентства
+              <input className={inputCls} value={residence} onChange={(e) => { setResidence(e.target.value); setSaved(false) }} placeholder="RU, KZ, GE — пусто: любая" />
+            </label>
+            <label className="grid gap-1 text-sm">По стране регистрации
+              <input className={inputCls} value={registration} onChange={(e) => { setRegistration(e.target.value); setSaved(false) }} placeholder="пусто: любая" />
+            </label>
+            <p className="meta !normal-case tracking-normal">
+              {geo.residence.length || geo.registration.length
+                ? [
+                    geo.residence.length ? `живут в: ${geo.residence.map((c) => countryLabel(c)).join(', ')}` : '',
+                    geo.registration.length ? `зарегистрированы в: ${geo.registration.map((c) => countryLabel(c)).join(', ')}` : '',
+                  ].filter(Boolean).join(' · и ')
+                : 'показ во всех странах'}
+              . Гостям без аккаунта — по стране IP как резидентства; страны регистрации у них нет.
+            </p>
+          </fieldset>
+
+          {/* маркировка: только если креатив может показаться в РФ */}
+          {marked ? (
+            <div className="grid gap-1 rounded-md border border-accent/50 p-3">
+              <label className="grid gap-1 text-sm font-semibold">erid — обязателен: показ в РФ (38-ФЗ «О рекламе»)
+                <div className="flex gap-2">
+                  <input className={inputCls} value={draft.erid ?? ''} onChange={(e) => set({ erid: e.target.value.trim() })} placeholder="токен из ОРД" maxLength={64} />
+                  <button type="button" onClick={() => set({ erid: newErid() })} className="btn-ghost shrink-0 !px-3 !py-1.5 !text-[11px]">Демо-токен</button>
+                </div>
+              </label>
+              <p className="meta !normal-case tracking-normal">Гео не задано или включает RU — креатив может попасть в РФ.</p>
+            </div>
+          ) : (
+            <p className="meta !normal-case tracking-normal">Показ вне РФ — erid и маркировка по 38-ФЗ не нужны.</p>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-sm font-semibold">Статус
+              <select className={inputCls} value={draft.status} onChange={(e) => set({ status: e.target.value as AdStatus })}>
+                {(Object.keys(AD_STATUS_LABEL) as AdStatus[]).map((s) => (
+                  <option key={s} value={s}>{AD_STATUS_LABEL[s]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <input type="checkbox" className="h-4 w-4 shrink-0" checked={draft.hiddenFromBoard} onChange={(e) => set({ hiddenFromBoard: e.target.checked })} />
+              Скрыть с общей доски · +{HIDE_FROM_BOARD_MARKUP * 100}%
+            </label>
+          </div>
+
+          {/* закрепление: запись в PDS поста — поэтому ×200 */}
+          <fieldset className="grid gap-2 rounded-md border border-border p-3">
+            <legend className="inline-flex items-center gap-1 px-1 text-sm font-semibold">
+              <Pin size={12} aria-hidden="true" /> Закрепить за постом · ×{PIN_MULTIPLIER}
+            </legend>
+            <select
+              className={inputCls}
+              value={draft.pinnedTo?.uri ?? ''}
+              onChange={(e) => {
+                const a = pinnable.find((x) => x.atUri === e.target.value)
+                set({ pinnedTo: a ? { uri: a.atUri!, title: a.title } : undefined })
+              }}
+            >
+              <option value="">Не закреплять — показ по гео в любых статьях</option>
+              {pinnable.map((a) => (
+                <option key={a.atUri} value={a.atUri}>{a.title}</option>
+              ))}
+            </select>
+            <p className="meta !normal-case tracking-normal">
+              Почему ×{PIN_MULTIPLIER}: закрепление пишется в саму запись поста в репозитории автора (PDS). Запись публична,
+              её копии расходятся по ретрансляторам и индексам сети — отозвать полностью нельзя. Это бессрочное размещение,
+              а не показ на время. Автор поста подтверждает закрепление.
+            </p>
+          </fieldset>
+
+          <div className="rounded-md bg-secondary/60 p-3 text-sm">
+            <p>
+              Ставка: <b>{price.cpm.toLocaleString('ru-RU')} ₽</b> за 1000 показов
+              {draft.hiddenFromBoard && <span className="text-muted-foreground"> (база {BASE_CPM} ₽ + {HIDE_FROM_BOARD_MARKUP * 100}% за скрытие с доски)</span>}
+            </p>
+            {price.pin !== null && (
+              <p className="mt-1">
+                Закрепление за постом: <b>{price.pin.toLocaleString('ru-RU')} ₽</b> разово ({BASE_CPM} ₽ × {PIN_MULTIPLIER})
+              </p>
+            )}
+            <p className="meta mt-1 !normal-case tracking-normal">демо-кабинет: списаний нет</p>
+          </div>
+
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="flex items-center gap-3">
             <button type="submit" className="btn-primary">Сохранить</button>
@@ -131,7 +261,7 @@ export default function AdCreativeEditor() {
 
         <div>
           <p className="meta">Предпросмотр — так увидят читатели</p>
-          <AdView key={`${draft.id}-${draft.image?.src.length ?? 0}`} ad={draft} />
+          <AdView key={`${draft.id}-${draft.image?.src.length ?? 0}`} ad={{ ...draft, ...(marked ? {} : { erid: undefined }) }} />
         </div>
       </div>
     </section>

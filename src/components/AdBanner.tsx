@@ -1,13 +1,37 @@
-import { useMemo, useState } from 'react'
-import { Megaphone, Pause, Play } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Megaphone, Pause, Pin, Play } from 'lucide-react'
 import { useStore } from '@/lib/store'
-import { loadAds, safeAdImageSrc, type AdCreative } from '@/lib/ads'
+import { api } from '@/lib/api'
+import { isLive, loadAds, matchesGeo, safeAdImageSrc, type AdCreative } from '@/lib/ads'
 import { safeHref } from '@/lib/safeUrl'
 
-/** Рекламный слот. Premium-пользователи рекламу не видят вообще. */
-export default function AdBanner() {
-  const { isPremium } = useStore()
-  const ad = useMemo(() => loadAds().find((a) => a.active), [])
+/** страна гостя по IP — одна на вкладку (у гостя нет страны регистрации) */
+let geoOnce: Promise<string | undefined> | null = null
+
+/**
+ * Рекламный слот. Premium-пользователи рекламу не видят вообще.
+ * articleUri — пост: закреплённый за ним креатив важнее остальных; закреплённые в других постах не показываем.
+ */
+export default function AdBanner({ articleUri }: { articleUri?: string }) {
+  const { isPremium, user } = useStore()
+  const [guestCountry, setGuestCountry] = useState<string | undefined>()
+  useEffect(() => {
+    if (user) return
+    geoOnce ??= api.geo().then((g) => g.country, () => undefined)
+    let alive = true
+    geoOnce.then((c) => alive && setGuestCountry(c))
+    return () => {
+      alive = false
+    }
+  }, [user])
+  const viewer = user ? { residence: user.residenceCountry ?? user.signupCountry, registration: user.signupCountry } : { residence: guestCountry }
+  const ad = useMemo(() => {
+    const live = loadAds().filter(isLive)
+    const pinned = articleUri ? live.find((a) => a.pinnedTo?.uri === articleUri) : undefined
+    return pinned ?? live.find((a) => !a.pinnedTo && matchesGeo(a.geo, viewer))
+    // viewer — из стора и ответа geo: пересчёт по их значениям
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articleUri, viewer.residence, viewer.registration])
   if (isPremium || !ad) return null
   return <AdView ad={ad} />
 }
@@ -25,6 +49,11 @@ export function AdView({ ad }: { ad: AdCreative }) {
       <p className="meta flex flex-wrap items-center gap-2">
         <Megaphone size={12} className="text-accent" aria-hidden="true" />
         Реклама
+        {ad.pinnedTo && (
+          <span className="inline-flex items-center gap-1">
+            · <Pin size={10} aria-hidden="true" /> закреплено за постом
+          </span>
+        )}
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-5">
         {src && ad.image && (
@@ -53,9 +82,11 @@ export function AdView({ ad }: { ad: AdCreative }) {
           </a>
         )}
       </div>
-      {/* служебное: маркировка обязательна, но не должна спорить с объявлением */}
+      {/* служебное: маркировка (если показ в РФ) не должна спорить с объявлением */}
       <p className="mt-4 text-[10px] leading-snug text-muted-foreground/70">
-        {ad.advertiser} · erid: {ad.erid} · Реклама помогает поддерживать инфраструктуру; в Premium её нет.
+        {ad.advertiser}
+        {ad.erid && <> · erid: {ad.erid} · маркировка по 38-ФЗ «О рекламе»</>}
+        {' · '}Реклама помогает поддерживать инфраструктуру; в Premium её нет.
       </p>
     </aside>
   )

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, BadgePercent, Eye, LineChart, Plus, ShieldCheck, Users } from 'lucide-react'
+import { ArrowLeft, BadgePercent, Eye, EyeOff, LineChart, Pin, Plus, Users } from 'lucide-react'
 import {
   LineChart as RLineChart,
   Line,
@@ -14,6 +14,9 @@ import {
 import { useStore } from '@/lib/store'
 import Reveal from '@/components/Reveal'
 import AdCreativeEditor from '@/components/AdCreativeEditor'
+import { AdView } from '@/components/AdBanner'
+import { countryLabel } from '@/lib/api'
+import { AD_STATUS_LABEL, loadAds, needsErid, type AdCreative, type AdStatus } from '@/lib/ads'
 
 const ctrSeries = [
   { day: 'Пн', ctr: 1.8, retention: 42 },
@@ -31,7 +34,8 @@ interface Campaign {
   spent: number
   clicks: number
   ctr: string
-  erid: string
+  /** нет — кампания вне РФ, маркировка не нужна */
+  erid?: string
 }
 
 const seedCampaigns: Campaign[] = [
@@ -39,10 +43,23 @@ const seedCampaigns: Campaign[] = [
   { id: 'ad2', name: 'Облачный CI для студий', spent: 8300, clicks: 1490, ctr: '1.8%', erid: '2VtzxP4MNd2' },
 ]
 
-/** Рекламный кабинет: кампании, метрики CTR/удержания, маркировка рекламы */
+const geoSummary = (a: AdCreative) => {
+  const parts = [
+    a.geo.residence.length ? `живут: ${a.geo.residence.map((c) => countryLabel(c)).join(', ')}` : '',
+    a.geo.registration.length ? `рег.: ${a.geo.registration.map((c) => countryLabel(c)).join(', ')}` : '',
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'все страны'
+}
+
+/** Рекламный кабинет: кампании, метрики CTR/удержания, история креативов и публичная доска */
 export default function AdsPage() {
   const { isPremium } = useStore()
   const [campaigns, setCampaigns] = useState<Campaign[]>(seedCampaigns)
+  const [ads, setAds] = useState<AdCreative[]>(loadAds)
+  const [filter, setFilter] = useState<AdStatus | 'all'>('all')
+  const history = [...ads].filter((a) => filter === 'all' || a.status === filter).sort((x, y) => y.createdAt.localeCompare(x.createdAt))
+  // доска видна всем: креативы, кроме скрытых за доплату
+  const board = ads.filter((a) => !a.hiddenFromBoard)
 
   const addCampaign = () => {
     const n = campaigns.length + 1
@@ -53,7 +70,6 @@ export default function AdsPage() {
         spent: 0,
         clicks: 0,
         ctr: '—',
-        erid: `2Vtz${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
       },
       ...campaigns,
     ])
@@ -72,8 +88,8 @@ export default function AdsPage() {
           <p className="meta mt-6">Рекламный кабинет</p>
           <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">Реклама</h1>
           <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
-            Метрики BigData-движка: CTR креативов и удержание аудитории. Вся реклама маркируется по 38-ФЗ
-            «О рекламе» (erid), Premium-пользователи рекламу не видят вовсе.
+            CTR креативов, удержание аудитории, гео по стране резидентства и регистрации. Premium-читатели рекламу не
+            видят.
           </p>
         </div>
         <button onClick={addCampaign} className="btn-primary">
@@ -132,8 +148,7 @@ export default function AdsPage() {
       <Reveal className="mt-8">
         <table className="w-full text-left text-[15px]">
           <caption className="meta pb-3 text-left">
-            <ShieldCheck size={11} className="mr-1 inline text-accent" aria-hidden="true" />
-            Кампании · все объявления снабжены erid и пометкой «Реклама»
+            Кампании · пометка «Реклама» — у всех, erid — у показов в РФ
           </caption>
           <thead>
             <tr className="rule">
@@ -151,7 +166,7 @@ export default function AdsPage() {
                 <td className="py-3.5 pr-4">{c.spent.toLocaleString('ru-RU')} ₽</td>
                 <td className="py-3.5 pr-4">{c.clicks.toLocaleString('ru-RU')}</td>
                 <td className="py-3.5 pr-4">{c.ctr}</td>
-                <td className="py-3.5 font-mono text-[12px] text-muted-foreground">{c.erid}</td>
+                <td className="py-3.5 font-mono text-[12px] text-muted-foreground">{c.erid ?? 'вне РФ'}</td>
               </tr>
             ))}
           </tbody>
@@ -161,7 +176,72 @@ export default function AdsPage() {
         )}
       </Reveal>
 
-      <AdCreativeEditor />
+      <AdCreativeEditor onChange={setAds} />
+
+      {/* история креативов */}
+      <Reveal className="mt-10">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-extrabold tracking-tight">История креативов</h2>
+          <div role="group" aria-label="Статус" className="flex flex-wrap rounded-full border border-border bg-secondary/60 p-0.5">
+            {(['all', 'running', 'paused', 'prolonged', 'finished'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                aria-pressed={filter === s}
+                onClick={() => setFilter(s)}
+                className={`cursor-pointer rounded-full px-3 py-1 font-mono text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  filter === s ? 'bg-primary text-primary-foreground' : 'text-foreground hover:text-accent'
+                }`}
+              >
+                {s === 'all' ? `Все · ${ads.length}` : `${AD_STATUS_LABEL[s]} · ${ads.filter((a) => a.status === s).length}`}
+              </button>
+            ))}
+          </div>
+        </div>
+        {history.length === 0 ? (
+          <p className="rule mt-4 py-8 text-sm text-muted-foreground">Креативов с таким статусом нет.</p>
+        ) : (
+          <ul className="mt-4">
+            {history.map((a) => (
+              <li key={a.id} className="rule flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3.5">
+                <span className="min-w-0">
+                  <span className="font-semibold">{a.title || 'без названия'}</span>
+                  <span className="meta ml-2 !normal-case tracking-normal">
+                    {a.advertiser} · {geoSummary(a)}
+                    {a.pinnedTo && <> · <Pin size={10} className="inline" aria-hidden="true" /> {a.pinnedTo.title}</>}
+                    {a.hiddenFromBoard && <> · <EyeOff size={10} className="inline" aria-hidden="true" /> скрыт с доски</>}
+                  </span>
+                </span>
+                <span className="meta shrink-0">
+                  {needsErid(a.geo) ? `erid ${a.erid ?? '— нужен!'}` : 'вне РФ'} ·{' '}
+                  <span className={a.status === 'running' || a.status === 'prolonged' ? 'text-accent' : ''}>{AD_STATUS_LABEL[a.status]}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Reveal>
+
+      {/* публичная доска: прозрачность — кто и что рекламирует */}
+      <Reveal className="mt-10">
+        <h2 className="text-xl font-extrabold tracking-tight">Доска креативов</h2>
+        <p className="mt-1 max-w-[64ch] text-sm text-muted-foreground">
+          Видна всем: кто и что рекламирует на площадке. Креатив можно скрыть с доски за доплату — в статьях он
+          показывается как обычно.
+        </p>
+        {board.length === 0 ? (
+          <p className="rule mt-4 py-8 text-sm text-muted-foreground">На доске пока пусто.</p>
+        ) : (
+          <div className="mt-2 grid gap-x-6 md:grid-cols-2">
+            {board.map((a) => (
+              <div key={a.id}>
+                <p className="meta mt-6">{AD_STATUS_LABEL[a.status]} · {geoSummary(a)}</p>
+                <AdView ad={a} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Reveal>
     </div>
   )
 }
