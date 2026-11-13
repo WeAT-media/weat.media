@@ -423,7 +423,7 @@ export default function ComposePage() {
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
           Запись уйдёт в ваш репозиторий — её нельзя отредактировать задним числом без следа и нельзя удалить
           «сверху». Монетизация честная: 90%* с каждой продажи — вам (с Premium — 99%*), остальное — на инфраструктуру
-          площадки. <span className="text-[12px]">{FEE_NOTE}</span>
+          площадки. <span className="block text-[10px] leading-snug">{FEE_NOTE}</span>
         </p>
       </div>
 
@@ -762,7 +762,7 @@ export default function ComposePage() {
                   <DialogTitle>Выплаты не настроены</DialogTitle>
                   <DialogDescription>
                     Платные посты доступны авторам только после подключения реквизитов выплат — 90%* каждой
-                    продажи (с Premium — 99%*) уходит на них. {FEE_NOTE}. Это локальный демо-мок: платежей и реальных провайдеров нет.
+                    продажи (с Premium — 99%*) уходит на них. <span className="block text-[10px] leading-snug">{FEE_NOTE}</span> Это локальный демо-мок: платежей и реальных провайдеров нет.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-wrap gap-3">

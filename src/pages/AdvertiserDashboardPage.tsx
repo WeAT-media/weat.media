@@ -1,48 +1,55 @@
+import { useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, LineChart, Lock, Pause, Play, Wallet } from 'lucide-react'
+import { ArrowLeft, Check, Clock, LineChart, Lock, Pencil, Pin, Plus } from 'lucide-react'
 import Reveal from '@/components/Reveal'
+import { AdView } from '@/components/AdBanner'
 import { useStore } from '@/lib/store'
+import { countryLabel } from '@/lib/api'
+import {
+  AD_AUDIENCE_LABEL,
+  AD_STATUSES,
+  AD_STATUS_LABEL,
+  PIN_APPROVAL_LABEL,
+  acceptCounter,
+  launched,
+  loadAds,
+  saveAds,
+  type AdCreative,
+} from '@/lib/ads'
 
-type CampaignStatus = 'active' | 'paused' | 'done'
+const rub = (n: number) => `${n.toLocaleString('ru-RU')} ₽`
+const when = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
-interface DashboardCampaign {
-  id: string
-  name: string
-  status: CampaignStatus
-  budget: number
-  spent: number
-  clicks: number
-  impressions: number
+function scheduleLine(a: AdCreative): string | null {
+  const s = a.schedule
+  if (!s) return null
+  return [
+    s.startsAt && `с ${when(s.startsAt)}`,
+    s.endsAt && `до ${when(s.endsAt)}`,
+    s.hours && `в ${String(s.hours.from).padStart(2, '0')}:00–${String(s.hours.to).padStart(2, '0')}:00`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
-const statusMeta: Record<CampaignStatus, { label: string; className: string }> = {
-  active: { label: 'Активна', className: 'border-accent/70 text-accent' },
-  paused: { label: 'На паузе', className: 'border-border text-muted-foreground' },
-  done: { label: 'Завершена', className: 'border-border text-muted-foreground' },
-}
-
-const campaigns: DashboardCampaign[] = [
-  { id: 'camp-1', name: 'Трекер задач для инженеров', status: 'active', budget: 30000, spent: 12400, clicks: 3120, impressions: 130000 },
-  { id: 'camp-2', name: 'Облачный CI для студий', status: 'paused', budget: 15000, spent: 8300, clicks: 1490, impressions: 82800 },
-  { id: 'camp-3', name: 'Курс по миграции на AT Protocol', status: 'done', budget: 20000, spent: 20000, clicks: 5140, impressions: 214000 },
-]
-
-function ctr(c: DashboardCampaign): string {
-  return `${((c.clicks / c.impressions) * 100).toFixed(1)}%`
-}
-
-function rub(n: number): string {
-  return `${n.toLocaleString('ru-RU')} ₽`
+function geoLine(a: AdCreative): string {
+  const parts = [
+    a.geo.residence.length ? `живут: ${a.geo.residence.map((c) => countryLabel(c)).join(', ')}` : '',
+    a.geo.registration.length ? `рег.: ${a.geo.registration.map((c) => countryLabel(c)).join(', ')}` : '',
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'все страны'
 }
 
 /**
- * Личный кабинет рекламодателя: обзор кампаний, бюджеты, CTR.
- * Демо-прототип: данные моковые, платежей и списаний нет.
+ * Кабинет рекламодателя: только для вошедших. Свои креативы — как их видят читатели, статусы и расписание;
+ * незапущенные можно править; закрепления — что ждёт согласования автора и что ждёт вашего ответа.
+ * Демо: креативы хранятся в этом браузере, списаний нет.
  */
 export default function AdvertiserDashboardPage() {
   const { user } = useStore()
+  const [ads, setAds] = useState<AdCreative[]>(loadAds)
 
-  // Кабинет только для авторизованных: гость видит auth gate, данные не отдаём
+  // гость видит только приглашение войти — креативы и суммы привязаны к аккаунту
   if (!user) {
     return (
       <div className="mx-auto max-w-[720px] px-5 py-24 text-center">
@@ -50,7 +57,7 @@ export default function AdvertiserDashboardPage() {
         <p className="meta mt-4">Личный кабинет рекламодателя</p>
         <h1 className="mt-4 text-3xl font-extrabold tracking-tight">Нужна авторизация</h1>
         <p className="mx-auto mt-3 max-w-[48ch] text-muted-foreground">
-          Бюджеты и статистика кампаний привязаны к аккаунту. Войдите — вернём вас сюда сразу после входа.
+          Креативы и закрепления привязаны к аккаунту. Войдите — вернём вас сюда сразу после входа.
         </p>
         <Link to="/login?returnTo=/ads/dashboard" className="btn-primary mt-8">
           Войти
@@ -59,9 +66,13 @@ export default function AdvertiserDashboardPage() {
     )
   }
 
-  const totalBudget = campaigns.reduce((s, c) => s + c.budget, 0)
-  const totalSpent = campaigns.reduce((s, c) => s + c.spent, 0)
-  const totalClicks = campaigns.reduce((s, c) => s + c.clicks, 0)
+  const mine = ads.filter((a) => a.owner === user.handle)
+  const pins = mine.filter((a) => a.pinnedTo && (a.pinnedTo.approval === 'pending' || a.pinnedTo.approval === 'countered'))
+  const accept = (a: AdCreative) => {
+    const next = ads.map((x) => (x.id === a.id ? acceptCounter(x) : x))
+    setAds(next)
+    saveAds(next)
+  }
 
   return (
     <div className="mx-auto max-w-[960px] px-5 pb-24 md:px-8">
@@ -73,69 +84,108 @@ export default function AdvertiserDashboardPage() {
           <ArrowLeft size={13} aria-hidden="true" /> Рекламодателям
         </Link>
         <p className="meta mt-8 flex items-center gap-1.5">
-          <LineChart size={12} aria-hidden="true" /> Кабинет · демо-данные, платежей нет
+          <LineChart size={12} aria-hidden="true" /> Кабинет · @{user.handle}
         </p>
         <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">Личный кабинет рекламодателя</h1>
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
-          Обзор ваших кампаний: статусы, бюджеты и CTR. Запуск и редактирование кампаний — на странице «Рекламодателям».
+          Ваши креативы так, как их видят читатели. Пока креатив не показывался, его можно править — например, сменить
+          картинку.
         </p>
+        <Link to="/ads" className="btn-primary mt-6">
+          <Plus size={14} aria-hidden="true" /> Новый креатив
+        </Link>
       </div>
 
-      <Reveal className="mt-10 grid gap-3 sm:grid-cols-3">
-        <div className="border border-border bg-secondary/40 p-5">
-          <p className="meta inline-flex items-center gap-1.5"><Wallet size={12} aria-hidden="true" /> Бюджет</p>
-          <p className="mt-2 text-2xl font-extrabold tracking-tight">{rub(totalBudget)}</p>
-          <p className="meta mt-1">израсходовано {rub(totalSpent)}</p>
-        </div>
-        <div className="border border-border bg-secondary/40 p-5">
-          <p className="meta">Клики</p>
-          <p className="mt-2 text-2xl font-extrabold tracking-tight">{totalClicks.toLocaleString('ru-RU')}</p>
-          <p className="meta mt-1">по всем кампаниям</p>
-        </div>
-        <div className="border border-border bg-secondary/40 p-5">
-          <p className="meta">Кампании</p>
-          <p className="mt-2 text-2xl font-extrabold tracking-tight">{campaigns.length}</p>
-          <p className="meta mt-1">активных: {campaigns.filter((c) => c.status === 'active').length}</p>
-        </div>
+      {/* сводка по статусам */}
+      <Reveal className="mt-10 flex flex-wrap gap-2">
+        {AD_STATUSES.map((s) => {
+          const n = mine.filter((a) => a.status === s).length
+          return n ? (
+            <span key={s} className="rounded-full border border-border px-3 py-1 font-mono text-[11px] font-semibold">
+              {AD_STATUS_LABEL[s]} · {n}
+            </span>
+          ) : null
+        })}
       </Reveal>
 
-      <div className="mt-10">
-        {campaigns.map((c) => {
-          const st = statusMeta[c.status]
-          const spentPct = Math.min(100, (c.spent / c.budget) * 100)
-          return (
-            <Reveal key={c.id}>
-              <article className="rule py-6 first:border-t-0">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-extrabold tracking-tight">{c.name}</h2>
-                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] ${st.className}`}>
-                    {c.status === 'active' ? <Play size={10} aria-hidden="true" /> : <Pause size={10} aria-hidden="true" />}
-                    {st.label}
+      {/* согласование закреплений */}
+      <Reveal className="mt-8 border border-border bg-secondary/40 p-5">
+        <h2 className="inline-flex items-center gap-2 font-mono text-[13px] font-bold uppercase tracking-[0.12em]">
+          <Pin size={13} aria-hidden="true" /> На согласовании · {pins.length}
+        </h2>
+        {pins.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">Закреплений, ждущих ответа, нет.</p>
+        ) : (
+          <ul className="mt-3">
+            {pins.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 py-3 text-sm last:border-b-0">
+                <span>
+                  <b>{a.title || 'без названия'}</b> → «{a.pinnedTo!.title}» у @{a.pinnedTo!.author}: вы предложили {rub(a.pinnedTo!.offer)}
+                  {a.pinnedTo!.approval === 'countered' && (
+                    <>
+                      , автор просит <b>{rub(a.pinnedTo!.counter!)}</b>
+                    </>
+                  )}
+                </span>
+                {a.pinnedTo!.approval === 'countered' ? (
+                  <span className="flex gap-2">
+                    <button type="button" onClick={() => accept(a)} className="btn-primary !px-3 !py-1.5 !text-[11px]">
+                      <Check size={12} aria-hidden="true" /> Принять {rub(a.pinnedTo!.counter!)}
+                    </button>
+                    <Link to={`/ads?edit=${a.id}`} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
+                      Изменить предложение
+                    </Link>
                   </span>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1">
-                  <span className="meta">Бюджет {rub(c.budget)}</span>
-                  <span className="meta">Потрачено {rub(c.spent)}</span>
-                  <span className="meta">CTR {ctr(c)}</span>
-                  <span className="meta">{c.impressions.toLocaleString('ru-RU')} показов</span>
-                </div>
-                <div
-                  className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-secondary"
-                  role="progressbar"
-                  aria-label={`Израсходовано ${Math.round(spentPct)}% бюджета`}
-                  aria-valuenow={Math.round(spentPct)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
-                  <div className="h-full bg-accent" style={{ width: `${spentPct}%` }} />
-                </div>
-              </article>
-            </Reveal>
-          )
-        })}
-      </div>
+                ) : (
+                  <span className="meta inline-flex items-center gap-1">
+                    <Clock size={11} aria-hidden="true" /> {PIN_APPROVAL_LABEL.pending}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Reveal>
 
-      <p className="meta mt-8">Демонстрационный кабинет прототипа: цифры моковые, списаний и платежей не происходит.</p>
+      {/* креативы */}
+      <section aria-label="Ваши креативы" className="mt-10">
+        <h2 className="text-xl font-extrabold tracking-tight">Ваши креативы · {mine.length}</h2>
+        {mine.length === 0 ? (
+          <p className="rule mt-4 py-8 text-sm text-muted-foreground">
+            У вас пока нет креативов. <Link to="/ads" className="text-accent hover:underline">Создайте первый</Link> — он появится здесь.
+          </p>
+        ) : (
+          mine.map((a) => {
+            const editable = !launched(a)
+            const sched = scheduleLine(a)
+            return (
+              <Reveal key={a.id}>
+                <article className="rule py-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="meta !normal-case tracking-normal">
+                      <b className="uppercase tracking-[0.06em] text-foreground">{AD_STATUS_LABEL[a.status]}</b> · {AD_AUDIENCE_LABEL[a.audience]} · {geoLine(a)}
+                      {sched && ` · ${sched}`}
+                      {a.pinnedTo && ` · закрепление: ${PIN_APPROVAL_LABEL[a.pinnedTo.approval]}`}
+                    </p>
+                    {editable ? (
+                      <Link to={`/ads?edit=${a.id}`} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
+                        <Pencil size={12} aria-hidden="true" /> Редактировать
+                      </Link>
+                    ) : (
+                      <span className="meta inline-flex items-center gap-1" title="Креатив уже показывался — содержимое закрыто">
+                        <Lock size={11} aria-hidden="true" /> уже показывался{a.launchedAt && ` · с ${when(a.launchedAt)}`}
+                      </span>
+                    )}
+                  </div>
+                  <AdView ad={a} />
+                </article>
+              </Reveal>
+            )
+          })
+        )}
+      </section>
+
+      <p className="meta mt-8">Демо-кабинет: креативы хранятся в этом браузере, списаний и платежей нет.</p>
     </div>
   )
 }

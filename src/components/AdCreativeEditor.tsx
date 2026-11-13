@@ -8,6 +8,7 @@ import { useStore } from '@/lib/store'
 import { countryLabel } from '@/lib/api'
 import {
   AD_IMAGE_MAX_BYTES,
+  AD_AUDIENCE_LABEL,
   AD_STATUS_LABEL,
   BASE_CPM,
   HIDE_FROM_BOARD_MARKUP,
@@ -15,11 +16,13 @@ import {
   acceptCounter,
   PIN_APPROVAL_LABEL,
   adPrice,
+  launched,
   loadAds,
   needsErid,
   readImageFile,
   safeAdImageSrc,
   saveAds,
+  type AdAudience,
   type AdCreative,
   type AdStatus,
 } from '@/lib/ads'
@@ -30,6 +33,16 @@ const inputCls =
 
 const newErid = () => `2Vtz${Math.random().toString(36).slice(2, 9).toUpperCase()}`
 
+const HOURS = Array.from({ length: 24 }, (_, h) => h)
+
+/** ISO ↔ значение datetime-local (местное время, без секунд) */
+const toLocalInput = (iso?: string) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : undefined)
+
 const blank = (advertiser: string): AdCreative => ({
   id: `ad-${Date.now()}`,
   advertiser,
@@ -37,17 +50,21 @@ const blank = (advertiser: string): AdCreative => ({
   text: '',
   url: 'https://',
   cta: 'Перейти',
-  status: 'running',
+  status: 'draft',
+  audience: 'all',
   geo: { residence: [], registration: [] },
   hiddenFromBoard: false,
   createdAt: new Date().toISOString(),
 })
 
 /** Креативы: текст, ссылка, картинка или GIF, гео, маркировка; предпросмотр — тот же баннер, что увидят читатели */
-export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCreative[]) => void }) {
-  const { articles } = useStore()
+/** initialId — открыть этот креатив (ссылка «Редактировать» из кабинета /ads/dashboard) */
+export default function AdCreativeEditor({ onChange, initialId }: { onChange?: (ads: AdCreative[]) => void; initialId?: string }) {
+  const { articles, user } = useStore()
   const [ads, setAds] = useState<AdCreative[]>(loadAds)
-  const [draft, setDraft] = useState<AdCreative>(() => ads[0]!)
+  const [draft, setDraft] = useState<AdCreative>(() => ads.find((a) => a.id === initialId) ?? ads[0]!)
+  // уже показывался — содержимое закрыто: маркировка и отчёты привязаны к нему; меняются статус и расписание
+  const locked = launched(draft)
   const [imageUrl, setImageUrl] = useState('')
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -92,10 +109,21 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
     if (!safeHref(draft.url) || !/^https?:/.test(draft.url)) return setError('Ссылка объявления — https://…')
     if (draft.image && !draft.image.alt.trim()) return setError('Опишите картинку (альтернативный текст)')
     if (!draft.advertiser.trim()) return setError('Укажите рекламодателя')
+    if (draft.status === 'scheduled' && !(draft.schedule?.startsAt && Date.parse(draft.schedule.startsAt) > Date.now()) && !locked)
+      return setError('«Запланирован»: укажите дату и время старта в будущем')
+    if (draft.schedule?.startsAt && draft.schedule.endsAt && draft.schedule.endsAt <= draft.schedule.startsAt) return setError('Окончание — позже старта')
     if (draft.pinnedTo && draft.pinnedTo.offer < MIN_PIN_OFFER) return setError(`Закрепление — от ${MIN_PIN_OFFER.toLocaleString('ru-RU')} ₽`)
     if (marked && !draft.erid?.trim()) return setError('Показ в РФ: нужен erid (маркировка по 38-ФЗ). Получите его в ОРД или уберите РФ из гео')
     setError('')
-    const next: AdCreative = { ...draft, geo, ...(marked ? {} : { erid: undefined }) }
+    // владелец — кто сохранил: креатив появится в его кабинете /ads/dashboard
+    const goesLive = (draft.status === 'running' || draft.status === 'prolonged') && !draft.launchedAt
+    const next: AdCreative = {
+      ...draft,
+      geo,
+      ...(draft.owner || !user ? {} : { owner: user.handle }),
+      ...(goesLive ? { launchedAt: new Date().toISOString() } : {}),
+      ...(marked ? {} : { erid: undefined }),
+    }
     const list = ads.some((a) => a.id === next.id) ? ads.map((a) => (a.id === next.id ? next : a)) : [next, ...ads]
     setAds(list)
     saveAds(list)
@@ -120,6 +148,13 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
 
       <div className="mt-6 grid gap-8 lg:grid-cols-2">
         <form onSubmit={save} className="grid gap-3">
+          {locked && (
+            <p className="rounded-md border border-border bg-secondary/60 p-3 text-sm">
+              Креатив уже показывался — текст, картинку и ссылку не поменять: к нему привязаны маркировка и отчёты.
+              Можно сменить статус и расписание или <button type="button" onClick={() => open(blank(draft.advertiser))} className="cursor-pointer font-semibold text-accent hover:underline">создать новый</button>.
+            </p>
+          )}
+          <fieldset disabled={locked} className="grid gap-3 disabled:opacity-60">
           <label className="grid gap-1 text-sm font-semibold">Рекламодатель
             <input className={inputCls} value={draft.advertiser} onChange={(e) => set({ advertiser: e.target.value })} placeholder="ООО «Ромашка», ИНН 7700000000" maxLength={120} required />
           </label>
@@ -161,6 +196,16 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
             )}
           </fieldset>
 
+          </fieldset>
+
+          <label className="grid gap-1 text-sm font-semibold">Кому показывать
+            <select className={inputCls} value={draft.audience} onChange={(e) => set({ audience: e.target.value as AdAudience })}>
+              {(Object.keys(AD_AUDIENCE_LABEL) as AdAudience[]).map((k) => (
+                <option key={k} value={k}>{AD_AUDIENCE_LABEL[k][0]!.toUpperCase() + AD_AUDIENCE_LABEL[k].slice(1)}</option>
+              ))}
+            </select>
+          </label>
+
           {/* гео: две страны читателя — можно задать одну, обе или ни одной */}
           <fieldset className="grid gap-2 rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-semibold">
@@ -199,6 +244,54 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
           ) : (
             <p className="meta !normal-case tracking-normal">Показ вне РФ — erid и маркировка по 38-ФЗ не нужны.</p>
           )}
+
+          {/* расписание: старт (для «Запланирован»), конец и часы показа по времени читателя */}
+          <fieldset className="grid gap-2 rounded-md border border-border p-3">
+            <legend className="px-1 text-sm font-semibold">Расписание — по желанию</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm">Старт
+                <input
+                  type="datetime-local"
+                  className={inputCls}
+                  disabled={locked}
+                  value={toLocalInput(draft.schedule?.startsAt)}
+                  onChange={(e) => set({ schedule: { ...draft.schedule, startsAt: fromLocalInput(e.target.value) } })}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">Окончание
+                <input
+                  type="datetime-local"
+                  className={inputCls}
+                  value={toLocalInput(draft.schedule?.endsAt)}
+                  onChange={(e) => set({ schedule: { ...draft.schedule, endsAt: fromLocalInput(e.target.value) } })}
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={!!draft.schedule?.hours}
+                  onChange={(e) => set({ schedule: { ...draft.schedule, hours: e.target.checked ? { from: 9, to: 18 } : undefined } })}
+                />
+                Только в часы
+              </label>
+              {draft.schedule?.hours && (
+                <>
+                  <select className={`${inputCls} !w-24`} aria-label="С какого часа" value={draft.schedule.hours.from} onChange={(e) => set({ schedule: { ...draft.schedule, hours: { ...draft.schedule!.hours!, from: Number(e.target.value) } } })}>
+                    {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
+                  </select>
+                  —
+                  <select className={`${inputCls} !w-24`} aria-label="До какого часа" value={draft.schedule.hours.to} onChange={(e) => set({ schedule: { ...draft.schedule, hours: { ...draft.schedule!.hours!, to: Number(e.target.value) } } })}>
+                    {HOURS.map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
+                  </select>
+                  <span className="meta !normal-case tracking-normal">по местному времени читателя</span>
+                </>
+              )}
+            </div>
+            <p className="meta !normal-case tracking-normal">Статус «Запланирован» включит показ сам, когда наступит старт.</p>
+          </fieldset>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm font-semibold">Статус

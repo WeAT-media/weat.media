@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { ArrowLeft, BadgePercent, Eye, EyeOff, LineChart, Pin, Plus, Users } from 'lucide-react'
 import {
   LineChart as RLineChart,
@@ -16,7 +16,7 @@ import Reveal from '@/components/Reveal'
 import AdCreativeEditor from '@/components/AdCreativeEditor'
 import { AdView } from '@/components/AdBanner'
 import { countryLabel } from '@/lib/api'
-import { AD_STATUSES, AD_STATUS_LABEL, PIN_APPROVAL_LABEL, loadAds, matchesGeo, needsErid, type AdCreative, type AdStatus } from '@/lib/ads'
+import { AD_AUDIENCE_LABEL, AD_STATUSES, AD_STATUS_LABEL, PIN_APPROVAL_LABEL, loadAds, matchesGeo, needsErid, type AdCreative, type AdStatus } from '@/lib/ads'
 import CountrySelect from '@/components/CountrySelect'
 
 const ctrSeries = [
@@ -55,6 +55,7 @@ const geoSummary = (a: AdCreative) => {
 /** Рекламный кабинет: кампании, метрики CTR/удержания, история креативов и публичная доска */
 export default function AdsPage() {
   const { isPremium } = useStore()
+  const [params] = useSearchParams()
   const [campaigns, setCampaigns] = useState<Campaign[]>(seedCampaigns)
   const [ads, setAds] = useState<AdCreative[]>(loadAds)
   const [filter, setFilter] = useState<AdStatus | 'all'>('all')
@@ -188,7 +189,7 @@ export default function AdsPage() {
         )}
       </Reveal>
 
-      <AdCreativeEditor onChange={setAds} />
+      <AdCreativeEditor onChange={setAds} initialId={params.get('edit') ?? undefined} />
 
       {/* история креативов */}
       <Reveal className="mt-10">
@@ -219,7 +220,7 @@ export default function AdsPage() {
                 <span className="min-w-0">
                   <span className="font-semibold">{a.title || 'без названия'}</span>
                   <span className="meta ml-2 !normal-case tracking-normal">
-                    {a.advertiser} · {geoSummary(a)}
+                    {a.advertiser} · {AD_AUDIENCE_LABEL[a.audience]} · {geoSummary(a)}
                     {a.pinnedTo && <> · <Pin size={10} className="inline" aria-hidden="true" /> {a.pinnedTo.title} ({PIN_APPROVAL_LABEL[a.pinnedTo.approval]})</>}
                     {a.hiddenFromBoard && <> · <EyeOff size={10} className="inline" aria-hidden="true" /> скрыт с доски</>}
                   </span>
@@ -279,7 +280,7 @@ export default function AdsPage() {
           <div className="mt-2 grid gap-x-6 md:grid-cols-2">
             {board.map((a) => (
               <div key={a.id}>
-                <p className="meta mt-6">{AD_STATUS_LABEL[a.status]} · {geoSummary(a)}</p>
+                <p className="meta mt-6">{AD_STATUS_LABEL[a.status]} · {AD_AUDIENCE_LABEL[a.audience]} · {geoSummary(a)}</p>
                 <AdView ad={a} />
               </div>
             ))}

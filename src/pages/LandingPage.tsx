@@ -4,6 +4,7 @@ import { useStore } from '@/lib/store'
 import { PerkCard, Press, Reveal, WordReveal } from '@/components/motion/Motion'
 import { AtomIcon, ClapperIcon, CrownRaysIcon, GavelIcon, PeopleIcon, ScaleIcon, SparkleIcon, WriteIcon } from '@/components/motion/AnimatedIcons'
 import { SITE_NAME } from '@/config/site'
+import FeeNote from '@/components/FeeNote'
 
 const features = [
   {
@@ -14,7 +15,8 @@ const features = [
   {
     icon: Landmark,
     title: 'Честная экономика: 90/10 и 99/1',
-    text: 'Платные посты и видео: 90%* каждой продажи — автору, 10% — инфраструктуре. Premium-автору — 99%*, площадке — 1%. У платного видео есть бесплатное превью, у платной статьи — тизер: покупка осознанная. * Без учёта комиссий платёжного провайдера и банков.',
+    text: 'Платные посты и видео: 90%* каждой продажи — автору, 10% — инфраструктуре. Premium-автору — 99%*, площадке — 1%. У платного видео есть бесплатное превью, у платной статьи — тизер: покупка осознанная.',
+    fee: true,
   },
   {
     icon: GavelIcon,
@@ -52,7 +54,8 @@ const steps = [
   {
     n: '3',
     title: 'Пишите и зарабатывайте',
-    text: 'Тексты, видео, курсы. 90%* с каждой продажи — вам, с Premium — 99%*. Выплаты на ваши реквизиты. * Без учёта комиссий платёжного провайдера и банков.',
+    text: 'Тексты, видео, курсы. 90%* с каждой продажи — вам, с Premium — 99%*. Выплаты на ваши реквизиты.',
+    fee: true,
   },
 ]
 
@@ -110,6 +113,7 @@ export default function LandingPage() {
               <p className="font-mono text-3xl font-bold text-accent">{s.n}</p>
               <h2 className="mt-3 text-lg font-extrabold tracking-tight">{s.title}</h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.text}</p>
+              {'fee' in s && s.fee && <FeeNote className="mt-2" />}
             </Reveal>
           ))}
         </div>
@@ -124,6 +128,7 @@ export default function LandingPage() {
               <f.icon size={36} className="text-accent" />
               <h2 className="mt-5 text-2xl font-extrabold leading-snug tracking-tight">{f.title}</h2>
               <p className="mt-3 text-base leading-relaxed text-muted-foreground">{f.text}</p>
+              {'fee' in f && f.fee && <FeeNote className="mt-2" />}
               {f.icon === SparkleIcon && (
                 <Link to="/premium" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
                   Подробнее о Premium <ArrowRight size={13} aria-hidden="true" />

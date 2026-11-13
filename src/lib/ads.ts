@@ -11,10 +11,15 @@ export interface AdImage {
   animated: boolean
 }
 
-/** история креатива: идёт, на паузе, продлена (новый срок после окончания), закреплён за постом, завершена */
-export type AdStatus = 'running' | 'paused' | 'prolonged' | 'pinned' | 'finished'
+/**
+ * история креатива: черновик, запланирован (старт по расписанию), идёт, на паузе, продлена
+ * (новый срок после окончания), закреплён за постом, завершена
+ */
+export type AdStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'prolonged' | 'pinned' | 'finished'
 
 export const AD_STATUS_LABEL: Record<AdStatus, string> = {
+  draft: 'Черновик',
+  scheduled: 'Запланирован',
   running: 'Идёт',
   paused: 'Пауза',
   prolonged: 'Продлена',
@@ -31,8 +36,20 @@ export interface AdGeo {
   registration: string[]
 }
 
+/** кому показывать: всем, только вошедшим или только гостям без аккаунта */
+export type AdAudience = 'all' | 'registered' | 'anonymous'
+
+export const AD_AUDIENCE_LABEL: Record<AdAudience, string> = {
+  all: 'всем',
+  registered: 'только зарегистрированным',
+  anonymous: 'только гостям',
+}
+
 export interface AdCreative {
   id: string
+  /** handle рекламодателя: его креативы — в кабинете /ads/dashboard */
+  owner?: string
+  audience: AdAudience
   /** идентификатор маркировки 38-ФЗ: обязателен, только если креатив может показаться в РФ (needsErid) */
   erid?: string
   /** рекламодатель: название или ИНН — обязательная часть маркировки */
@@ -46,6 +63,10 @@ export interface AdCreative {
   geo: AdGeo
   /** скрыть с публичной доски креативов (за доплату HIDE_FROM_BOARD_MARKUP) */
   hiddenFromBoard: boolean
+  /** когда показывать: старт (для «Запланирован»), конец и часы суток (по времени читателя) */
+  schedule?: AdSchedule
+  /** первый показ: после него содержимое креатива не меняется — маркировка и отчёты привязаны к нему */
+  launchedAt?: string
   /**
    * Закреплён за постом: показывается только в нём (цена — предложение рекламодателя, от MIN_PIN_OFFER). Закрепление пишется
    * в запись поста в PDS автора и бессрочно — поэтому нужно согласие автора: до него креатив в посте не показан
@@ -94,7 +115,7 @@ export function counterPin(list: AdCreative[], id: string, price: number, now = 
 /** рекламодатель принял цену автора — это и есть согласие обеих сторон: креатив «Закреплён» */
 export function acceptCounter(a: AdCreative, now = new Date()): AdCreative {
   if (!a.pinnedTo || a.pinnedTo.approval !== 'countered' || !a.pinnedTo.counter) return a
-  return { ...a, status: 'pinned', pinnedTo: { ...a.pinnedTo, offer: a.pinnedTo.counter, counter: undefined, approval: 'approved', decidedAt: now.toISOString() } }
+  return { ...a, status: 'pinned', launchedAt: a.launchedAt ?? now.toISOString(), pinnedTo: { ...a.pinnedTo, offer: a.pinnedTo.counter, counter: undefined, approval: 'approved', decidedAt: now.toISOString() } }
 }
 
 /** закреплённый креатив показывается только после согласия автора */
@@ -119,6 +140,11 @@ export function needsErid(geo: AdGeo): boolean {
 }
 
 /** читатель подходит под гео: страна резидентства и регистрации (у гостя — только страна по IP) */
+/** читатель подходит под аудиторию: вошёл ли он в аккаунт */
+export function matchesAudience(a: Pick<AdCreative, 'audience'>, signedIn: boolean): boolean {
+  return a.audience === 'all' || (a.audience === 'registered') === signedIn
+}
+
 export function matchesGeo(geo: AdGeo, viewer: { residence?: string; registration?: string }): boolean {
   const ok = (list: string[], c?: string) => list.length === 0 || (!!c && list.includes(c))
   return ok(geo.residence, viewer.residence) && ok(geo.registration, viewer.registration)
@@ -133,10 +159,39 @@ export function adPrice(ad: Pick<AdCreative, 'hiddenFromBoard' | 'pinnedTo'>): {
   }
 }
 
-export const isLive = (a: AdCreative) => a.status === 'running' || a.status === 'prolonged' || a.status === 'pinned'
+export interface AdSchedule {
+  /** ISO; у «Запланирован» — когда начать */
+  startsAt?: string
+  /** ISO; после — не показываем */
+  endsAt?: string
+  /** часы показа по местному времени читателя, [from, to) — 9..18 = с 09:00 до 18:00; from > to — через полночь */
+  hours?: { from: number; to: number }
+}
+
+/** в расписании ли сейчас: дата старта и конца, часы суток */
+export function inSchedule(s: AdSchedule | undefined, now = new Date()): boolean {
+  if (!s) return true
+  if (s.startsAt && Date.parse(s.startsAt) > now.getTime()) return false
+  if (s.endsAt && Date.parse(s.endsAt) <= now.getTime()) return false
+  if (s.hours) {
+    const h = now.getHours()
+    const { from, to } = s.hours
+    if (from !== to && !(from < to ? h >= from && h < to : h >= from || h < to)) return false
+  }
+  return true
+}
+
+/** показывается ли сейчас: статус «в эфире» (или подошёл старт запланированного) и расписание */
+export const isLive = (a: AdCreative, now = new Date()) =>
+  (a.status === 'running' || a.status === 'prolonged' || a.status === 'pinned' || (a.status === 'scheduled' && !!a.schedule?.startsAt)) &&
+  inSchedule(a.schedule, now)
+
+/** уже показывался: тогда содержимое закрыто для правок */
+export const launched = (a: AdCreative, now = new Date()) =>
+  !!a.launchedAt || (a.status === 'scheduled' && !!a.schedule?.startsAt && Date.parse(a.schedule.startsAt) <= now.getTime())
 
 /** порядок статусов в фильтрах */
-export const AD_STATUSES: AdStatus[] = ['running', 'paused', 'prolonged', 'pinned', 'finished']
+export const AD_STATUSES: AdStatus[] = ['draft', 'scheduled', 'running', 'paused', 'prolonged', 'pinned', 'finished']
 
 /**
  * Решение автора поста. Согласие — креатив «Закреплён» и показывается в посте; отказ — закрепление снимается,
@@ -148,6 +203,7 @@ export function decidePin(list: AdCreative[], id: string, approve: boolean, now 
       ? {
           ...a,
           status: approve ? 'pinned' : a.status === 'pinned' ? 'running' : a.status,
+          ...(approve && !a.launchedAt ? { launchedAt: now.toISOString() } : {}),
           pinnedTo: { ...a.pinnedTo, approval: approve ? 'approved' : 'rejected', decidedAt: now.toISOString() },
         }
       : a,
@@ -161,6 +217,7 @@ function normalize(a: AdCreative & { active?: boolean }): AdCreative {
     status: a.status ?? (a.active === false ? 'paused' : 'running'),
     geo: a.geo ?? { residence: [], registration: [] },
     hiddenFromBoard: a.hiddenFromBoard ?? false,
+    audience: a.audience ?? 'all',
     createdAt: a.createdAt ?? new Date(0).toISOString(),
     // закрепления до введения согласия — без автора: считаем, что согласия ещё нет
     ...(a.pinnedTo
@@ -185,6 +242,7 @@ export const DEFAULT_AD: AdCreative = {
   status: 'running',
   geo: { residence: [], registration: [] },
   hiddenFromBoard: false,
+  audience: 'all',
   createdAt: '2026-11-01T00:00:00.000Z',
 }
 
@@ -201,6 +259,7 @@ export const DEFAULT_ADS: AdCreative[] = [
     status: 'paused',
     geo: { residence: ['KZ', 'GE'], registration: [] },
     hiddenFromBoard: false,
+    audience: 'all',
     createdAt: '2026-11-05T00:00:00.000Z',
   },
   {
@@ -214,6 +273,7 @@ export const DEFAULT_ADS: AdCreative[] = [
     status: 'finished',
     geo: { residence: ['RU'], registration: ['RU'] },
     hiddenFromBoard: false,
+    audience: 'all',
     createdAt: '2026-10-01T00:00:00.000Z',
   },
 ]

@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store'
 import { SITE_NAME } from '@/config/site'
 import { PREMIUM_PRICE_RUB, PREMIUM_SALE_FEE_PCT, PREMIUM_VOTE_WEIGHT, SALE_FEE_PCT } from '@/config/premium'
 import { formatMoney } from '@/lib/money'
+import FeeNote from '@/components/FeeNote'
 import InteractiveVideo from '@/components/InteractiveVideo'
 import type { InteractiveVideo as IV } from '@/lib/interactiveVideo'
 
@@ -108,8 +109,10 @@ export default function PremiumPage() {
         <p className="meta inline-flex items-center gap-1.5 text-accent"><Crown size={12} aria-hidden="true" /> {SITE_NAME} Premium</p>
         <WordReveal text="Больше видно. Меньше отдаёте." className="mt-4 max-w-[18ch] text-5xl font-extrabold leading-[1.05] tracking-tight md:text-6xl" />
         <p className="mt-6 max-w-[60ch] text-lg leading-relaxed text-muted-foreground">
-          Аналитика без накруток, лента без рекламы и комиссия {PREMIUM_SALE_FEE_PCT}% с ваших продаж. {price} в месяц — отмена в любой момент.
+          Анонимная аналитика других авторов, лента без рекламы и комиссия {PREMIUM_SALE_FEE_PCT}%* с ваших продаж. {price} в месяц —
+          отмена в любой момент.
         </p>
+        <FeeNote className="mt-2" />
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <Press>{cta}</Press>
           <span className="meta">аккаунт и записи остаются вашими — Premium ничего не запирает</span>
