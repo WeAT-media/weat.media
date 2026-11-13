@@ -16,7 +16,8 @@ import Reveal from '@/components/Reveal'
 import AdCreativeEditor from '@/components/AdCreativeEditor'
 import { AdView } from '@/components/AdBanner'
 import { countryLabel } from '@/lib/api'
-import { AD_STATUS_LABEL, loadAds, needsErid, type AdCreative, type AdStatus } from '@/lib/ads'
+import { AD_STATUS_LABEL, loadAds, matchesGeo, needsErid, type AdCreative, type AdStatus } from '@/lib/ads'
+import CountrySelect from '@/components/CountrySelect'
 
 const ctrSeries = [
   { day: 'Пн', ctr: 1.8, retention: 42 },
@@ -58,8 +59,17 @@ export default function AdsPage() {
   const [ads, setAds] = useState<AdCreative[]>(loadAds)
   const [filter, setFilter] = useState<AdStatus | 'all'>('all')
   const history = [...ads].filter((a) => filter === 'all' || a.status === filter).sort((x, y) => y.createdAt.localeCompare(x.createdAt))
-  // доска видна всем: креативы, кроме скрытых за доплату
-  const board = ads.filter((a) => !a.hiddenFromBoard)
+  // доска видна всем: креативы, кроме скрытых за доплату. Фильтр — «что увидит читатель из этих стран»:
+  // сначала нацеленные именно на них, потом показы на все страны
+  const [boardResidence, setBoardResidence] = useState<string[]>([])
+  const [boardRegistration, setBoardRegistration] = useState<string[]>([])
+  const viewer = { residence: boardResidence[0], registration: boardRegistration[0] }
+  const targeted = (a: AdCreative) =>
+    (!!viewer.residence && a.geo.residence.includes(viewer.residence)) || (!!viewer.registration && a.geo.registration.includes(viewer.registration))
+  const board = ads
+    .filter((a) => !a.hiddenFromBoard)
+    .filter((a) => (!viewer.residence && !viewer.registration) || matchesGeo(a.geo, viewer))
+    .sort((x, y) => Number(targeted(y)) - Number(targeted(x)))
 
   const addCampaign = () => {
     const n = campaigns.length + 1
@@ -229,8 +239,25 @@ export default function AdsPage() {
           Видна всем: кто и что рекламирует на площадке. Креатив можно скрыть с доски за доплату — в статьях он
           показывается как обычно.
         </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-1 text-sm">
+            Читатель живёт в
+            <CountrySelect label="Страна резидентства читателя" placeholder="Любая страна" value={boardResidence} onChange={setBoardResidence} />
+          </div>
+          <div className="grid gap-1 text-sm">
+            Зарегистрирован в
+            <CountrySelect label="Страна регистрации читателя" placeholder="Любая страна" value={boardRegistration} onChange={setBoardRegistration} />
+          </div>
+        </div>
+        {(viewer.residence || viewer.registration) && (
+          <p className="meta mt-2 !normal-case tracking-normal">
+            Креативы, которые увидит такой читатель: сначала нацеленные на эти страны, затем показы на все страны.
+          </p>
+        )}
         {board.length === 0 ? (
-          <p className="rule mt-4 py-8 text-sm text-muted-foreground">На доске пока пусто.</p>
+          <p className="rule mt-4 py-8 text-sm text-muted-foreground">
+            {viewer.residence || viewer.registration ? 'Такому читателю сейчас ничего не показывается.' : 'На доске пока пусто.'}
+          </p>
         ) : (
           <div className="mt-2 grid gap-x-6 md:grid-cols-2">
             {board.map((a) => (

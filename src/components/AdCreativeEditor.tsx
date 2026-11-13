@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { ImagePlus, Pin, Trash2 } from 'lucide-react'
 import { Link } from 'react-router'
 import { AdView } from '@/components/AdBanner'
+import CountrySelect from '@/components/CountrySelect'
 import { useStore } from '@/lib/store'
 import { countryLabel } from '@/lib/api'
 import {
@@ -26,9 +27,6 @@ const inputCls =
 
 const newErid = () => `2Vtz${Math.random().toString(36).slice(2, 9).toUpperCase()}`
 
-/** «RU, kz ge» → ['RU', 'KZ', 'GE']; мусор отбрасываем */
-const parseCountries = (raw: string) => [...new Set(raw.toUpperCase().split(/[\s,;]+/).filter((c) => /^[A-Z]{2}$/.test(c)))]
-
 const blank = (advertiser: string): AdCreative => ({
   id: `ad-${Date.now()}`,
   advertiser,
@@ -48,8 +46,6 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
   const [ads, setAds] = useState<AdCreative[]>(loadAds)
   const [draft, setDraft] = useState<AdCreative>(() => ads[0]!)
   const [imageUrl, setImageUrl] = useState('')
-  const [residence, setResidence] = useState(draft.geo.residence.join(', '))
-  const [registration, setRegistration] = useState(draft.geo.registration.join(', '))
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
 
@@ -59,14 +55,12 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
   }
   const open = (a: AdCreative) => {
     setDraft(a)
-    setResidence(a.geo.residence.join(', '))
-    setRegistration(a.geo.registration.join(', '))
     setImageUrl('')
     setError('')
     setSaved(false)
   }
 
-  const geo = { residence: parseCountries(residence), registration: parseCountries(registration) }
+  const geo = draft.geo
   const marked = needsErid(geo)
   const price = adPrice(draft)
   // закрепить можно за постом из индекса: закрепление уходит в его запись в PDS
@@ -168,12 +162,14 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
             <legend className="px-1 text-sm font-semibold">
               Гео · <Link to="/legal/register-and-residency" className="font-normal text-accent hover:underline">чем отличаются страны</Link>
             </legend>
-            <label className="grid gap-1 text-sm">По стране резидентства
-              <input className={inputCls} value={residence} onChange={(e) => { setResidence(e.target.value); setSaved(false) }} placeholder="RU, KZ, GE — пусто: любая" />
-            </label>
-            <label className="grid gap-1 text-sm">По стране регистрации
-              <input className={inputCls} value={registration} onChange={(e) => { setRegistration(e.target.value); setSaved(false) }} placeholder="пусто: любая" />
-            </label>
+            <div className="grid gap-1 text-sm">
+              По стране резидентства
+              <CountrySelect multiple label="Страны резидентства" placeholder="Любая страна" value={geo.residence} onChange={(residence) => set({ geo: { ...geo, residence } })} />
+            </div>
+            <div className="grid gap-1 text-sm">
+              По стране регистрации
+              <CountrySelect multiple label="Страны регистрации" placeholder="Любая страна" value={geo.registration} onChange={(registration) => set({ geo: { ...geo, registration } })} />
+            </div>
             <p className="meta !normal-case tracking-normal">
               {geo.residence.length || geo.registration.length
                 ? [
