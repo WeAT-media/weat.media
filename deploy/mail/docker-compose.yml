@@ -1,0 +1,64 @@
+# Почта weat.media: docker-mailserver (Postfix + Dovecot + Rspamd + DKIM) на узле.
+# Ящики: noreply@ (письма PDS/Zitadel), support@, legal@; postmaster@ и abuse@ — псевдонимы support@.
+# TLS — сертификат mail.<домен>, который получает Caddy узла (блок в deploy/node/Caddyfile):
+# берём его из тома caddy-data, свой ACME не нужен.
+#
+#   cp .env.example .env
+#   docker compose up -d
+#   ./setup.sh                    # ящики, псевдонимы, DKIM — один раз
+#   docker compose exec mailserver setup config dkim   # ключ DKIM -> TXT mail._domainkey
+#
+# Порты: 25 (приём), 465 (отправка, TLS), 587 (отправка, STARTTLS), 993 (IMAP).
+name: weat-mail
+
+services:
+  mailserver:
+    image: ghcr.io/docker-mailserver/docker-mailserver:15
+    hostname: ${MAIL_HOSTNAME:?mail.weat.media}
+    restart: unless-stopped
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "993:993"
+    environment:
+      OVERRIDE_HOSTNAME: ${MAIL_HOSTNAME}
+      SSL_TYPE: manual
+      SSL_CERT_PATH: /caddy/certificates/acme-v02.api.letsencrypt.org-directory/${MAIL_HOSTNAME}/${MAIL_HOSTNAME}.crt
+      SSL_KEY_PATH: /caddy/certificates/acme-v02.api.letsencrypt.org-directory/${MAIL_HOSTNAME}/${MAIL_HOSTNAME}.key
+      ENABLE_RSPAMD: 1
+      ENABLE_OPENDKIM: 0
+      ENABLE_OPENDMARC: 0
+      ENABLE_POLICYD_SPF: 0
+      ENABLE_AMAVIS: 0
+      ENABLE_SPAMASSASSIN: 0
+      ENABLE_CLAMAV: 0
+      ENABLE_FAIL2BAN: 1
+      ENABLE_POP3: 0
+      ENABLE_MANAGESIEVE: 0
+      # письма живут на этом узле: персональные данные не уходят к стороннему сервису
+      SPOOF_PROTECTION: 1
+      ENABLE_SRS: 1
+      POSTMASTER_ADDRESS: postmaster@${MAIL_DOMAIN:-weat.media}
+      PERMIT_DOCKER: none
+      LOG_LEVEL: warn
+    cap_add: [NET_ADMIN]
+    volumes:
+      - mail-data:/var/mail
+      - mail-state:/var/mail-state
+      - mail-logs:/var/log/mail
+      - ./config:/tmp/docker-mailserver
+      - node_caddy-data:/caddy:ro
+      - /etc/localtime:/etc/localtime:ro
+    stop_grace_period: 1m
+    healthcheck:
+      test: "ss --listening --tcp | grep -P 'LISTEN.+:smtp' || exit 1"
+      timeout: 3s
+      retries: 0
+
+volumes:
+  mail-data:
+  mail-state:
+  mail-logs:
+  node_caddy-data:
+    external: true

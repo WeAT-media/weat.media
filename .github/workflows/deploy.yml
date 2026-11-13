@@ -191,6 +191,7 @@ jobs:
               line "$k"
             done
             printf 'PUBLIC_URL=%s\nCORS_ORIGIN=%s\nPDS_HANDLE_DOMAIN=weat.media\nACME_DNS_SERVER=https://auth.acme-dns.io\nGEOIP_DB_PATH=/geoip/country.mmdb\nADMIN_ALLOW_IPS=127.0.0.1/32\nBACKUP_INTERVAL_SEC=300\n' "$SITE_URL" "$SITE_URL"
+            [ "$CONTOUR" = ru ] && echo MAIL_HOST=mail-ru.weat.media || echo MAIL_HOST=mail.weat.media
           } > node.env
           {
             printf 'PDS_HOSTNAME=%s\nPDS_SERVICE_HANDLE_DOMAINS=.weat.media\n' "$PDS_HOST"
