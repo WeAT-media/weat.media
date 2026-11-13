@@ -1,6 +1,6 @@
 # Почта weat.media: docker-mailserver (Postfix + Dovecot + Rspamd + DKIM) на узле.
 # Ящики: noreply@ (письма PDS/Zitadel), support@, legal@; postmaster@ и abuse@ — псевдонимы support@.
-# TLS — сертификат mail.<домен>, который получает Caddy узла (блок в deploy/node/Caddyfile):
+# TLS — сертификат, который Caddy узла держит для mail.<домен> (wildcard *.weat.media):
 # берём его из тома caddy-data, свой ACME не нужен.
 #
 #   cp .env.example .env
@@ -24,8 +24,9 @@ services:
     environment:
       OVERRIDE_HOSTNAME: ${MAIL_HOSTNAME}
       SSL_TYPE: manual
-      SSL_CERT_PATH: /caddy/certificates/acme-v02.api.letsencrypt.org-directory/${MAIL_HOSTNAME}/${MAIL_HOSTNAME}.crt
-      SSL_KEY_PATH: /caddy/certificates/acme-v02.api.letsencrypt.org-directory/${MAIL_HOSTNAME}/${MAIL_HOSTNAME}.key
+      # Caddy отдаёт mail.* из wildcard-сертификата *.weat.media (продлевает сам; DMS замечает новый файл)
+      SSL_CERT_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${MAIL_CERT:-wildcard_.weat.media}/${MAIL_CERT:-wildcard_.weat.media}.crt
+      SSL_KEY_PATH: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${MAIL_CERT:-wildcard_.weat.media}/${MAIL_CERT:-wildcard_.weat.media}.key
       ENABLE_RSPAMD: 1
       ENABLE_OPENDKIM: 0
       ENABLE_OPENDMARC: 0
