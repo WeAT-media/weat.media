@@ -14,7 +14,7 @@ import type { LavaClient, LavaInvoiceInfo, OrderRepo, OrderRow } from '../src/la
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { createStaffVerifier, type AuditEntry, type AuditRepo } from '../src/staff.ts'
 import type { ClaimRepo, ClaimRow } from '../src/claims.ts'
-import type { TicketRepo, TicketRow } from '../src/tickets.ts'
+import type { MessageRow, TicketRepo, TicketRow } from '../src/tickets.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
 const ZITADEL = 'https://auth.test'
@@ -53,7 +53,22 @@ function memClaims(): ClaimRepo {
 
 function memTickets(): TicketRepo {
   const rows: TicketRow[] = []
+  const msgs: MessageRow[] = []
+  // порядок сообщений и «прочитано» — по счётчику, а не по часам: в тесте всё происходит в одну миллисекунду
+  let tick = 0
+  const at = () => new Date(Date.UTC(2026, 0, 1) + ++tick * 1000)
   return {
+    async byDid(did) { return rows.filter((r) => r.did === did).reverse() },
+    async messages(ids) { return msgs.filter((m) => ids.includes(m.ticket_id)) },
+    async addMessage(m) {
+      const row: MessageRow = { ...m, created_at: at() }
+      msgs.push(row)
+      return row
+    },
+    async markSeen(id) {
+      const r = rows.find((x) => x.id === id)
+      if (r) r.user_seen_at = at()
+    },
     async insert(t) {
       const row: TicketRow = { ...t, status: 'new', staff_note: null, updated_by: null, created_at: new Date(), updated_at: new Date() }
       rows.push(row)
@@ -1366,6 +1381,33 @@ test('support tickets: guest or user writes, staff reads and changes status (aud
   assert.equal(done.staffNote, 'Почистили кэш')
   assert.equal(auditLog.at(-1)?.action, 'ticket.update')
   assert.equal((await (await app.request('/api/admin/tickets?status=new', { headers: staff })).json()).length, 1)
+
+  // переписка: ответ доходит на площадку только у обращения из аккаунта
+  const own = list[0]
+  assert.equal(own.deliverable, true)
+  assert.equal(list[1].deliverable, false, 'гость (handle не подтверждён) — ответ на площадку не уходит')
+  const reply = await app.request(`/api/admin/tickets/${own.id}/messages`, { method: 'POST', headers: staff, body: JSON.stringify({ text: 'Пришлите, пожалуйста, скан ВНЖ на почту.' }) })
+  assert.equal(reply.status, 201)
+  assert.equal((await reply.json()).status, 'waiting')
+
+  const user = { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }
+  const mine = await (await app.request('/api/me/tickets', { headers: user })).json()
+  assert.equal(mine.length, 1)
+  assert.equal(mine[0].unread, 1)
+  assert.equal(mine[0].staffNote, undefined, 'внутренняя заметка заявителю не видна')
+  assert.equal(mine[0].messages[0].text, 'Пришлите, пожалуйста, скан ВНЖ на почту.')
+  await app.request(`/api/me/tickets/${own.id}/seen`, { method: 'POST', headers: user })
+  assert.equal((await (await app.request('/api/me/tickets', { headers: user })).json())[0].unread, 0)
+
+  const answer = await (await app.request(`/api/me/tickets/${own.id}/messages`, { method: 'POST', headers: user, body: JSON.stringify({ text: 'Отправил.' }) })).json()
+  assert.equal(answer.status, 'in_progress', 'ответ заявителя возвращает в работу')
+  assert.equal(answer.messages.length, 2)
+
+  // чужое обращение не открыть и не ответить в него
+  const other = await (await app.request('/api/auth/register', json({ ...reg, username: 'stranger', email: 'stranger@example.com' }, '1.1.1.1'))).json()
+  const stranger = { authorization: `Bearer ${other.accessJwt}`, 'content-type': 'application/json' }
+  assert.equal((await app.request(`/api/me/tickets/${own.id}/messages`, { method: 'POST', headers: stranger, body: JSON.stringify({ text: 'x' }) })).status, 404)
+  assert.deepEqual(await (await app.request('/api/me/tickets', { headers: stranger })).json(), [])
 })
 
 test('lava.top: invoice, forged webhook refused, access only after API confirms, idempotent', async () => {

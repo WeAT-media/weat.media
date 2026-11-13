@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Bell, CheckCheck, Gavel, MessageSquare, Newspaper, type LucideIcon } from 'lucide-react'
+import { Bell, CheckCheck, Gavel, LifeBuoy, MessageSquare, Newspaper, type LucideIcon } from 'lucide-react'
+import { hasSession, myTickets, type MyTicket } from '@/lib/api'
 import { useStore } from '@/lib/store'
 import type { User } from '@/types/types'
 
@@ -93,7 +94,27 @@ export default function NotificationsMenu() {
     () => buildNotifications(articles, cases, user, authorSubscriptions, watchedArticles),
     [articles, cases, user, authorSubscriptions, watchedArticles],
   )
-  const notifications = [...personal, ...general]
+  // ответы поддержки — только по обращениям из аккаунта (handle гостя не подтверждён)
+  const [tickets, setTickets] = useState<MyTicket[]>([])
+  const signedIn = !!user && hasSession()
+  useEffect(() => {
+    if (!signedIn) return
+    let alive = true
+    const load = () => myTickets.list().then((t) => alive && setTickets(t), () => {})
+    load()
+    const timer = setInterval(load, 60_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [signedIn])
+  const support: Notification[] = (signedIn ? tickets : [])
+    .filter((t) => t.unread > 0)
+    .map((t) => {
+      const last = [...t.messages].reverse().find((m) => m.author === 'staff')!
+      return { id: `ticket-${last.id}`, date: last.createdAt.slice(0, 10), icon: LifeBuoy, text: `Поддержка ответила: «${t.subject}»`, to: `/support/tickets#${t.id}` }
+    })
+  const notifications = [...support, ...personal, ...general]
   const unread = notifications.filter((n) => !readNotifications.includes(n.id))
 
   useEffect(() => {
@@ -179,6 +200,12 @@ export default function NotificationsMenu() {
             </p>
           ) : (
             <ul className="max-h-80 overflow-y-auto">
+              {support.length > 0 && (
+                <li className="meta border-b border-border bg-secondary/50 px-4 py-2" aria-hidden="true">
+                  Поддержка
+                </li>
+              )}
+              {support.map((n) => renderItem(n))}
               {personal.length > 0 && (
                 <li className="meta border-b border-border bg-secondary/50 px-4 py-2" aria-hidden="true">
                   Для вас

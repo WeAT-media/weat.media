@@ -28,7 +28,7 @@ import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
-import { TicketBody, TicketDto, TicketPatch } from './tickets.js'
+import { MessageBody, TicketBody, TicketDto, TicketPatch } from './tickets.js'
 import { ApiArticleBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
 
 const TAGS = {
@@ -408,6 +408,21 @@ const ops: Op[] = [
   {
     method: 'patch', path: '/admin/tickets/{id}', tag: 'admin', summary: 'Статус и заметка сотрудника', auth: 'staff',
     description: 'Смена пишется в аудит.', body: TicketPatch, ok: { status: 200, description: 'Обновлённое обращение' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
+  },
+  {
+    method: 'post', path: '/admin/tickets/{id}/messages', tag: 'admin', summary: 'Ответ заявителю', auth: 'staff',
+    description: 'Обращение переходит в «Ждут ответа». На площадке ответ увидит только заявитель, писавший из аккаунта (deliverable).',
+    body: MessageBody, ok: { status: 201, description: 'Обращение с перепиской' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
+  },
+  {
+    method: 'get', path: '/me/tickets', tag: 'profile', summary: 'Мои обращения', auth: 'bearer',
+    description: 'Обращения, отправленные из этого аккаунта, с перепиской; unread — новые ответы сотрудника.',
+    ok: { status: 200, description: 'Последние 100' }, errors: [[401, 'AuthenticationRequired']],
+  },
+  { method: 'post', path: '/me/tickets/{id}/seen', tag: 'profile', summary: 'Ответы прочитаны', auth: 'bearer', ok: { status: 200, description: 'ok' }, errors: [[404, 'NotFound']] },
+  {
+    method: 'post', path: '/me/tickets/{id}/messages', tag: 'profile', summary: 'Ответить в обращение', auth: 'bearer',
+    description: 'Возвращает обращение в работу.', body: MessageBody, ok: { status: 201, description: 'Обращение с перепиской' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
   },
   // ── лайки
   {

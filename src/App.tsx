@@ -50,6 +50,7 @@ const AdvertiserDashboardPage = lazy(() => import('@/pages/AdvertiserDashboardPa
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
 const SupportPage = lazy(() => import('@/pages/SupportPage'))
 const SupportContactPage = lazy(() => import('@/pages/SupportContactPage'))
+const MyTicketsPage = lazy(() => import('@/pages/MyTicketsPage'))
 const SupportLegalPage = lazy(() => import('@/pages/SupportLegalPage'))
 const SharedDraftPage = lazy(() => import('@/pages/SharedDraftPage'))
 const ArticleAnalyticsPage = lazy(() => import('@/pages/ArticleAnalyticsPage'))
@@ -124,6 +125,7 @@ export default function App() {
             <Route path="/admin/tickets" element={<AdminTicketsPage />} />
             <Route path="/support" element={<SupportPage />} />
             <Route path="/support/contact" element={<SupportContactPage />} />
+            <Route path="/support/tickets" element={<MyTicketsPage />} />
             <Route path="/support/legal" element={<SupportLegalPage />} />
             <Route path="/legal" element={<LegalIndexPage />} />
             <Route path="/purchase/:orderId" element={<PurchaseReturnPage />} />

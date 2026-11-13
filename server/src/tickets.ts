@@ -31,8 +31,18 @@ export interface TicketRow {
   status: TicketStatus
   staff_note: string | null
   updated_by: string | null
+  user_seen_at?: Date | null
   created_at: Date
   updated_at: Date
+}
+
+export interface MessageRow {
+  id: string
+  ticket_id: string
+  author: 'staff' | 'user'
+  staff_sub: string | null
+  text: string
+  created_at: Date
 }
 
 export interface TicketRepo {
@@ -40,6 +50,10 @@ export interface TicketRepo {
   get(id: string): Promise<TicketRow | undefined>
   list(status: TicketStatus | null, limit: number): Promise<TicketRow[]>
   update(id: string, patch: { status?: TicketStatus; staff_note?: string | null }, by: string): Promise<TicketRow | undefined>
+  byDid(did: string, limit: number): Promise<TicketRow[]>
+  messages(ticketIds: string[]): Promise<MessageRow[]>
+  addMessage(m: Omit<MessageRow, 'created_at'>): Promise<MessageRow>
+  markSeen(id: string): Promise<void>
 }
 
 export function ticketRepo(sql: Sql): TicketRepo {
@@ -70,8 +84,25 @@ export function ticketRepo(sql: Sql): TicketRepo {
         WHERE id = ${id} RETURNING *`
       return r
     },
+    byDid(did, limit) {
+      return sql<TicketRow[]>`SELECT * FROM support_tickets WHERE did = ${did} ORDER BY created_at DESC LIMIT ${limit}`
+    },
+    messages(ids) {
+      return ids.length ? sql<MessageRow[]>`SELECT * FROM ticket_messages WHERE ticket_id = ANY(${ids}) ORDER BY created_at` : Promise.resolve([])
+    },
+    async addMessage(m) {
+      const [row] = await sql<MessageRow[]>`
+        INSERT INTO ticket_messages (id, ticket_id, author, staff_sub, text) VALUES (${m.id}, ${m.ticket_id}, ${m.author}, ${m.staff_sub}, ${m.text})
+        RETURNING *`
+      return row!
+    },
+    async markSeen(id) {
+      await sql`UPDATE support_tickets SET user_seen_at = now() WHERE id = ${id}`
+    },
   }
 }
+
+export const MessageBody = z.object({ text: z.string().trim().min(1).max(10_000) })
 
 const Country = z.string().regex(/^([A-Z]{2}|other)$/)
 
@@ -101,7 +132,24 @@ export const TicketDto = z.object({
   createdAt: z.string(),
 })
 
-const dto = (r: TicketRow) => ({
+const messageDto = (m: MessageRow) => ({ id: m.id, author: m.author, text: m.text, createdAt: m.created_at.toISOString() })
+
+/** заявителю: без внутренней заметки и без того, кто из сотрудников отвечал */
+const ownDto = (r: TicketRow, msgs: MessageRow[]) => {
+  const seen = r.user_seen_at?.getTime() ?? 0
+  return {
+    id: r.id,
+    category: r.category,
+    subject: r.subject,
+    message: r.message,
+    status: r.status,
+    createdAt: r.created_at.toISOString(),
+    messages: msgs.map(messageDto),
+    unread: msgs.filter((m) => m.author === 'staff' && m.created_at.getTime() > seen).length,
+  }
+}
+
+const dto = (r: TicketRow, msgs: MessageRow[] = []) => ({
   id: r.id,
   kind: r.kind,
   category: r.category,
@@ -120,9 +168,12 @@ const dto = (r: TicketRow) => ({
   updatedBy: r.updated_by,
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
+  /** ответы дойдут до заявителя на площадке — только у обращения из вошедшего аккаунта */
+  deliverable: !!r.did,
+  messages: msgs.map((m) => ({ ...messageDto(m), staffSub: m.staff_sub })),
 })
 
-const fail = (code: string, message: string, status: 400 | 404) => new PdsError(status, code, message)
+const fail = (code: string, message: string, status: 400 | 401 | 404) => new PdsError(status, code, message)
 
 export function mountTicketRoutes(
   app: Hono,
@@ -163,8 +214,9 @@ export function mountTicketRoutes(
     await h.requireStaff(c, 'support')
     const status = c.req.query('status') as TicketStatus | undefined
     const rows = await d.tickets.list(status && TICKET_STATUSES.includes(status) ? status : null, 500)
+    const msgs = await d.tickets.messages(rows.map((r) => r.id))
     c.header('cache-control', 'private, no-store')
-    return c.json(rows.map(dto))
+    return c.json(rows.map((r) => dto(r, msgs.filter((m) => m.ticket_id === r.id))))
   })
 
   app.get('/admin/tickets/:id', async (c) => {
@@ -172,7 +224,58 @@ export function mountTicketRoutes(
     const row = await d.tickets.get(c.req.param('id'))
     if (!row) throw fail('NotFound', 'Обращение не найдено', 404)
     c.header('cache-control', 'private, no-store')
-    return c.json(dto(row))
+    return c.json(dto(row, await d.tickets.messages([row.id])))
+  })
+
+  /** ответ сотрудника: обращение переходит в «Ждут ответа» (заявителя) */
+  app.post('/admin/tickets/:id/messages', async (c) => {
+    const staff = await h.requireStaff(c, 'support')
+    const parsed = MessageBody.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) throw fail('InvalidRequest', z.prettifyError(parsed.error), 400)
+    const t = await d.tickets.get(c.req.param('id'))
+    if (!t) throw fail('NotFound', 'Обращение не найдено', 404)
+    const by = staff === 'break-glass' ? 'break-glass' : staff.sub
+    await d.tickets.addMessage({ id: `tm_${randomBytes(8).toString('base64url')}`, ticket_id: t.id, author: 'staff', staff_sub: by, text: parsed.data.text })
+    const row = t.status === 'resolved' || t.status === 'rejected' ? t : (await d.tickets.update(t.id, { status: 'waiting' }, by))!
+    await h.audit(staff, 'ticket.reply', t.id, { deliverable: !!t.did })
+    return c.json(dto(row, await d.tickets.messages([t.id])), 201)
+  })
+
+  // ── заявитель: только свои обращения, отправленные из аккаунта
+  const me = async (c: Context) => {
+    const token = h.bearer(c)
+    if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
+    return (await d.pds.getSession(token)).did
+  }
+
+  app.get('/me/tickets', async (c) => {
+    const did = await me(c)
+    const rows = await d.tickets.byDid(did, 100)
+    const msgs = await d.tickets.messages(rows.map((r) => r.id))
+    c.header('cache-control', 'private, no-store')
+    return c.json(rows.map((r) => ownDto(r, msgs.filter((m) => m.ticket_id === r.id))))
+  })
+
+  /** открыл обращение — ответы прочитаны */
+  app.post('/me/tickets/:id/seen', async (c) => {
+    const did = await me(c)
+    const t = await d.tickets.get(c.req.param('id'))
+    if (!t || t.did !== did) throw fail('NotFound', 'Обращение не найдено', 404)
+    await d.tickets.markSeen(t.id)
+    return c.json({ ok: true })
+  })
+
+  /** ответ заявителя возвращает обращение в работу */
+  app.post('/me/tickets/:id/messages', async (c) => {
+    const did = await me(c)
+    const parsed = MessageBody.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) throw fail('InvalidRequest', z.prettifyError(parsed.error), 400)
+    const t = await d.tickets.get(c.req.param('id'))
+    if (!t || t.did !== did) throw fail('NotFound', 'Обращение не найдено', 404)
+    await d.tickets.addMessage({ id: `tm_${randomBytes(8).toString('base64url')}`, ticket_id: t.id, author: 'user', staff_sub: null, text: parsed.data.text })
+    const row = t.status === 'waiting' || t.status === 'resolved' ? (await d.tickets.update(t.id, { status: 'in_progress' }, did))! : t
+    await d.tickets.markSeen(t.id)
+    return c.json(ownDto(row, await d.tickets.messages([t.id])), 201)
   })
 
   app.patch('/admin/tickets/:id', async (c) => {
@@ -184,6 +287,6 @@ export function mountTicketRoutes(
     if (!before) throw fail('NotFound', 'Обращение не найдено', 404)
     const row = (await d.tickets.update(before.id, { status: parsed.data.status, staff_note: parsed.data.note }, by))!
     await h.audit(staff, 'ticket.update', row.id, { from: before.status, to: row.status, note: parsed.data.note !== undefined })
-    return c.json(dto(row))
+    return c.json(dto(row, await d.tickets.messages([row.id])))
   })
 }

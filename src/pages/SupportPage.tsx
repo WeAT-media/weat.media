@@ -82,6 +82,7 @@ export default function SupportPage() {
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link to="/support/contact" className="btn-primary !px-4 !py-2">Написать в поддержку</Link>
+          <Link to="/support/tickets" className="btn-ghost !px-4 !py-2">Мои обращения</Link>
           <Link to="/support/legal" className="btn-ghost !px-4 !py-2">
             <Scale size={13} aria-hidden="true" /> Запрос официального органа
           </Link>

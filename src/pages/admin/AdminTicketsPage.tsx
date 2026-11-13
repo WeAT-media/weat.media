@@ -28,6 +28,9 @@ interface Ticket {
   updatedBy: string | null
   createdAt: string
   updatedAt: string
+  /** ответ дойдёт до заявителя на площадке: обращение из вошедшего аккаунта */
+  deliverable: boolean
+  messages: { id: string; author: 'staff' | 'user'; text: string; createdAt: string; staffSub: string | null }[]
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -58,6 +61,7 @@ export default function AdminTicketsPage() {
   const [rows, setRows] = useState<Ticket[]>([])
   const [open, setOpen] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [replies, setReplies] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
 
   const call = useCallback(
@@ -80,6 +84,19 @@ export default function AdminTicketsPage() {
     setError('')
     try {
       await call(`/admin/tickets/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось')
+    }
+  }
+
+  const reply = async (id: string) => {
+    const text = (replies[id] ?? '').trim()
+    if (!text) return
+    setError('')
+    try {
+      await call(`/admin/tickets/${id}/messages`, { method: 'POST', body: JSON.stringify({ text }) })
+      setReplies((r) => ({ ...r, [id]: '' }))
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось')
@@ -156,6 +173,7 @@ export default function AdminTicketsPage() {
                         <span className="inline-flex items-center gap-1">
                           <User size={12} aria-hidden="true" /> {t.did ? <code className="font-mono text-[12px]">{t.did}</code> : 'гость'}
                           {t.handle && ` · указал: ${t.handle}`}
+                          {t.handle && !t.did && <span className="ml-1 rounded-full border border-border px-1.5 text-[11px] text-muted-foreground">не подтверждён</span>}
                         </span>
                       </p>
                       {t.articleUrl && <p>Ссылка: <a href={t.articleUrl} target="_blank" rel="noopener noreferrer" className="break-all text-accent hover:underline">{t.articleUrl}</a></p>}
@@ -171,6 +189,32 @@ export default function AdminTicketsPage() {
                         </p>
                       )}
                       <p className="whitespace-pre-line rounded-md border border-border bg-secondary/40 p-3 leading-relaxed">{t.message}</p>
+                      {t.messages.map((m) => (
+                        <div key={m.id} className={`rounded-md border p-3 ${m.author === 'staff' ? 'ml-8 border-accent/50' : 'border-border'}`}>
+                          <p className="meta mb-1">{m.author === 'staff' ? `Поддержка · ${m.staffSub ?? ''}` : 'Заявитель'} · {when(m.createdAt)}</p>
+                          <p className="whitespace-pre-line leading-relaxed">{m.text}</p>
+                        </div>
+                      ))}
+                      <div className="grid gap-2">
+                        <textarea
+                          rows={3}
+                          value={replies[t.id] ?? ''}
+                          onChange={(e) => setReplies((r) => ({ ...r, [t.id]: e.target.value }))}
+                          placeholder="Ответ заявителю"
+                          aria-label="Ответ заявителю"
+                          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button type="button" onClick={() => void reply(t.id)} disabled={!(replies[t.id] ?? '').trim()} className="btn-primary !px-4 !py-2">
+                            Ответить
+                          </button>
+                          <span className="meta !normal-case tracking-normal">
+                            {t.deliverable
+                              ? 'заявитель увидит ответ на площадке и в уведомлениях'
+                              : `писал без входа — на площадку ответ не уйдёт; ответьте на ${t.email}`}
+                          </span>
+                        </div>
+                      </div>
                       {t.updatedBy && <p className="meta">изменено {when(t.updatedAt)} · {t.updatedBy}</p>}
                     </div>
                     <div className="grid content-start gap-2">

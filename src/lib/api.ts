@@ -342,6 +342,25 @@ export const support = {
     hasSession() ? authed<{ id: string; status: string; createdAt: string }>('/support/tickets', post(b)) : call<{ id: string; status: string; createdAt: string }>('/support/tickets', post(b)),
 }
 
+export interface MyTicket {
+  id: string
+  category: string
+  subject: string
+  message: string
+  status: 'new' | 'in_progress' | 'waiting' | 'resolved' | 'rejected'
+  createdAt: string
+  messages: { id: string; author: 'staff' | 'user'; text: string; createdAt: string }[]
+  /** новые ответы сотрудника */
+  unread: number
+}
+
+/** Свои обращения (отправленные из аккаунта): переписка с поддержкой */
+export const myTickets = {
+  list: () => authed<MyTicket[]>('/me/tickets'),
+  seen: (id: string) => authed<{ ok: true }>(`/me/tickets/${encodeURIComponent(id)}/seen`, post({})),
+  reply: (id: string, text: string) => authed<MyTicket>(`/me/tickets/${encodeURIComponent(id)}/messages`, post({ text })),
+}
+
 export interface ThreadComment {
   uri: string
   did: string
