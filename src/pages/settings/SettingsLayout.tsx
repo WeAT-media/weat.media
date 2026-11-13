@@ -1,5 +1,5 @@
 import { Link, Navigate, NavLink, Outlet, useLocation, useParams } from 'react-router'
-import { Code2, Gavel, History, LayoutList, Link2, Lock, Palette, PenLine, Pin, ShieldAlert, SlidersHorizontal, Wallet } from 'lucide-react'
+import { Code2, Download, Gavel, History, LayoutList, Link2, Lock, Palette, PenLine, Pin, ShieldAlert, SlidersHorizontal, Wallet } from 'lucide-react'
 import { useStore, type SettingsSyncState } from '@/lib/store'
 
 const syncLabel: Record<SettingsSyncState, string> = {
@@ -14,6 +14,7 @@ const navItems = [
   { to: 'appearance', label: 'Внешний вид', icon: Palette },
   { to: 'history', label: 'История', icon: History },
   { to: 'editor', label: 'Редактор', icon: PenLine },
+  { to: 'import', label: 'Импорт постов', icon: Download },
   { to: 'jury', label: 'Участие в суде', icon: Gavel },
   { to: 'payouts', label: 'Выплаты', icon: Wallet },
   { to: 'ad-pins', label: 'Реклама в постах', icon: Pin },

@@ -18,6 +18,7 @@ import { auditRepo, createStaffVerifier } from './staff.js'
 import { claimRepo } from './claims.js'
 import { ticketRepo } from './tickets.js'
 import { sessionRepo } from './sessions.js'
+import { importRepo } from './imports.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
@@ -35,6 +36,7 @@ const app = createApp({
   claims: claimRepo(sql),
   tickets: ticketRepo(sql),
   sessions: sessionRepo(sql),
+  imports: importRepo(sql),
   feedUrl: config.FEED_URL,
   staff:
     config.ZITADEL_ISSUER && config.ZITADEL_PROJECT_ID

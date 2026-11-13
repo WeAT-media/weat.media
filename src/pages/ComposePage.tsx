@@ -1,7 +1,7 @@
 import { FEE_NOTE } from '@/components/FeeNote'
 import { customFenceBlock, isCustomFence } from '@/lib/customFences'
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import {
   ArrowLeft,
   Lock,
@@ -21,6 +21,7 @@ import { LANGUAGES } from '@/data/languages'
 import Reveal from '@/components/Reveal'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
+import { imports } from '@/lib/api'
 import PeopleAutocomplete, { type PersonCandidate } from '@/components/PeopleAutocomplete'
 import ArticleToc from '@/components/ArticleToc'
 import BlockView from '@/components/ArticleBlock'
@@ -54,6 +55,12 @@ function parseBlocks(text: string): ArticleBlock[] {
     if (fence && isCustomFence(fence[1]!)) {
       const block = customFenceBlock(fence[1]!, fence[2]!)
       if (block) blocks.push(block)
+      continue
+    }
+    // картинка отдельным абзацем: ![подпись](адрес) — так их приносит импорт постов
+    const img = /^!\[([^\]]*)\]\((\S+)\)$/.exec(c)
+    if (img) {
+      blocks.push({ type: 'image', text: img[2]!, alt: img[1]!.trim() })
       continue
     }
     if (c.startsWith('### ')) blocks.push({ type: 'h2', text: c.slice(4) })
@@ -153,6 +160,21 @@ export default function ComposePage() {
   const { publishArticle, payoutConnected, shareDraft, user, collections, tiers, articles, prefs } = useStore()
   const [bodyText, setBodyText] = useState('')
   const [title, setTitle] = useState('')
+  // ?import=<id> — черновик из импорта постов AT-аккаунта: редактор открывается с его текстом
+  const [searchParams] = useSearchParams()
+  const importId = searchParams.get('import')
+  const [importReady, setImportReady] = useState(!importId)
+  useEffect(() => {
+    if (!importId) return
+    imports
+      .get(importId)
+      .then((d) => {
+        setTitle(d.title)
+        setBodyText(d.text)
+      })
+      .catch(() => {})
+      .finally(() => setImportReady(true))
+  }, [importId])
   const [subtitle, setSubtitle] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
@@ -396,7 +418,8 @@ export default function ComposePage() {
     setPublishing(true)
     setPublishError('')
     try {
-      await publishArticle({ ...draft, blocks, id, title: title.trim() }, text)
+      const uri = await publishArticle({ ...draft, blocks, id, title: title.trim() }, text)
+      if (importId) await imports.setStatus(importId, 'published', uri).catch(() => {})
       navigate(`/article/${id}`)
     } catch (err) {
       // запись не ушла в репозиторий — черновик остаётся в форме, можно повторить
@@ -498,7 +521,7 @@ export default function ComposePage() {
           <div>
             <span className="meta" id="bodyLabel">Заголовок и текст</span>
             <div className="mt-2" aria-labelledby="bodyLabel">
-              <BlocksEditor
+              {importReady ? <BlocksEditor
                 value={bodyText}
                 title={title}
                 onContentInspect={(info) => setHasVideoEmbed(info.hasVideo)}
@@ -510,7 +533,7 @@ export default function ComposePage() {
                   setBodyText(md)
                   if (errors.body) setErrors((prev) => ({ ...prev, body: '' }))
                 }}
-              />
+              /> : <p className="meta py-10">Загружаем черновик…</p>}
               <p className="meta mt-2">
                 заголовок — первая строка редактора; карусель и опрос — через «/» в тексте
               </p>

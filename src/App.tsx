@@ -21,6 +21,7 @@ const CasesPage = lazy(() => import('@/pages/CasesPage'))
 const SettingsLayout = lazy(() => import('@/pages/settings/SettingsLayout'))
 const FeedSettingsPage = lazy(() => import('@/pages/settings/FeedSettingsPage'))
 const HistorySettingsPage = lazy(() => import('@/pages/settings/HistorySettingsPage'))
+const ImportSettingsPage = lazy(() => import('@/pages/settings/ImportSettingsPage'))
 const AdPinsSettingsPage = lazy(() => import('@/pages/settings/AdPinsSettingsPage'))
 const AppearanceSettingsPage = lazy(() => import('@/pages/settings/AppearanceSettingsPage'))
 const JurySettingsPage = lazy(() => import('@/pages/settings/JurySettingsPage'))
@@ -105,6 +106,7 @@ export default function App() {
               <Route path="appearance" element={<AppearanceSettingsPage />} />
               <Route path="history" element={<HistorySettingsPage />} />
               <Route path="editor" element={<EditorSettingsPage />} />
+              <Route path="import" element={<ImportSettingsPage />} />
               <Route path="jury" element={<JurySettingsPage />} />
               <Route path="payouts" element={<PayoutsSettingsPage />} />
               <Route path="ad-pins" element={<AdPinsSettingsPage />} />

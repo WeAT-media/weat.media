@@ -15,6 +15,8 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { createStaffVerifier, type AuditEntry, type AuditRepo } from '../src/staff.ts'
 import type { ClaimRepo, ClaimRow } from '../src/claims.ts'
 import type { MessageRow, TicketRepo, TicketRow } from '../src/tickets.ts'
+import type { AtprotoAuth } from '../src/atprotoOAuth.ts'
+import type { ImportDraftRow, ImportRepo, PostSource } from '../src/imports.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
@@ -50,6 +52,56 @@ function memClaims(): ClaimRepo {
       return r
     },
   }
+}
+
+function memImports(): ImportRepo {
+  const rows: ImportDraftRow[] = []
+  return {
+    async insertMany(drafts) {
+      let n = 0
+      for (const d of drafts) {
+        if (rows.some((r) => r.did === d.did && r.source_uri === d.source_uri)) continue
+        rows.push({ ...d, status: 'pending', article_uri: null, created_at: new Date(), updated_at: new Date() })
+        n++
+      }
+      return n
+    },
+    async list(did, status) {
+      return rows.filter((r) => r.did === did && (!status || r.status === status)).sort((a, b) => +b.source_created_at - +a.source_created_at)
+    },
+    async get(did, id) {
+      return rows.find((r) => r.did === did && r.id === id)
+    },
+    async setStatus(did, id, status, articleUri) {
+      const r = rows.find((x) => x.did === did && x.id === id)
+      if (r) Object.assign(r, { status, article_uri: articleUri, updated_at: new Date() })
+      return r
+    },
+  }
+}
+
+/** публичный репозиторий внешнего AT-аккаунта: два поста, ответ и пост с картинкой и ссылкой */
+const fakePostSource: PostSource = {
+  async posts(did) {
+    const at = (rkey: string) => `at://${did}/app.bsky.feed.post/${rkey}`
+    return {
+      pds: 'https://ext.pds',
+      records: [
+        { uri: at('1'), cid: 'c1', value: { text: 'Первый пост\n\nвторой абзац', createdAt: '2026-01-01T10:00:00Z' } },
+        { uri: at('2'), cid: 'c2', value: { text: 'ответ', reply: { root: {}, parent: {} }, createdAt: '2026-01-02T10:00:00Z' } },
+        {
+          uri: at('3'),
+          cid: 'c3',
+          value: {
+            text: 'Смотри сайт',
+            createdAt: '2026-01-03T10:00:00Z',
+            facets: [{ index: { byteStart: 13, byteEnd: 21 }, features: [{ $type: 'app.bsky.richtext.facet#link', uri: 'https://x.org' }] }],
+            embed: { $type: 'app.bsky.embed.images', images: [{ alt: 'кот', image: { ref: { $link: 'bafyimg' } } }] },
+          },
+        },
+      ],
+    }
+  },
 }
 
 function memTickets(): TicketRepo {
@@ -503,7 +555,19 @@ function fakePds(): PdsClient {
 
 const BOT = '123456:TEST-bot-token'
 
-function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby' } = {}) {
+/** внешний AT-сервер: authorize кладёт state в URL, callback возвращает подтверждённый DID и email */
+const fakeAtproto: AtprotoAuth = {
+  clientMetadata: { client_id: 'http://localhost/client-metadata.json' } as AtprotoAuth['clientMetadata'],
+  async authorize(handle, appState) {
+    return `https://ext.pds/oauth/authorize?${new URLSearchParams({ handle, state: appState })}`
+  },
+  async callback(params) {
+    const handle = params.get('handle')!
+    return { did: `did:plc:${handle.replace(/\W/g, '')}`, handle, email: handle === 'noemail.ext' ? null : `${handle}@mail.ext`, appState: params.get('state') }
+  },
+}
+
+function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean } = {}) {
   const deps: Deps = {
     config: {
       CONTOUR: opts.contour ?? 'global',
@@ -523,6 +587,8 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     claims: memClaims(),
     tickets: memTickets(),
     sessions: memSessions(),
+    imports: memImports(),
+    postSource: fakePostSource,
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
     rateLimiter: opts.rateLimit ? undefined : false,
@@ -531,6 +597,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     secrets: createSecretBox('11'.repeat(32)),
     oauth: { yandex: fakeOAuth('yandex'), google: fakeOAuth('google'), github: fakeOAuth('github') },
     telegramBotToken: BOT,
+    atproto: opts.atproto ? fakeAtproto : undefined,
     users: memRepo(),
     settings: memSettings(),
     pds: (fakePdsLast = fakePds()),
@@ -720,6 +787,72 @@ async function oauthFlow(
   assert.equal(cb.status, 302)
   return new URL(cb.headers.get('location')!)
 }
+
+async function atprotoFlow(app: ReturnType<typeof makeApp>, handle: string, ip: string, consent = true) {
+  const start = await app.request(`/api/auth/atproto/start?handle=${handle}&returnTo=/feed${consent ? '&consent=1' : ''}`)
+  assert.equal(start.status, 302)
+  const authorize = new URL(start.headers.get('location')!)
+  const cookie = start.headers.get('set-cookie')!.split(';')[0]!
+  const cb = await app.request(`/api/auth/atproto/callback?${new URLSearchParams({ handle, state: authorize.searchParams.get('state')! })}`, {
+    headers: { cookie, 'x-forwarded-for': ip },
+  })
+  assert.equal(cb.status, 302)
+  return new URL(cb.headers.get('location')!)
+}
+
+test('atproto: first login creates linked account in global contour; RU and no-consent refused', async () => {
+  const app = makeApp({ atproto: true, ipCountry: { '5.1.1.1': 'DE', '95.1.1.1': 'RU' } })
+  const noConsent = await atprotoFlow(app, 'perfscale.su', '5.1.1.1', false)
+  assert.equal(noConsent.searchParams.get('error'), 'ConsentRequired')
+  const fromRu = await atprotoFlow(app, 'perfscale.su', '95.1.1.1')
+  assert.equal(fromRu.searchParams.get('error'), 'NotLinked')
+  const noEmail = await atprotoFlow(app, 'noemail.ext', '5.1.1.1')
+  assert.equal(noEmail.searchParams.get('error'), 'EmailRequired')
+
+  const first = await atprotoFlow(app, 'perfscale.su', '5.1.1.1')
+  const s = await (await app.request('/api/auth/handoff', json({ code: first.searchParams.get('handoff') }, '5.1.1.1'))).json()
+  assert.equal(s.user.handle, 'perfscale-su.indie.media')
+  assert.equal(s.user.signupCountry, 'DE')
+  // повторный вход — в тот же аккаунт, уже без согласия
+  const again = await atprotoFlow(app, 'perfscale.su', '5.1.1.1', false)
+  const s2 = await (await app.request('/api/auth/handoff', json({ code: again.searchParams.get('handoff') }, '5.1.1.1'))).json()
+  assert.equal(s2.user.did, s.user.did)
+})
+
+test('imports: posts of linked AT account become drafts; re-import does not duplicate; publish/dismiss', async () => {
+  const app = makeApp({ atproto: true, ipCountry: { '5.1.1.1': 'DE' } })
+  const unlinked = await (await app.request('/api/auth/register', json(reg, '5.1.1.1'))).json()
+  const notLinked = await app.request('/api/me/imports/atproto', { method: 'POST', headers: { authorization: `Bearer ${unlinked.accessJwt}` } })
+  assert.equal(notLinked.status, 404)
+
+  const login = await atprotoFlow(app, 'perfscale.su', '5.1.1.1')
+  const s = await (await app.request('/api/auth/handoff', json({ code: login.searchParams.get('handoff') }, '5.1.1.1'))).json()
+  const auth = { authorization: `Bearer ${s.accessJwt}`, 'content-type': 'application/json' }
+  assert.equal((await app.request('/api/me/imports/atproto', { method: 'POST' })).status, 401)
+  const first = await (await app.request('/api/me/imports/atproto', { method: 'POST', headers: auth })).json()
+  assert.deepEqual(first, { added: 2, seen: 3, complete: true })
+  const again = await (await app.request('/api/me/imports/atproto', { method: 'POST', headers: auth })).json()
+  assert.equal(again.added, 0)
+
+  const { drafts } = await (await app.request('/api/me/imports?status=pending', { headers: auth })).json()
+  assert.equal(drafts.length, 2)
+  assert.equal(drafts[0].title, 'Смотри сайт')
+  assert.equal(drafts[0].text, 'Смотри [сайт](https://x.org)\n\n![кот](https://ext.pds/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Aperfscalesu&cid=bafyimg)')
+  assert.equal(drafts[1].text, 'Первый пост\n\nвторой абзац')
+
+  const pub = await app.request(`/api/me/imports/${drafts[0].id}`, { method: 'PATCH', headers: auth, body: JSON.stringify({ status: 'published', articleUri: 'at://did:plc:x/media.weat.article/1' }) })
+  assert.equal((await pub.json()).articleUri, 'at://did:plc:x/media.weat.article/1')
+  await app.request(`/api/me/imports/${drafts[1].id}`, { method: 'PATCH', headers: auth, body: JSON.stringify({ status: 'dismissed' }) })
+  assert.equal((await (await app.request('/api/me/imports?status=pending', { headers: auth })).json()).drafts.length, 0)
+  // чужой черновик не виден
+  assert.equal((await app.request(`/api/me/imports/${drafts[0].id}`, { headers: { authorization: `Bearer ${unlinked.accessJwt}` } })).status, 404)
+})
+
+test('atproto: ru contour never registers', async () => {
+  const app = makeApp({ atproto: true, contour: 'ru', ipCountry: { '95.1.1.1': 'RU' } })
+  const start = await app.request('/api/auth/atproto/start?handle=perfscale.su&consent=1')
+  assert.equal(new URL(start.headers.get('location')!).searchParams.get('error'), 'ProviderForbidden')
+})
 
 test('yandex: register, then login from abroad; handoff code is single-use', async () => {
   const app = makeApp({ contour: 'ru', ipCountry: { '95.1.1.1': 'RU', '5.1.1.1': 'NL' } })

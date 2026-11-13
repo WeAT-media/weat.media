@@ -195,8 +195,13 @@ export interface ServerSettings {
   readHistory?: ReadEntry[]
 }
 
-export function atprotoStartUrl(handle: string, returnTo: string): string {
-  return `${BASE}/auth/atproto/start?${new URLSearchParams({ handle, returnTo })}`
+/** consent — как у oauthStartUrl: первый вход через AT-сервер создаёт аккаунт (глобальный контур) */
+export function atprotoStartUrl(handle: string, returnTo: string, consent = false): string {
+  const q = new URLSearchParams({ handle, returnTo })
+  if (consent) q.set('consent', '1')
+  const utm = firstTouchUtm()
+  if (utm) for (const [k, v] of Object.entries(utm)) if (v) q.set(`utm_${k}`, v)
+  return `${BASE}/auth/atproto/start?${q}`
 }
 
 /** consent — отметка согласия на ПДн: нужна, если через провайдера создаётся новый аккаунт */
@@ -326,6 +331,25 @@ export const articles = {
     kind: 'text' | 'video'
     videos: RecordVideo[]
   }) => authed<{ uri: string; cid: string }>('/me/articles', post(b)),
+}
+
+/** Черновик из импорта постов AT-аккаунта: text — markdown для редактора */
+export interface ImportDraft {
+  id: string
+  sourceUri: string
+  sourceCreatedAt: string
+  title: string
+  text: string
+  status: 'pending' | 'published' | 'dismissed'
+  articleUri: string | null
+}
+
+export const imports = {
+  fromAtproto: () => authed<{ added: number; seen: number; complete: boolean }>('/me/imports/atproto', post({})),
+  list: (status?: ImportDraft['status']) => authed<{ drafts: ImportDraft[] }>(`/me/imports${status ? `?status=${status}` : ''}`),
+  get: (id: string) => authed<ImportDraft>(`/me/imports/${encodeURIComponent(id)}`),
+  setStatus: (id: string, status: ImportDraft['status'], articleUri?: string) =>
+    authed<ImportDraft>(`/me/imports/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status, ...(articleUri ? { articleUri } : {}) }) }),
 }
 
 /** Обращение в поддержку или запрос органа: на сервер (видят сотрудники в /admin/tickets) */

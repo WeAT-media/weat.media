@@ -374,7 +374,7 @@ export default function LoginPage() {
                   <form
                     onSubmit={(e) => {
                       e.preventDefault()
-                      if (atHandle.trim()) window.location.assign(atprotoStartUrl(atHandle.trim(), returnTo))
+                      if (atHandle.trim()) window.location.assign(atprotoStartUrl(atHandle.trim(), returnTo, providerConsent))
                     }}
                     className="rounded-md border border-border bg-background px-5 py-4"
                   >
@@ -382,7 +382,7 @@ export default function LoginPage() {
                       <ProviderIcon provider="atproto" /> Через другой AT-сервер
                     </p>
                     <p className="meta mt-1 !normal-case tracking-normal">
-                      bsky.social или собственный PDS — войдёт в привязанный профиль {SITE_NAME}
+                      bsky.social или собственный PDS — войдёт в привязанный профиль {SITE_NAME} или создаст новый
                     </p>
                     <div className="mt-3 flex gap-2">
                       <input
@@ -396,11 +396,11 @@ export default function LoginPage() {
                     </div>
                   </form>
                 )}
-                {loginProviders.includes('yandex') && (
+                {(loginProviders.includes('yandex') || loginProviders.includes('atproto')) && (
                   <label className={`flex items-start gap-2 rounded-md border px-4 py-3 text-sm ${oauthError === 'ConsentRequired' ? 'border-accent' : 'border-border'}`}>
                     <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={providerConsent} onChange={(e) => setProviderConsent(e.target.checked)} />
                     <span>
-                      Впервые через Яндекс ID? Отметьте, чтобы создать аккаунт: даю{' '}
+                      Впервые через Яндекс ID или AT-сервер? Отметьте, чтобы создать аккаунт: даю{' '}
                       <Link to="/legal/consent" target="_blank" className="text-accent underline underline-offset-2">согласие на обработку персональных данных</Link>{' '}
                       и принимаю{' '}
                       <Link to="/legal/terms" target="_blank" className="text-accent underline underline-offset-2">соглашение</Link>.

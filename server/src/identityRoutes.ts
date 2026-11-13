@@ -56,8 +56,12 @@ interface OAuthState {
 
 const COOKIE = 'oauth_state'
 const COOKIE_PATH = '/api/auth'
-/** провайдеры, через которые можно создать новый аккаунт (только российские) */
-const CAN_REGISTER: Provider[] = ['yandex']
+/**
+ * Через каких провайдеров можно создать новый аккаунт: Яндекс ID — везде;
+ * AT Protocol — только глобальный контур и не из России (иностранный сервис, 242-ФЗ).
+ */
+const canRegister = (p: Provider, contour: 'global' | 'ru', country: string) =>
+  p === 'yandex' || (p === 'atproto' && contour === 'global' && country !== 'RU')
 
 
 export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
@@ -109,10 +113,10 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
       const session = await d.pds.createSession(user.handle, d.secrets.open(existing.pdsPasswordEnc))
       return h.sessionDto(session, user)
     }
-    if (!CAN_REGISTER.includes(p)) {
+    const geo = h.geoOf(c)
+    if (!canRegister(p, d.config.CONTOUR, geo.country)) {
       throw fail('NotLinked', 'Этот аккаунт не привязан. Войдите другим способом и привяжите его в настройках.', 404)
     }
-    const geo = h.geoOf(c)
     if (!geo.allowed) throw fail('ContourRestricted', 'Регистрация доступна только с российского IP', 403)
     if (!consent) throw fail('ConsentRequired', 'Аккаунта ещё нет. Чтобы создать его, отметьте согласие на обработку персональных данных и повторите вход.')
     return registerWith(p, profile, geo.country, utm)
@@ -229,7 +233,10 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
     const returnTo = safeReturnTo(c.req.query('returnTo'), '/feed')
     if (!handle.success) return toLogin(c, { error: 'HandleNotFound', returnTo })
     try {
-      return c.redirect(await atprotoAuthorize(c, handle.data, { mode: 'login', returnTo }))
+      const q = c.req.query()
+      const utm = Utm.safeParse({ source: q.utm_source, medium: q.utm_medium, campaign: q.utm_campaign, term: q.utm_term, content: q.utm_content })
+      const s = { mode: 'login' as const, returnTo, ...(utm.success ? { utm: utm.data } : {}), consent: q.consent === '1' }
+      return c.redirect(await atprotoAuthorize(c, handle.data, s))
     } catch (err) {
       return toLogin(c, { error: err instanceof PdsError ? err.code : 'ProviderFailed', returnTo })
     }
@@ -262,14 +269,14 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
     try {
       // аккаунт с нашего PDS — это не «внешний» вход
       if (await d.users.findByDid(result.did)) throw fail('OwnAccount', 'Это аккаунт Indie.media — войдите паролем', 409)
-      const profile: ExternalProfile = { id: result.did, login: result.handle ?? result.did, email: null, displayName: null }
+      const profile: ExternalProfile = { id: result.did, login: result.handle ?? result.did, email: result.email, displayName: null }
       if (s.mode === 'link') {
         const user = s.did ? await d.users.findByDid(s.did) : undefined
         if (!user || !s.accessJwt) return back({ error: 'InvalidState' })
         await linkTo(user, s.accessJwt, 'atproto', profile)
         return back({ linked: 'atproto' })
       }
-      return back({ handoff: issueHandoff(await loginWith('atproto', profile, c)) })
+      return back({ handoff: issueHandoff(await loginWith('atproto', profile, c, s.utm, s.consent)) })
     } catch (err) {
       if (!(err instanceof PdsError)) console.error(err)
       return back({ error: err instanceof PdsError ? err.code : 'ProviderFailed', provider: 'atproto' })

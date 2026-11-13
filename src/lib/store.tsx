@@ -164,7 +164,8 @@ interface StoreValue extends Persisted {
    * в браузере получает настоящий AT URI; ошибка API пробрасывается. Без сессии, платная, отложенная
    * или видео-файл (его некуда загрузить) — только локально.
    */
-  publishArticle: (article: Article, text?: string) => Promise<void>
+  /** uri записи в репозитории; undefined — статья осталась локальной (платная, отложенная, без сессии) */
+  publishArticle: (article: Article, text?: string) => Promise<string | undefined>
   /** у статьи из индекса — запись в репозиторий читателя; ошибка API пробрасывается (ApiError) */
   addComment: (articleId: string, text: string, parentId?: string) => Promise<void>
   /** свой комментарий: из репозитория читателя (AT URI) или локальный; ошибка API пробрасывается */
@@ -735,6 +736,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...prev.extraArticles,
           ],
         }))
+        return remote?.uri
       },
       addComment: async (articleId, text, parentId) => {
         const a = articles.find((x) => x.id === articleId)

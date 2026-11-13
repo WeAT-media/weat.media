@@ -7,12 +7,15 @@ import {
   type OAuthClientMetadataInput,
 } from '@atproto/oauth-client-node'
 
+/** transition:email — PDS отдаёт email: без него аккаунт на нашем PDS не создать */
+const SCOPE = 'atproto transition:email'
+
 /** Вход через внешний AT-аккаунт (bsky.social, свой PDS) по AT OAuth: нужен только подтверждённый DID */
 export interface AtprotoAuth {
   /** URL страницы согласия на PDS пользователя */
   authorize(handle: string, appState: string): Promise<string>
-  /** проверяет ответ PDS; токены сразу отзываются — данные чужого PDS нам не нужны */
-  callback(params: URLSearchParams): Promise<{ did: string; handle: string | null; appState: string | null }>
+  /** проверяет ответ PDS; токены сразу отзываются — с чужого PDS берём только подтверждённый email (для регистрации) */
+  callback(params: URLSearchParams): Promise<{ did: string; handle: string | null; email: string | null; appState: string | null }>
   clientMetadata: OAuthClientMetadataInput
 }
 
@@ -44,7 +47,7 @@ export function createAtprotoAuth(opts: {
   const loopback = opts.publicUrl.startsWith('http://')
   const clientMetadata: OAuthClientMetadataInput = loopback
     ? buildAtprotoLoopbackClientMetadata({
-        scope: 'atproto',
+        scope: SCOPE,
         redirect_uris: [`http://127.0.0.1:${opts.devPort ?? new URL(opts.publicUrl).port}/api/auth/atproto/callback`],
       })
     : {
@@ -52,7 +55,7 @@ export function createAtprotoAuth(opts: {
         client_name: 'Indie.media',
         client_uri: opts.publicUrl,
         redirect_uris: [`${opts.publicUrl}/api/auth/atproto/callback`],
-        scope: 'atproto',
+        scope: SCOPE,
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         application_type: 'web',
@@ -74,15 +77,20 @@ export function createAtprotoAuth(opts: {
   return {
     clientMetadata,
     async authorize(handle, appState) {
-      return (await client.authorize(handle, { scope: 'atproto', state: appState })).toString()
+      return (await client.authorize(handle, { scope: SCOPE, state: appState })).toString()
     },
     async callback(params) {
       const { session, state } = await client.callback(params)
       const did = session.did
       const identity = await client.identityResolver.resolve(did).catch(() => null)
+      const email = await session
+        .fetchHandler('/xrpc/com.atproto.server.getSession')
+        .then((r) => (r.ok ? (r.json() as Promise<{ email?: string; emailConfirmed?: boolean }>) : null))
+        .then((s) => (s?.email && s.emailConfirmed ? s.email : null))
+        .catch(() => null)
       await client.revoke(did).catch(() => {})
       const handle = identity && identity.handle !== 'handle.invalid' ? identity.handle : null
-      return { did, handle, appState: state }
+      return { did, handle, email, appState: state }
     },
   }
 }

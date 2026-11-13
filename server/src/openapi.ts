@@ -26,6 +26,7 @@ import { GrantBody, PublishPaidBody } from './paidContent.js'
 import { PurchaseBody } from './lava.js'
 import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
+import { ImportDraftDto, ImportStatusBody } from './imports.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
 import { DirectMessageBody, MessageBody, TicketBody, TicketDto, TicketPatch } from './tickets.js'
@@ -445,6 +446,27 @@ const ops: Op[] = [
   {
     method: 'post', path: '/me/tickets/{id}/messages', tag: 'profile', summary: 'Ответить в обращение', auth: 'bearer',
     description: 'Возвращает обращение в работу.', body: MessageBody, ok: { status: 201, description: 'Обращение с перепиской' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
+  },
+  // ── импорт из AT-аккаунта
+  {
+    method: 'post', path: '/me/imports/atproto', tag: 'profile', summary: 'Импортировать посты AT-аккаунта в черновики', auth: 'bearer',
+    description: 'Читает app.bsky.feed.post привязанного AT-аккаунта (до 1000 постов, без ответов). Уже импортированные пропускаются. Ничего не публикует.',
+    ok: { status: 200, schema: z.object({ added: z.number().int(), seen: z.number().int(), complete: z.boolean().describe('false — постов больше лимита') }), description: 'Сколько черновиков добавлено' },
+    errors: [[401, 'AuthenticationRequired'], [404, 'NotLinked'], [502, 'SourceUnavailable']],
+  },
+  {
+    method: 'get', path: '/me/imports', tag: 'profile', summary: 'Черновики из импорта', auth: 'bearer',
+    query: { status: { description: 'pending | published | dismissed; без — все' } },
+    ok: { status: 200, schema: z.object({ drafts: z.array(ImportDraftDto) }), description: 'Новые сверху' }, errors: [[401, 'AuthenticationRequired']],
+  },
+  {
+    method: 'get', path: '/me/imports/{id}', tag: 'profile', summary: 'Черновик из импорта', auth: 'bearer',
+    ok: { status: 200, schema: ImportDraftDto, description: 'Черновик' }, errors: [[401, 'AuthenticationRequired'], [404, 'NotFound']],
+  },
+  {
+    method: 'patch', path: '/me/imports/{id}', tag: 'profile', summary: 'Отметить черновик выпущенным или отклонённым', auth: 'bearer',
+    description: 'Сама публикация — POST /me/articles; здесь только статус черновика.',
+    body: ImportStatusBody, ok: { status: 200, schema: ImportDraftDto, description: 'Обновлён' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [404, 'NotFound']],
   },
   // ── лайки
   {

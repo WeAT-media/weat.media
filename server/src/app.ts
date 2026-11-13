@@ -17,6 +17,7 @@ import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
+import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
 import type { AuditRepo, Staff, StaffRole, StaffVerifier } from './staff.js'
@@ -42,6 +43,9 @@ export interface Deps {
   claims: ClaimRepo
   tickets: TicketRepo
   sessions: SessionRepo
+  imports: ImportRepo
+  /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
+  postSource?: PostSource
   /** сервис ленты; не задан — лента собирается обходом PDS */
   feedUrl?: string
   /** lava.top; не задан — оплата выключена (503 PaymentsDisabled) */
@@ -248,6 +252,7 @@ export function createApp(deps: Deps) {
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountArticleRoutes(app, { pds: d.pds }, { bearer })
+  mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource() }, { bearer })
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })
 
