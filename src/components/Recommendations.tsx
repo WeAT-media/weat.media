@@ -1,26 +1,42 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Flame } from 'lucide-react'
 import { useStore } from '@/lib/store'
+import { fetchRelated } from '@/lib/remoteFeed'
+import type { Article } from '@/types/types'
 
 /**
- * Рекомендательный блок BigData-движка: скоринг по «горячести», общим тегам
- * и мок-поведенческим сигналам. В кабинете показываем удержание и CTR.
+ * «Читать дальше»: для статьи из индекса — серверные рекомендации (общие теги и общие читатели,
+ * services/feed/src/rank.rs); для своей локальной записи — статьи с общими тегами из загруженных.
  */
 export default function Recommendations({ excludeId }: { excludeId?: string }) {
   const { articles } = useStore()
   const current = articles.find((a) => a.id === excludeId)
+  const uri = current?.fromIndex ? current.atUri : undefined
+  const [server, setServer] = useState<{ uri: string; list: Article[] } | null>(null)
+  useEffect(() => {
+    if (!uri) return
+    let alive = true
+    fetchRelated(uri).then((list) => alive && setServer({ uri, list }))
+    return () => {
+      alive = false
+    }
+  }, [uri])
 
-  const scored = articles
-    .filter((a) => a.id !== excludeId)
-    .map((a) => {
-      const overlap = current ? a.tags.filter((t) => current.tags.includes(t)).length : 0
-      const score = (a.hotScore ?? 0) + overlap * 12
-      return { a, score }
-    })
-    .sort((x, y) => y.score - x.score)
-    .slice(0, 3)
+  const local = current
+    ? articles
+        .filter((a) => a.id !== excludeId)
+        .map((a) => ({ a, overlap: a.tags.filter((t) => current.tags.includes(t)).length }))
+        .filter((x) => x.overlap > 0)
+        .sort((x, y) => y.overlap - x.overlap)
+        .slice(0, 3)
+        .map((x) => x.a)
+    : []
+  // карточка из стора знает о моём лайке и свежих комментариях — берём её, если есть
+  const byId = new Map(articles.map((a) => [a.id, a]))
+  const list = uri ? (server?.uri === uri ? server.list.map((a) => byId.get(a.id) ?? a) : []) : local
 
-  if (scored.length === 0) return null
+  if (list.length === 0) return null
 
   return (
     <section aria-label="Рекомендации" className="rule mt-12 pt-8">
@@ -28,7 +44,7 @@ export default function Recommendations({ excludeId }: { excludeId?: string }) {
         <Flame size={14} className="text-accent" aria-hidden="true" /> Читать дальше
       </h2>
       <ul className="mt-5">
-        {scored.map(({ a, score }, i) => (
+        {list.map((a, i) => (
           <li key={a.id} className="rule py-4 first:border-t-0">
             <Link
               to={`/article/${a.id}`}
@@ -40,7 +56,7 @@ export default function Recommendations({ excludeId }: { excludeId?: string }) {
                   {a.title}
                 </span>
                 <span className="meta mt-1 block">
-                  @{a.author.handle} · score {score} · {a.readingTime} мин
+                  @{a.author.handle} · {a.tags.slice(0, 2).map((t) => `#${t}`).join(' ')} · {a.readingTime} мин
                 </span>
               </span>
             </Link>

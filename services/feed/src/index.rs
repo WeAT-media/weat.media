@@ -79,9 +79,24 @@ pub async fn upsert_comment(
 }
 
 /// лайк неизменяем; повтор (тот же uri или та же статья от того же did) молча пропускаем
+/// аккаунт замечен: first_seen — самое раннее наблюдение (возраст для веса лайка, см. 0006_like_weight.sql)
+pub async fn seen(pool: &PgPool, did: &str, at: DateTime<Utc>) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO actors (did, first_seen) VALUES ($1, $2)
+         ON CONFLICT (did) DO UPDATE SET first_seen = least(actors.first_seen, EXCLUDED.first_seen)",
+    )
+    .bind(did)
+    .bind(at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// вес — на момент индексации (now), а не createdAt записи: его автор может поставить любым
 pub async fn upsert_like(pool: &PgPool, uri: &str, did: &str, l: &LikeRec) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO likes (uri, did, subject_uri, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        "INSERT INTO likes (uri, did, subject_uri, created_at, weight)
+         VALUES ($1, $2, $3, $4, like_weight($2, $3, now())) ON CONFLICT DO NOTHING",
     )
     .bind(uri)
     .bind(did)
@@ -171,6 +186,15 @@ pub async fn comments_by(
     .bind(limit)
     .fetch_all(pool)
     .await
+}
+
+/// рекомендации к статье — формула в rank::related_sql
+pub async fn related(pool: &PgPool, uri: &str, limit: i64) -> sqlx::Result<Vec<Row>> {
+    sqlx::query_as(&crate::rank::related_sql())
+        .bind(uri)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
 }
 
 pub async fn article(pool: &PgPool, uri: &str) -> sqlx::Result<Option<Row>> {

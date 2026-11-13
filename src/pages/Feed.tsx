@@ -10,7 +10,8 @@ import UpvoteButton from '@/components/UpvoteButton'
 import BookmarkButton from '@/components/BookmarkButton'
 import FeedBest from '@/components/FeedBest'
 import { prefetchArticle } from '@/lib/prefetch'
-import { commentCount, upvoteCount } from '@/lib/analytics'
+import { hotness } from '@/lib/analytics'
+import { fetchRanked } from '@/lib/remoteFeed'
 import type { Article } from '@/types/types'
 import { LANGUAGES, languageName } from '@/data/languages'
 
@@ -174,30 +175,47 @@ export default function Feed() {
     return { personal: false, tags: tagCounts.map(([t]) => t).filter(notSelected).slice(0, 4) }
   }, [articles, upvotes, bookmarks, authorSubscriptions, feedTags, tagCounts])
 
+  // «Горячее» ранжирует сервер по всему индексу с теми же тегами и языком; null — ещё не ответил
+  const hotKey = `${feedTags.join(',')}|${lang}`
+  const [serverHot, setServerHot] = useState<{ key: string; list: { article: Article; score: number }[] } | null>(null)
+  const wantHot = prefs.feedSort === 'hot'
+  useEffect(() => {
+    if (!wantHot) return
+    let alive = true
+    fetchRanked({ sort: 'hot', limit: 100, tags: feedTags, ...(lang === 'all' ? {} : { lang }) }).then(
+      (list) => alive && setServerHot({ key: hotKey, list }),
+    )
+    return () => {
+      alive = false
+    }
+  }, [wantHot, hotKey, feedTags, lang])
+
   const visible = useMemo(() => {
     const now = new Date().toISOString()
     const at = (a: (typeof articles)[number]) => Date.parse(a.publishedAtFull ?? a.publishedAt) || 0
-    // «горячее»: очки делятся на возраст (часы + 2)^1.5 — свежее при равных очках выше, старое уходит вниз
-    const hotness = (a: (typeof articles)[number]) => {
-      const score = (a.hotScore ?? 0) + commentCount(a) * 2 + upvoteCount(a, upvotes.includes(a.id))
-      const hours = Math.max(0, (Date.parse(now) - at(a)) / 3_600_000)
-      return (score + 1) / Math.pow(hours + 2, 1.5)
-    }
-    const list = articles.filter(
-      (a) =>
-        // отложенные публикации появляются в ленте только после publishAt
-        (!a.publishAt || a.publishAt <= now) &&
-        (!hideGuilty || a.verdict !== 'guilty') &&
-        (prefs.showCondemned || a.verdict !== 'guilty') &&
-        // ANY: достаточно одного выбранного тега
-        (feedTags.length === 0 || a.tags.some((t) => feedTags.includes(t))) &&
-        (lang === 'all' || (a.language ?? 'ru') === lang) &&
-        (kind === 'all' || (a.kind ?? 'text') === kind),
-    )
-    return prefs.feedSort === 'hot'
-      ? [...list].sort((x, y) => hotness(y) - hotness(x))
-      : [...list].sort((x, y) => at(y) - at(x))
-  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes])
+    const passes = (a: Article) =>
+      // отложенные публикации появляются в ленте только после publishAt
+      (!a.publishAt || a.publishAt <= now) &&
+      (!hideGuilty || a.verdict !== 'guilty') &&
+      (prefs.showCondemned || a.verdict !== 'guilty') &&
+      // ANY: достаточно одного выбранного тега
+      (feedTags.length === 0 || a.tags.some((t) => feedTags.includes(t))) &&
+      (lang === 'all' || (a.language ?? 'ru') === lang) &&
+      (kind === 'all' || (a.kind ?? 'text') === kind)
+    const list = articles.filter(passes)
+    if (prefs.feedSort !== 'hot') return [...list].sort((x, y) => at(y) - at(x))
+    // свои записи без индекса и ответ сервера — в один список по одному score (формула общая, см. hotness)
+    // карточка из стора знает о моём лайке; статьи вне загруженных — карточка сервера, с теми же фильтрами
+    const byId = new Map(articles.map((a) => [a.id, a]))
+    const ranked =
+      serverHot?.key === hotKey
+        ? serverHot.list.map((r) => ({ a: byId.get(r.article.id) ?? r.article, score: r.score })).filter((r) => passes(r.a))
+        : []
+    if (!ranked.length) return [...list].sort((x, y) => hotness(y, upvotes.includes(y.id)) - hotness(x, upvotes.includes(x.id)))
+    const inServer = new Set(ranked.map((r) => r.a.id))
+    const own = list.filter((a) => !a.fromIndex && !inServer.has(a.id)).map((a) => ({ a, score: hotness(a, upvotes.includes(a.id)) }))
+    return [...ranked, ...own].sort((x, y) => y.score - x.score).map((x) => x.a)
+  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes, serverHot, hotKey])
   const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const pageItems = visible.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)

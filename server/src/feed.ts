@@ -53,6 +53,21 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
   }
 
   /** одна статья целиком (лента отдаёт карточки без текста) */
+  /** «Читать дальше»: общие теги и общие читатели — считает индекс (services/feed/src/rank.rs) */
+  app.get('/feed/related', async (c) => {
+    const uri = c.req.query('uri') ?? ''
+    if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/.test(uri)) {
+      return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey' }, 400)
+    }
+    const limit = String(Math.min(20, Math.max(1, Number(c.req.query('limit')) || 3)))
+    if (!d.feedUrl) return c.json({ articles: [] })
+    const res = await fetch(`${d.feedUrl}/feed-api/related?${new URLSearchParams({ uri, limit })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+    // рекомендации — не главное на странице: индекс недоступен — пустой блок, а не ошибка
+    if (!res?.ok) return c.json({ articles: [] })
+    c.header('cache-control', 'public, max-age=60')
+    return c.json(await res.json())
+  })
+
   app.get('/feed/article', async (c) => {
     const uri = c.req.query('uri') ?? ''
     if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/.test(uri)) {

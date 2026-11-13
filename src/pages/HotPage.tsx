@@ -5,7 +5,7 @@ import { useStore } from '@/lib/store'
 import Stamp from '@/components/Stamp'
 import Reveal from '@/components/Reveal'
 import PaywallBadge from '@/components/PaywallBadge'
-import { commentCount, upvoteCount } from '@/lib/analytics'
+import { commentCount, hotness } from '@/lib/analytics'
 import { fetchRanked } from '@/lib/remoteFeed'
 import { SOURCE_URL } from '@/config/site'
 import type { Article } from '@/types/types'
@@ -25,10 +25,7 @@ export default function HotPage() {
   const now = new Date().toISOString()
   const local = articles
     .filter((a) => !a.publishAt || a.publishAt <= now)
-    .map((a) => ({
-      a,
-      score: (a.hotScore ?? 0) + commentCount(a) * 2 + upvoteCount(a, upvotes.includes(a.id)),
-    }))
+    .map((a) => ({ a, score: Math.round(hotness(a, upvotes.includes(a.id)) * 1000) / 10 }))
     .sort((x, y) => y.score - x.score)
   // карточка из стора знает о моём лайке и свежих комментариях — берём её, если есть
   const byId = new Map(articles.map((a) => [a.id, a]))

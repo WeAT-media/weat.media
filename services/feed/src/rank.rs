@@ -1,9 +1,10 @@
 //! Ранжирование ленты. Алгоритм открыт намеренно: любой может форкнуть его и собрать свой дайджест.
 //!
 //! - new  — новые сверху (keyset-курсор по времени);
-//! - hot  — «горячее»: очки делятся на возраст, (лайки + 2·комментарии + 1) / (часы + 2)^1.5.
+//! - hot  — «горячее»: очки делятся на возраст, (лайки + 2·комментарии + 1) / (часы + 2)^1.5;
+//!   лайки — взвешенные (like_score): самолайк 0, свежий аккаунт 0.25–0.5, см. 0006_like_weight.sql.
 //!   Свежая запись при равных очках выше, старая уходит вниз; комментарий весит вдвое — это усилие;
-//! - best — «лучшее» за период: по лайкам или по комментариям.
+//! - best — «лучшее» за период: по взвешенным лайкам или по комментариям.
 //!
 //! Возраст — от публикации оригинала (published_at): импорт старой новости не делает её свежей.
 //! hot и best листаются по смещению: порядок пересчитывается на каждый запрос.
@@ -82,7 +83,7 @@ impl Sort {
     /// (score, доп. условие WHERE, ORDER BY) — только константы из этого модуля, без ввода пользователя
     pub fn sql(self) -> (String, String, String) {
         let hot = format!(
-            "(a.like_count + {COMMENT_WEIGHT} * a.comment_count + 1)
+            "(a.like_score + {COMMENT_WEIGHT} * a.comment_count + 1)
              / power(greatest(extract(epoch FROM now() - a.published_at), 0) / 3600 + 2, {GRAVITY})"
         );
         match self {
@@ -98,7 +99,7 @@ impl Sort {
             ),
             Sort::Best { metric, period } => {
                 let col = match metric {
-                    Metric::Likes => "a.like_count",
+                    Metric::Likes => "a.like_score",
                     Metric::Comments => "a.comment_count",
                 };
                 let since = period
@@ -113,6 +114,38 @@ impl Sort {
             }
         }
     }
+}
+
+/// «Читать дальше» к статье: общие теги (TAG_WEIGHT за тег) и читатели, лайкнувшие обе
+/// (CO_LIKE_WEIGHT за читателя, только лайки с весом > 0), делённые на √(дни + 1) — свежее при равных выше.
+pub const TAG_WEIGHT: f64 = 3.0;
+pub const CO_LIKE_WEIGHT: f64 = 2.0;
+
+pub fn related_sql() -> String {
+    format!(
+        "WITH src AS (SELECT uri, tags FROM articles WHERE uri = $1),
+         co AS (
+           SELECT l2.subject_uri AS uri, count(DISTINCT l2.did) AS n
+           FROM likes l1 JOIN likes l2 ON l2.did = l1.did AND l2.subject_uri <> l1.subject_uri
+           WHERE l1.subject_uri = $1 AND l1.weight > 0 AND l2.weight > 0
+           GROUP BY l2.subject_uri
+         ),
+         scored AS (
+           SELECT a.uri,
+             ({TAG_WEIGHT} * cardinality(ARRAY(SELECT unnest(a.tags) INTERSECT SELECT unnest(src.tags)))
+              + {CO_LIKE_WEIGHT} * coalesce(co.n, 0))
+             / sqrt(greatest(extract(epoch FROM now() - a.published_at), 0) / 86400 + 1) AS score
+           FROM articles a CROSS JOIN src LEFT JOIN co ON co.uri = a.uri
+           WHERE a.uri <> src.uri AND (a.tags && src.tags OR co.n IS NOT NULL)
+         )
+         SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at, a.record - 'text' AS record,
+                coalesce(char_length(a.record->>'text'), 0) AS text_length, a.like_count, a.comment_count,
+                s.score::float8 AS score
+         FROM scored s JOIN articles a ON a.uri = s.uri LEFT JOIN handles h ON h.did = a.did
+         WHERE s.score > 0
+         ORDER BY s.score DESC, a.published_at DESC
+         LIMIT $2"
+    )
 }
 
 /// та же формула, что в SQL, — для тестов и для тех, кто считает у себя

@@ -178,13 +178,17 @@ export interface RankQuery {
   metric?: 'likes' | 'comments'
   period?: 'day' | 'week' | 'month' | 'all'
   source?: 'internal' | 'external'
+  /** любой из тегов */
+  tags?: string[]
+  lang?: string
   limit?: number
 }
 
 /** ранжирование индекса (services/feed/src/rank.rs); ошибка или пустой индекс — [] */
 export async function fetchRanked(q: RankQuery): Promise<{ article: Article; score: number }[]> {
   const params = new URLSearchParams({ limit: String(q.limit ?? 50), sort: q.sort })
-  for (const k of ['metric', 'period', 'source'] as const) if (q[k]) params.set(k, q[k]!)
+  for (const k of ['metric', 'period', 'source', 'lang'] as const) if (q[k]) params.set(k, q[k]!)
+  if (q.tags?.length) params.set('tags', q.tags.join(','))
   try {
     const res = await fetch(`${BASE}/feed?${params}`)
     if (!res.ok) return []
@@ -193,6 +197,18 @@ export async function fetchRanked(q: RankQuery): Promise<{ article: Article; sco
       const article = toArticle(i)
       return article ? [{ article, score: i.score ?? 0 }] : []
     })
+  } catch {
+    return []
+  }
+}
+
+/** «Читать дальше» к статье из индекса; пусто — индекс не нашёл похожих или недоступен */
+export async function fetchRelated(uri: string, limit = 3): Promise<Article[]> {
+  try {
+    const res = await fetch(`${BASE}/feed/related?${new URLSearchParams({ uri, limit: String(limit) })}`)
+    if (!res.ok) return []
+    const page = (await res.json()) as { articles: FeedItem[] }
+    return page.articles.map(toArticle).filter((a): a is Article => a !== null)
   } catch {
     return []
   }

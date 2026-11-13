@@ -139,8 +139,6 @@ export interface Article {
   source?: SourceRef
   collectionId?: string
   geoBlock?: GeoBlock
-  /** балл «горячести» для дайджеста и рекомендаций */
-  hotScore?: number
   /** пришла из индекса ленты (настоящая запись PDS), а не из демо-данных */
   fromIndex?: boolean
   /** полное время публикации (ISO) для сортировки; publishedAt — только дата для показа */

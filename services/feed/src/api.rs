@@ -32,6 +32,7 @@ pub fn router(state: AppState) -> Router {
         .route("/feed-api/article", get(one))
         .route("/feed-api/likes", get(likes))
         .route("/feed-api/comments", get(comments))
+        .route("/feed-api/related", get(related))
         .route("/rss/author/{handle}", get(crate::rss::author))
         .route("/rss/comments/{did}/{rkey}", get(crate::rss::comments))
         .with_state(state)
@@ -170,6 +171,30 @@ async fn one(State(s): State<AppState>, Query(q): Query<One>) -> Response {
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(err) => {
             tracing::error!(%err, "article");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct RelatedParams {
+    uri: String,
+    limit: Option<i64>,
+}
+
+/// «Читать дальше»: общие теги и общие читатели (rank::related_sql)
+async fn related(State(s): State<AppState>, Query(p): Query<RelatedParams>) -> Response {
+    if !p.uri.starts_with("at://did:") || p.uri.len() > 400 {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    match index::related(&s.pool, &p.uri, p.limit.unwrap_or(3).clamp(1, 20)).await {
+        Ok(rows) => (
+            [(header::CACHE_CONTROL, "public, max-age=60")],
+            Json(serde_json::json!({ "articles": rows })),
+        )
+            .into_response(),
+        Err(err) => {
+            tracing::error!(%err, "related");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }

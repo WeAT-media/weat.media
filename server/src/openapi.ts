@@ -393,6 +393,12 @@ const ops: Op[] = [
     query: { subject: { description: 'at://did/media.weat.article/rkey', required: true } },
     ok: { status: 200, schema: z.object({ ok: z.literal(true), removed: z.number().int() }), description: 'Сколько записей удалено' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },
+  {
+    method: 'get', path: '/feed/related', tag: 'profile', summary: 'Читать дальше',
+    description: 'Статьи с общими тегами (3 за тег) и общими читателями (2 за читателя, только лайки с весом > 0), делённые на √(дни + 1). Индекс недоступен — пустой список.',
+    query: { uri: { description: 'at://did/media.weat.article/rkey', required: true }, limit: { description: '1–20, по умолчанию 3' } },
+    ok: { status: 200, description: '{ articles: [...] } — карточки без текста, со score' }, errors: [[400, 'InvalidRequest']],
+  },
   // ── служебное
   { method: 'get', path: '/geo', tag: 'service', summary: 'Страна и контур', ok: { status: 200, schema: S.GeoSchema, description: 'Результат GeoIP' } },
   {

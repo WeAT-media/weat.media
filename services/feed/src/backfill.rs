@@ -97,6 +97,15 @@ pub async fn run(pool: &PgPool, pds: &Pds) -> sqlx::Result<usize> {
                     };
                     for r in &recs.records {
                         let rkey = r.uri.rsplit('/').next().unwrap_or_default();
+                        // свой PDS: дате записи доверяем — аккаунт не «молодеет» после переиндексации
+                        let at = r
+                            .value
+                            .get("createdAt")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                            .map(|d| d.with_timezone(&Utc).min(Utc::now()))
+                            .unwrap_or_else(Utc::now);
+                        index::seen(pool, &repo.did, at).await?;
                         if collection == COMMENT {
                             if let Some(c) = parse_comment(&r.value, Utc::now()) {
                                 index::upsert_comment(pool, &r.uri, &repo.did, &c).await?;

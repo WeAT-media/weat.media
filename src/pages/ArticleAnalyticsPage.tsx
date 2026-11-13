@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, ArrowBigUp, BookOpen, Bookmark, CheckCircle2, Clock, Crown, Eye, LineChart, MessageSquare, MousePointerClick, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
+import { ArrowLeft, ArrowBigUp, BookOpen, CheckCircle2, Clock, Crown, Eye, LineChart, MessageSquare, MousePointerClick, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
 import {
   CartesianGrid,
   Line,
@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useStore } from '@/lib/store'
-import { fromRealStats, getArticleAnalytics, upvoteCount as countUpvotes, bookmarkBase } from '@/lib/analytics'
+import { fromRealStats, getArticleAnalytics, upvoteCount as countUpvotes } from '@/lib/analytics'
 import { useArticleStats } from '@/lib/tracking'
 import { normalizeVideos } from '@/lib/videos'
 import { normalizeAtProto } from '@/lib/atproto'
@@ -38,7 +38,7 @@ function fmtTime(sec: number): string {
  */
 export default function ArticleAnalyticsPage() {
   const { id } = useParams()
-  const { articles, upvotes, bookmarks, user, isPremium } = useStore()
+  const { articles, upvotes, user, isPremium } = useStore()
   const article = articles.find((a) => a.id === id)
   const real = useArticleStats(article?.id)
 
@@ -90,7 +90,6 @@ export default function ArticleAnalyticsPage() {
   }
 
   const upvoteCount = countUpvotes(article, upvotes.includes(article.id))
-  const bookmarkCount = bookmarkBase(article.id) + (bookmarks.includes(article.id) ? 1 : 0)
   // реальные данные сервиса; пока просмотров нет — демо-модель с пометкой
   const an = real ? fromRealStats(article, upvoteCount, real) : getArticleAnalytics(article, upvoteCount)
 
@@ -100,7 +99,6 @@ export default function ArticleAnalyticsPage() {
     { label: 'Среднее время чтения', value: fmtTime(an.avgReadTimeSec), icon: Clock },
     { label: 'Дочитывания', value: `${an.completionPct}%`, icon: BookOpen },
     { label: 'Подняли', value: an.upvotes.toLocaleString('ru-RU'), icon: ArrowBigUp },
-    { label: 'В закладках', value: bookmarkCount.toLocaleString('ru-RU'), icon: Bookmark },
     { label: 'Комментарии', value: String(an.comments), icon: MessageSquare },
     { label: 'CTR из ленты', value: an.ctrPct === null ? '—' : `${an.ctrPct}%`, icon: MousePointerClick },
   ]

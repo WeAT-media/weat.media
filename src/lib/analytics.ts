@@ -8,25 +8,24 @@ function hash32(s: string): number {
   return Math.abs(h)
 }
 
-/** Базовые (демо) upvotes статьи — детерминированы по id; пользовательский голос добавляется поверх */
-export function upvoteBase(articleId: string): number {
-  return 4 + (hash32(`up-${articleId}`) % 120)
+/** Голоса статьи: лайки из индекса (мой учтён по likedByMe); у своей записи вне индекса — только мой; mine — состояние кнопки */
+export function upvoteCount(a: Article, mine: boolean): number {
+  return Math.max(0, (a.likeCount ?? 0) - (a.likedByMe ? 1 : 0) + (mine ? 1 : 0))
 }
 
-/** Голоса статьи: из индекса — настоящие лайки, у демо-статей — демо-база; mine — текущее состояние кнопки */
-export function upvoteCount(a: Article, mine: boolean): number {
-  if (a.fromIndex && a.likeCount !== undefined) return Math.max(0, a.likeCount - (a.likedByMe ? 1 : 0) + (mine ? 1 : 0))
-  return upvoteBase(a.id) + (mine ? 1 : 0)
+/**
+ * «Горячесть» — та же формула, что на сервере (services/feed/src/rank.rs): (лайки + 2·комментарии + 1) / (часы + 2)^1.5.
+ * Нужна для своих записей, которых ещё нет в индексе, — чтобы встать в серверный список по тому же score.
+ */
+export function hotness(a: Article, mine: boolean, now = Date.now()): number {
+  const at = Date.parse(a.publishedAtFull ?? a.publishedAt) || 0
+  const hours = Math.max(0, (now - at) / 3_600_000)
+  return (upvoteCount(a, mine) + 2 * commentCount(a) + 1) / Math.pow(hours + 2, 1.5)
 }
 
 /** Комментарии: индекс знает обо всех, локальный список — только о загруженных */
 export function commentCount(a: Article): number {
   return Math.max(a.commentCount ?? 0, a.comments.length)
-}
-
-/** Базовые (демо) закладки статьи — детерминированы по id */
-export function bookmarkBase(articleId: string): number {
-  return 2 + (hash32(`bm-${articleId}`) % 65)
 }
 
 export interface DailyPoint {
@@ -130,7 +129,7 @@ export function fromRealStats(article: Article, upvotes: number, r: RealStats): 
  */
 export function getArticleAnalytics(article: Article, upvotes: number): ArticleAnalytics {
   const h = hash32(article.id)
-  const views = 400 + (h % 9000) + (article.hotScore ?? 0) * 60
+  const views = 400 + (h % 9000)
   const uniqueViewers = Math.round(views * (0.62 + (h % 20) / 100))
   const avgReadTimeSec = Math.min(article.readingTime * 60, 40 + (h % Math.max(60, article.readingTime * 45)))
   const completionPct = 28 + (h % 50)

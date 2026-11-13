@@ -196,6 +196,7 @@ pub async fn apply(
             record,
         } => {
             let uri = format!("at://{did}/{collection}/{rkey}");
+            index::seen(pool, &did, Utc::now()).await?;
             if collection == COMMENT {
                 match parse_comment(&record, Utc::now()) {
                     Some(c) => index::upsert_comment(pool, &uri, &did, &c).await?,
