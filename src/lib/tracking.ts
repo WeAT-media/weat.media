@@ -2,6 +2,7 @@ import { useEffect, useState, type RefObject } from 'react'
 import { hasSession } from '@/lib/api'
 import type { RealStats } from '@/lib/analytics'
 import { lastTouchUtm, parseUtm } from '@/lib/utm'
+import { analyticsAllowed } from '@/lib/consent'
 
 /**
  * Открытая аналитика: beacon в weat-analytics. Без cookie и идентификаторов —
@@ -15,6 +16,11 @@ const optedOut = () =>
 
 function send(payload: Record<string, unknown>) {
   if (optedOut()) return
+  // ЕЭЗ/UK/CH — только с согласия (consent.ts); остальным — как раньше
+  void analyticsAllowed().then((ok) => ok && beacon(payload))
+}
+
+function beacon(payload: Record<string, unknown>) {
   const body = JSON.stringify(payload)
   // text/plain — простой запрос без CORS-preflight; sendBeacon переживает закрытие вкладки
   if (navigator.sendBeacon?.(`${BASE}/collect`, new Blob([body], { type: 'text/plain' }))) return

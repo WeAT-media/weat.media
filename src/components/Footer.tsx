@@ -4,6 +4,7 @@ import { SOURCE_URL } from '@/config/site'
 import BrandName from '@/components/BrandName'
 import WheatMark from '@/components/WheatMark'
 import { LEGAL_DOCS } from '@/pages/legal/documents'
+import { reopenConsent } from '@/lib/consent'
 
 const col = 'flex flex-col gap-2 font-mono text-[12px] uppercase tracking-[0.08em] text-primary-foreground/70'
 const link = 'transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -47,6 +48,7 @@ export default function Footer() {
             <Link key={d.slug} to={`/legal/${d.slug}`} className={link}>{d.title}</Link>
           ))}
           <Link to="/support/legal" className={link}>Запросы органов</Link>
+          <button type="button" onClick={reopenConsent} className={`${link} cursor-pointer text-left uppercase`}>Настройки cookie</button>
         </nav>
       </div>
     </footer>

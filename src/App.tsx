@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useParams } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import Header from '@/components/Header'
 import UtmCapture from '@/components/UtmCapture'
+import CookieBanner from '@/components/CookieBanner'
 import ScrollToTop from '@/components/ScrollToTop'
 import Footer from '@/components/Footer'
 import EventTicker from '@/components/EventTicker'
@@ -81,6 +82,7 @@ export default function App() {
         <main className="flex-1">
           <ScrollToTop />
           <UtmCapture />
+          <CookieBanner />
           <Suspense fallback={<div className="min-h-[60vh]" aria-busy="true" />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
