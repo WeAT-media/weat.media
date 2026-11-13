@@ -1,5 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { videoTracker } from '@/lib/tracking'
+import { clearResume, clock, getResume, saveResume } from '@/lib/videoResume'
 import videojs from 'video.js'
 import 'video.js/dist/video-js.css'
 
@@ -27,13 +28,15 @@ interface Props {
   caption?: string | false
   /** id статьи для аналитики: запуск и досмотр видео (ранжирование видео) */
   trackId?: string
+  /** ключ ролика для «продолжить с места»; без него (превью, интерактивное видео) — всегда с начала */
+  resumeKey?: string
 }
 
 const typeOf = (src: string) => (/\.webm(\?|$)/i.test(src) ? 'video/webm' : 'video/mp4')
 
 /** Плеер на video.js. Источник меняется без пересоздания плеера (нужно для ветвления интерактивного видео). */
 const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  { src, title, previewRange, onPreviewEnd, onTime, onEnded, onLoaded, overlay, caption, trackId },
+  { src, title, previewRange, onPreviewEnd, onTime, onEnded, onLoaded, overlay, caption, trackId, resumeKey },
   ref,
 ) {
   const holder = useRef<HTMLDivElement>(null)
@@ -45,6 +48,9 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   }, [onPreviewEnd, onTime, onEnded, onLoaded])
   const initialSrc = useRef(src)
   const initialTrackId = useRef(trackId)
+  const initialResumeKey = useRef(resumeKey)
+  /** с какой секунды продолжили — плашка «Продолжаем с … · С начала» */
+  const [resumedAt, setResumedAt] = useState<number | null>(null)
 
   useImperativeHandle(
     ref,
@@ -92,6 +98,34 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     player.on('ended', () => cb.current.onEnded?.())
     player.on('loadedmetadata', () => cb.current.onLoaded?.())
 
+    // продолжить с места: у платного превью свой отрезок — там позицию не трогаем
+    const rk = previewStart === undefined ? initialResumeKey.current : undefined
+    if (rk) {
+      let lastSave = 0
+      player.on('loadedmetadata', () => {
+        const t = getResume(rk, player.duration() ?? 0)
+        if (t !== null) {
+          player.currentTime(t)
+          setResumedAt(t)
+          // посмотрел пару секунд — плашка больше не нужна
+          player.one('play', () => setTimeout(() => setResumedAt(null), 6_000))
+        }
+      })
+      const save = () => saveResume(rk, player.currentTime() ?? 0, player.duration() ?? 0)
+      player.on('timeupdate', () => {
+        const now = Date.now()
+        if (now - lastSave >= 5_000) {
+          lastSave = now
+          save()
+        }
+      })
+      player.on('pause', save)
+      player.on('ended', () => clearResume(rk))
+      // закрыли вкладку посреди ролика — позиция всё равно сохранится
+      window.addEventListener('pagehide', save)
+      player.on('dispose', () => window.removeEventListener('pagehide', save))
+    }
+
     if (previewStart !== undefined && previewEnd !== undefined) {
       player.on('loadedmetadata', () => player.currentTime(previewStart))
       player.on('timeupdate', () => {
@@ -124,6 +158,30 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     <figure className="my-8">
       <div className="relative">
         <div ref={holder} data-vjs-player className="overflow-hidden rounded-md" />
+        {resumedAt !== null && (
+          <div className="absolute left-3 top-3 z-20 inline-flex items-center gap-3 rounded-full bg-primary/90 px-3 py-1.5 font-mono text-[11px] font-semibold text-primary-foreground shadow-xs">
+            <span>Продолжаем с {clock(resumedAt)}</span>
+            <button
+              type="button"
+              onClick={() => {
+                playerRef.current?.currentTime(0)
+                if (initialResumeKey.current) clearResume(initialResumeKey.current)
+                setResumedAt(null)
+              }}
+              className="cursor-pointer text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              С начала
+            </button>
+            <button
+              type="button"
+              aria-label="Скрыть"
+              onClick={() => setResumedAt(null)}
+              className="cursor-pointer opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {/* над кадром, но выше панели управления (≈3em) — она остаётся кликабельной */}
         {overlay && <div className="pointer-events-none absolute inset-x-0 bottom-[3em] top-0 z-10 [&>*]:pointer-events-auto">{overlay}</div>}
       </div>

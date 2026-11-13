@@ -706,7 +706,7 @@ export default function ArticlePage() {
                               <p className="meta !text-primary-foreground/60">Полное видео доступно после покупки</p>
                             </div>
                           ) : (
-                            <VideoPlayer ref={videoPlayerRef} src={v.src ?? videoSrc} title={v.title} trackId={videoTrackId} />
+                            <VideoPlayer ref={videoPlayerRef} src={v.src ?? videoSrc} title={v.title} trackId={videoTrackId} resumeKey={`${videoTrackId}:${v.id}`} />
                           )
                         ) : (
                           <div className="my-4 aspect-video w-full overflow-hidden rounded-md border border-border bg-primary/95">
