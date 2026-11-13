@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { animate, motion, useInView, useReducedMotion } from 'motion/react'
 import { motionTokens, reducedFade, springs } from '@/lib/motionTokens'
 
@@ -53,16 +53,29 @@ export function Reveal({ children, className, delay = 0 }: { children: ReactNode
 export function PerkCard({ children, index }: { children: ReactNode; index: number }) {
   const reduce = useReducedMotion()
   const delay = index * motionTokens.stagger.items
+  const ref = useRef<HTMLDivElement>(null)
+  const inView = useInView(ref, { once: true, margin: '-40px' })
+  // появление играет один раз; после него уход курсора возвращает в rest, а не повторяет вход
+  // (иначе люди снова «съезжались», а молоток бил ещё раз)
+  const [entered, setEntered] = useState(false)
+  const [hover, setHover] = useState(false)
+  const state = !inView ? 'hidden' : hover ? 'hover' : entered ? 'rest' : 'visible'
   return (
     <motion.div
-      className="h-full bg-background p-6"
+      ref={ref}
+      className="h-full bg-background p-7 md:p-8"
       initial="hidden"
-      whileInView="visible"
-      whileHover="hover"
-      viewport={{ once: true, margin: '-40px' }}
+      animate={state}
+      onHoverStart={() => {
+        setEntered(true)
+        setHover(true)
+      }}
+      onHoverEnd={() => setHover(false)}
+      onAnimationComplete={(def) => def === 'visible' && setEntered(true)}
       variants={{
         hidden: { opacity: 0, y: reduce ? 0 : motionTokens.distance.md },
         visible: { opacity: 1, y: 0, transition: reduce ? reducedFade : { ...springs.gentle, delay } },
+        rest: { opacity: 1, y: 0, transition: springs.snappy },
         hover: reduce ? {} : { opacity: 1, y: -motionTokens.distance.sm, transition: springs.snappy },
       }}
     >

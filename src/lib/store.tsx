@@ -15,13 +15,8 @@ import type {
   VoteValue,
 } from '@/types/types'
 import { defaultEditorPreferences, defaultPreferences } from '@/types/types'
-import {
-  articles as seedArticles,
-  cases as seedCases,
-  collectionsSeed,
-  currentUser as anonUser,
-  labelers as seedLabelers,
-} from '@/data/mock'
+// статьи, дела и подборки — только настоящие (индекс ленты и свои); из моков — модераторы и аноним
+import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
@@ -462,7 +457,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const articles = useMemo(() => {
     // своя только что опубликованная запись уже есть локально — не дублируем
     const local = new Set(persisted.extraArticles.map((a) => a.atUri).filter(Boolean))
-    return [...persisted.extraArticles, ...remoteArticles.filter((a) => !local.has(a.atUri)), ...seedArticles]
+    return [...persisted.extraArticles, ...remoteArticles.filter((a) => !local.has(a.atUri))]
   }, [persisted.extraArticles, remoteArticles])
   // люди для @mention-автодополнения в редакторе: авторы записей + известные профили
   useEffect(() => {
@@ -474,9 +469,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEditorPeople([...byHandle.values()])
   }, [articles])
 
-  const cases = useMemo(() => [...persisted.extraCases, ...seedCases], [persisted.extraCases])
+  const cases = persisted.extraCases
   const collections = useMemo(
-    () => [...persisted.extraCollections, ...collectionsSeed],
+    () => persisted.extraCollections,
     [persisted.extraCollections],
   )
 
@@ -625,6 +620,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               cid: article.cid ?? `bafy…demo…${article.id}`,
               originPds: article.originPds ?? PDS_URL,
               indexedAt: article.indexedAt ?? new Date().toISOString(),
+              // полное время: по нему сортируют «Свежее» и «Горячее» (одна дата ставила запись в полночь)
+              publishedAtFull: article.publishedAtFull ?? article.publishAt ?? new Date().toISOString(),
               sourceType: article.sourceType ?? 'native-pds',
               canonicalId: article.canonicalId ?? `at://${user?.did ?? 'did:plc:reader001'}/media.weat.article/${article.id}`,
             },
@@ -683,7 +680,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return col
       },
       addToCollection: (collectionId, articleId) => {
-        const all = [...persisted.extraCollections, ...collectionsSeed]
+        const all = persisted.extraCollections
         const target = all.find((c) => c.id === collectionId)
         if (!target || target.articleIds.includes(articleId)) return
         const updated = { ...target, articleIds: [...target.articleIds, articleId] }
@@ -729,9 +726,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!user) return
         // переоформляем статью: автором становится текущий пользователь, пометка источника снимается
         setPersisted((prev) => {
-          const idx = seedArticles.findIndex((a) => a.id === articleId)
-          if (idx < 0) return prev
-          const original = seedArticles[idx]
+          const original = articles.find((a) => a.id === articleId)
+          if (!original) return prev
           if (!original.source) return prev
           const transferred: Article = {
             ...original,

@@ -1,6 +1,8 @@
 //! Ранжирование ленты. Алгоритм открыт намеренно: любой может форкнуть его и собрать свой дайджест.
 //!
 //! - new  — новые сверху (keyset-курсор по времени);
+//! Возраст — от публикации оригинала (published_at): импорт старой новости не делает её свежей.
+//!
 //! - hot  — «горячее»: очки делятся на возраст, (лайки + 2·комментарии + 1) / (часы + 2)^1.5.
 //!   Свежая запись при равных очках выше, старая уходит вниз; комментарий весит вдвое — это усилие;
 //! - best — «лучшее» за период: по лайкам или по комментариям.
@@ -82,7 +84,7 @@ impl Sort {
     pub fn sql(self) -> (String, String, String) {
         let hot = format!(
             "(a.like_count + {COMMENT_WEIGHT} * a.comment_count + 1)
-             / power(greatest(extract(epoch FROM now() - a.created_at), 0) / 3600 + 2, {GRAVITY})"
+             / power(greatest(extract(epoch FROM now() - a.published_at), 0) / 3600 + 2, {GRAVITY})"
         );
         match self {
             Sort::New => (
@@ -92,8 +94,8 @@ impl Sort {
             ),
             Sort::Hot => (
                 format!("({hot})::float8"),
-                format!("AND a.created_at > now() - interval '{HOT_WINDOW_DAYS} days'"),
-                format!("{hot} DESC, a.created_at DESC, a.uri DESC"),
+                format!("AND a.published_at > now() - interval '{HOT_WINDOW_DAYS} days'"),
+                format!("{hot} DESC, a.published_at DESC, a.uri DESC"),
             ),
             Sort::Best { metric, period } => {
                 let col = match metric {
@@ -102,7 +104,7 @@ impl Sort {
                 };
                 let since = period
                     .days()
-                    .map(|d| format!("AND a.created_at > now() - interval '{d} days'"))
+                    .map(|d| format!("AND a.published_at > now() - interval '{d} days'"))
                     .unwrap_or_default();
                 (
                     format!("{col}::float8"),

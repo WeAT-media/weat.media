@@ -67,9 +67,15 @@ export default function LandingPage() {
         <p className="meta">{SITE_NAME} · поверх AT Protocol</p>
         <WordReveal text="Дышите свободно в ATmosphere." className="mt-4 max-w-[16ch] text-5xl font-extrabold leading-[1.05] tracking-tight md:text-7xl" />
         <p className="mt-6 max-w-[62ch] text-lg leading-relaxed text-muted-foreground">
-          ATmosphere — это экосистема сервисов на открытом AT Protocol: ваш аккаунт и записи не заперты одной
-          площадкой. Захотите уйти — переедете к другому провайдеру и по возможности сохраните имя, подписчиков и
-          архив публикаций. {SITE_NAME} — читательское сообщество внутри этой экосистемы.
+          <span className="font-semibold text-foreground">we</span> — это мы, сообщество.{' '}
+          <span className="font-semibold text-accent">AT</span> — открытый AT Protocol, на котором мы стоим. А вместе
+          weat звучит как wheat — пшеница.
+        </p>
+        <p className="mt-4 max-w-[62ch] text-lg leading-relaxed text-muted-foreground">
+          Колос растёт не в одиночку, а полем, и корни у каждого свои. Так и здесь: тексты пускают корни в вашем
+          собственном репозитории, а не в чужом сервере. Площадка лишь собирает урожай в общую ленту — и если
+          однажды вы решите уйти, ваше поле уйдёт вместе с вами: имя, читатели, каждая запись. Сейте мысли, растите
+          смыслы, делитесь хлебом.
         </p>
         <Reveal delay={0.35} className="mt-8 flex flex-wrap gap-3">
           <Press>
@@ -115,9 +121,9 @@ export default function LandingPage() {
         <div className="mt-6 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, i) => (
             <PerkCard key={f.title} index={i}>
-              <f.icon size={18} className="text-accent" />
-              <h2 className="mt-3 text-lg font-extrabold tracking-tight">{f.title}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.text}</p>
+              <f.icon size={36} className="text-accent" />
+              <h2 className="mt-5 text-2xl font-extrabold leading-snug tracking-tight">{f.title}</h2>
+              <p className="mt-3 text-base leading-relaxed text-muted-foreground">{f.text}</p>
               {f.icon === SparkleIcon && (
                 <Link to="/premium" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
                   Подробнее о Premium <ArrowRight size={13} aria-hidden="true" />

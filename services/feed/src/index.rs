@@ -17,9 +17,9 @@ pub async fn upsert(
     record: &Value,
 ) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO articles (uri, did, rkey, cid, created_at, title, tags, langs, source_site, paid, record)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (uri) DO UPDATE SET cid = EXCLUDED.cid, created_at = EXCLUDED.created_at, title = EXCLUDED.title,
+        "INSERT INTO articles (uri, did, rkey, cid, created_at, title, tags, langs, source_site, paid, record, published_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (uri) DO UPDATE SET cid = EXCLUDED.cid, created_at = EXCLUDED.created_at, published_at = EXCLUDED.published_at, title = EXCLUDED.title,
            tags = EXCLUDED.tags, langs = EXCLUDED.langs, source_site = EXCLUDED.source_site, paid = EXCLUDED.paid,
            record = EXCLUDED.record, indexed_at = now()
          WHERE articles.cid IS DISTINCT FROM EXCLUDED.cid",
@@ -35,6 +35,7 @@ pub async fn upsert(
     .bind(&a.source_site)
     .bind(a.paid)
     .bind(record)
+    .bind(a.published_at)
     .execute(pool)
     .await?;
     Ok(())

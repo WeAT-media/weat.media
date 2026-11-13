@@ -1,6 +1,4 @@
-import { normalizeIVideo } from '@/lib/interactiveVideo'
-import { parseFaq } from '@/lib/faq'
-import { parseActionButton } from '@/lib/actionButton'
+import { customFenceBlock, isCustomFence } from '@/lib/customFences'
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import {
@@ -14,20 +12,18 @@ import {
 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { CURRENCIES, formatMoney, type Currency } from '@/lib/money'
-import { durationLabel, normalizePoll, parsePoll } from '@/lib/poll'
+import { durationLabel, parsePoll } from '@/lib/poll'
 import { currentUser } from '@/data/mock'
 import { profileMetaSeed } from '@/data/profiles'
-import { renderInline } from '@/lib/inline'
 import { MAX_VIDEO_SIZE, formatFileSize, keepSessionVideo, releaseObjectUrl } from '@/lib/videoUploads'
 import { LANGUAGES } from '@/data/languages'
 import Reveal from '@/components/Reveal'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
-import ArticleCarousel from '@/components/ArticleCarousel'
-import CalloutView from '@/components/CalloutView'
-import UserBlockView from '@/components/UserBlockView'
 import PeopleAutocomplete, { type PersonCandidate } from '@/components/PeopleAutocomplete'
 import ArticleToc from '@/components/ArticleToc'
+import BlockView from '@/components/ArticleBlock'
+import MdxBlock from '@/components/MdxBlock'
 import { tocFromBlocks, tocFromMarkdown } from '@/lib/toc'
 import {
   Dialog,
@@ -52,64 +48,11 @@ function parseBlocks(text: string): ArticleBlock[] {
     }
     const c = chunk.trim()
     if (!c) continue
-    // карусель/опрос сериализуются BlocksEditor'ом (BlockSuite) как ```carousel / ```poll
-    // code-фенсы с JSON внутри (см. src/lib/customBlocks.ts) — конвертируем в привычный
-    // плоский текстовый формат, который понимают ArticleCarousel и рендер опроса ниже
-    if (/^```carousel\b/.test(c)) {
-      const inner = c.replace(/^```carousel\n?/, '').replace(/\n?```$/, '')
-      try {
-        const { items } = JSON.parse(inner) as { items: { url: string; caption?: string }[] }
-        blocks.push({ type: 'carousel', text: items.map((s) => `${s.url}${s.caption ? ` | ${s.caption}` : ''}`).join('\n') })
-      } catch {
-        /* битый JSON — пропускаем блок */
-      }
-      continue
-    }
-    if (/^```poll\b/.test(c)) {
-      const inner = c.replace(/^```poll\n?/, '').replace(/\n?```$/, '')
-      try {
-        // JSON целиком: вопрос, варианты и настройки (src/lib/poll.ts)
-        blocks.push({ type: 'poll', text: JSON.stringify(normalizePoll(JSON.parse(inner))) })
-      } catch {
-        /* битый JSON — пропускаем блок */
-      }
-      continue
-    }
-    // свой блок автора: JSON со снимком шаблона и значениями полей
-    if (/^```userblock\b/.test(c)) {
-      const inner = c.replace(/^```userblock\n?/, '').replace(/\n?```$/, '')
-      blocks.push({ type: 'userblock', text: inner })
-      continue
-    }
-    // кнопка с действием: проверенная ссылка (https или путь на сайте)
-    if (/^```button\b/.test(c)) {
-      const inner = c.replace(/^```button\n?/, '').replace(/\n?```$/, '')
-      const btn = parseActionButton(inner)
-      if (btn) blocks.push({ type: 'button', text: JSON.stringify(btn) })
-      continue
-    }
-    // FAQ: только Premium-автор вставляет блок; публикуем проверенные пары «вопрос — ответ»
-    if (/^```faq\b/.test(c)) {
-      const inner = c.replace(/^```faq\n?/, '').replace(/\n?```$/, '')
-      const faq = parseFaq(inner)
-      if (faq) blocks.push({ type: 'faq', text: JSON.stringify(faq) })
-      continue
-    }
-    // интерактивное видео: нормализуем при публикации — читатель получает только проверенное
-    if (/^```ivideo\b/.test(c)) {
-      const inner = c.replace(/^```ivideo\n?/, '').replace(/\n?```$/, '')
-      try {
-        const { data } = normalizeIVideo(JSON.parse(inner))
-        if (data.segments.length) blocks.push({ type: 'ivideo', text: JSON.stringify(data) })
-      } catch {
-        /* битый JSON — пропускаем блок */
-      }
-      continue
-    }
-    // callout хранится JSON-строкой; безопасный рендер — CalloutView (без arbitrary HTML)
-    if (/^```callout\b/.test(c)) {
-      const inner = c.replace(/^```callout\n?/, '').replace(/\n?```$/, '')
-      blocks.push({ type: 'callout', text: inner })
+    // свои блоки (```carousel, ```poll, ```button…) — общий разбор, тот же для статей из индекса
+    const fence = /^```(\w+)\n?([\s\S]*?)\n?```$/.exec(c)
+    if (fence && isCustomFence(fence[1]!)) {
+      const block = customFenceBlock(fence[1]!, fence[2]!)
+      if (block) blocks.push(block)
       continue
     }
     if (c.startsWith('### ')) blocks.push({ type: 'h2', text: c.slice(4) })
@@ -164,32 +107,14 @@ function Preview({ article }: { article: Article }) {
         {article.blocks.length === 0 ? (
           <p className="text-sm text-muted-foreground">Текст пока пуст — начните писать слева.</p>
         ) : (
+          // те же блоки, что на странице статьи (кнопка, FAQ, видео, картинки…); опрос — превью без голосов
           article.blocks.map((b, i) =>
-            b.type === 'h2' ? (
-              <h2 key={i} id={tocItems.find((t) => t.index === i)?.id} className="mt-6 scroll-mt-28 text-xl font-extrabold tracking-tight">{b.text}</h2>
-            ) : b.type === 'code' ? (
-              <pre key={i} className="mt-4 overflow-x-auto rounded-md bg-primary p-4 text-[13px] text-primary-foreground"><code>{b.text}</code></pre>
-            ) : b.type === 'quote' ? (
-              <blockquote key={i} className="mt-4 border-l-2 border-accent pl-4 font-medium">{renderInline(b.text)}</blockquote>
-            ) : b.type === 'ul' ? (
-              <ul key={i} className="mt-4 list-none space-y-1">
-                {b.text.split('\n').map((item, j) => (
-                  <li key={j} className="flex gap-2 text-[15px]">
-                    <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-[1px] bg-accent" aria-hidden="true" />
-                    <span>{renderInline(item)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : b.type === 'poll' ? (
+            b.type === 'poll' ? (
               <PollPreview key={i} raw={b.text} />
-            ) : b.type === 'carousel' ? (
-              <ArticleCarousel key={i} raw={b.text} />
-            ) : b.type === 'callout' ? (
-              <CalloutView key={i} raw={b.text} />
-            ) : b.type === 'userblock' ? (
-              <UserBlockView key={i} raw={b.text} />
+            ) : b.type === 'mdx' ? (
+              <MdxBlock key={i} component={b.component ?? 'box'} text={b.text} />
             ) : (
-              <p key={i} className="mt-4 text-[15px] leading-relaxed">{renderInline(b.text)}</p>
+              <BlockView key={i} block={b} id={tocItems.find((t) => t.index === i)?.id} />
             ),
           )
         )}

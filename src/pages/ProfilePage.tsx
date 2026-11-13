@@ -10,7 +10,7 @@ import ReportDialog from '@/components/ReportDialog'
 import RssButton from '@/components/RssButton'
 import { buildAuthorFeed } from '@/lib/rss'
 import { api, comments as commentsApi, countryLabel, type ApiUser, type AuthorComment } from '@/lib/api'
-import { remoteId } from '@/lib/remoteFeed'
+import { commentAnchor, remoteId } from '@/lib/remoteFeed'
 import type { Author } from '@/types/types'
 import { PDS_URL } from '@/config/site'
 
@@ -373,12 +373,22 @@ export default function ProfilePage() {
                     {c.createdAt.slice(0, 16).replace('T', ' ')}
                     {c.parent && ' · ответ'}
                   </p>
-                  <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-[15px] leading-relaxed">{c.text}</p>
+                  {c.subjectTitle ? (
+                    <Link
+                      to={`/article/${remoteId(c.subject)}#${commentAnchor(c.uri)}`}
+                      title="Открыть комментарий в статье"
+                      className="mt-1.5 line-clamp-4 block whitespace-pre-line text-[15px] leading-relaxed decoration-accent underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {c.text}
+                    </Link>
+                  ) : (
+                    <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-[15px] leading-relaxed">{c.text}</p>
+                  )}
                   <p className="meta mt-2 !normal-case tracking-normal">
                     к статье{' '}
                     {c.subjectTitle ? (
                       <Link
-                        to={`/article/${remoteId(c.subject)}`}
+                        to={`/article/${remoteId(c.subject)}#${commentAnchor(c.uri)}`}
                         className="font-semibold text-foreground decoration-accent underline-offset-4 hover:text-accent hover:underline"
                       >
                         {c.subjectTitle}

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { Clock, Users } from 'lucide-react'
 import { useStore } from '@/lib/store'
-import { renderInline } from '@/lib/inline'
+import BlockView from '@/components/ArticleBlock'
 import BlocksEditor from '@/components/BlocksEditor'
 import type { ArticleBlock } from '@/types/types'
 
@@ -20,6 +20,13 @@ function blocksToMarkdown(blocks: ArticleBlock[]): string {
           return `\`\`\`${b.lang ?? ''}\n${b.text}\n\`\`\``
         case 'carousel':
           return `:::carousel\n${b.text}\n:::`
+        // свои блоки — обратно в фенс, который понимает редактор (иначе JSON уходил бы абзацем)
+        case 'button':
+        case 'faq':
+        case 'ivideo':
+        case 'callout':
+        case 'userblock':
+          return `\`\`\`${b.type}\n${b.text}\n\`\`\``
         case 'poll':
         case 'mdx':
           return ''
@@ -67,26 +74,8 @@ export default function SharedDraftPage() {
         <p className="meta mt-4">@{article.author.handle} · черновик, в ленте ещё не выходил</p>
 
         <div className="mt-10">
-          {article.blocks.map((b, i) =>
-            b.type === 'h2' ? (
-              <h2 key={i} className="mt-8 text-2xl font-extrabold tracking-tight">{renderInline(b.text)}</h2>
-            ) : b.type === 'code' ? (
-              <pre key={i} className="mt-6 overflow-x-auto rounded-md bg-primary p-4 text-[13px] text-primary-foreground"><code>{b.text}</code></pre>
-            ) : b.type === 'quote' ? (
-              <blockquote key={i} className="my-6 border-l-2 border-accent pl-4 text-[17px] font-medium">{renderInline(b.text)}</blockquote>
-            ) : b.type === 'ul' ? (
-              <ul key={i} className="mt-5 list-none space-y-1.5">
-                {b.text.split('\n').map((item, j) => (
-                  <li key={j} className="flex gap-3 text-[16px]">
-                    <span className="mt-3 h-1.5 w-1.5 shrink-0 rounded-[1px] bg-accent" aria-hidden="true" />
-                    <span>{renderInline(item)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : b.type === 'poll' || b.type === 'mdx' ? null : (
-              <p key={i} className="mt-5 text-[17px] leading-[1.75]">{renderInline(b.text)}</p>
-            ),
-          )}
+          {/* те же блоки, что на странице статьи; опросы и mdx в черновике не показываем */}
+          {article.blocks.map((b, i) => (b.type === 'poll' || b.type === 'mdx' ? null : <BlockView key={i} block={b} />))}
         </div>
 
         {/* Совместное редактирование: Yjs-комната по токену ссылки, синхронизация между вкладками */}

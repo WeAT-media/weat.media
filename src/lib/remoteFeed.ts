@@ -1,5 +1,6 @@
 import type { Article, ArticleBlock, Comment } from '@/types/types'
 import { comments, type ThreadComment } from '@/lib/api'
+import { customFenceBlock, isCustomFence } from '@/lib/customFences'
 
 /** Записи media.weat.article из /api/feed → статьи ленты */
 
@@ -53,7 +54,10 @@ export function markdownToBlocks(md: string): ArticleBlock[] {
       flush()
       const code: string[] = []
       while (++i < lines.length && !lines[i]!.startsWith('```')) code.push(lines[i]!)
-      blocks.push({ type: 'code', text: code.join('\n'), ...(fence[1] ? { lang: fence[1] } : {}) })
+      if (fence[1] && isCustomFence(fence[1])) {
+        const block = customFenceBlock(fence[1], code.join('\n'))
+        if (block) blocks.push(block)
+      } else blocks.push({ type: 'code', text: code.join('\n'), ...(fence[1] ? { lang: fence[1] } : {}) })
     } else if (/^#{1,6}\s/.test(line)) {
       flush()
       blocks.push({ type: 'h2', text: line.replace(/^#{1,6}\s+/, '') })
@@ -79,6 +83,13 @@ export function markdownToBlocks(md: string): ArticleBlock[] {
 export const remoteId = (uri: string) => {
   const [, , did = '', , rkey = ''] = uri.split('/')
   return `${rkey}-${did.slice(-6)}`
+}
+
+/** якорь комментария на странице статьи: rkey + хвост DID, как у remoteId; демо-комментарии — по id */
+export const commentAnchor = (id: string) => {
+  if (!id.startsWith('at://')) return `c-${id}`
+  const [, , did = '', , rkey = ''] = id.split('/')
+  return `c-${rkey}-${did.slice(-6)}`
 }
 
 export function toArticle(i: FeedItem): Article | null {

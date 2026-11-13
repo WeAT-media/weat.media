@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, Flag, Gavel, Landmark, LineChart, MessageSquare, Rss, Share2, Trash2 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { labelers } from '@/data/mock'
@@ -11,7 +11,6 @@ import Stamp from '@/components/Stamp'
 import Reveal from '@/components/Reveal'
 import VideoPlayer, { type VideoPlayerHandle } from '@/components/VideoPlayer'
 import VideoDescription from '@/components/VideoDescription'
-import ArticleCarousel from '@/components/ArticleCarousel'
 import ReportDialog from '@/components/ReportDialog'
 import PaywallBadge from '@/components/PaywallBadge'
 import RssButton from '@/components/RssButton'
@@ -19,15 +18,10 @@ import UpvoteButton from '@/components/UpvoteButton'
 import BookmarkButton from '@/components/BookmarkButton'
 import { buildCommentsFeed } from '@/lib/rss'
 import { useArticleTracking } from '@/lib/tracking'
-import { fetchArticleBody, fetchComments } from '@/lib/remoteFeed'
-import { safeHref, safeImageSrc } from '@/lib/safeUrl'
+import { commentAnchor, fetchArticleBody, fetchComments } from '@/lib/remoteFeed'
+import { safeHref } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
-import InteractiveVideo from '@/components/InteractiveVideo'
-import FaqView from '@/components/FaqView'
-import ActionButtonView from '@/components/ActionButtonView'
 import BlocksEditor from '@/components/BlocksEditor'
-import CalloutView from '@/components/CalloutView'
-import UserBlockView from '@/components/UserBlockView'
 import CollegiumIcon from '@/components/CollegiumIcon'
 import ArticleToc from '@/components/ArticleToc'
 import { tocFromBlocks } from '@/lib/toc'
@@ -97,66 +91,11 @@ import Poll from '@/components/Poll'
 import MdxBlock from '@/components/MdxBlock'
 import Recommendations from '@/components/Recommendations'
 import { SITE_NAME } from '@/config/site'
-import type { ArticleBlock, Comment, LabelAction } from '@/types/types'
+import Block from '@/components/ArticleBlock'
+import type { Comment, LabelAction } from '@/types/types'
 
 // локальный демо-ролик (H.264/AAC, 45 c): внешний GCS-бакет BigBuckBunny отдаёт 403
 const DEMO_VIDEO = '/demo-video.mp4'
-
-function Block({ block, id }: { block: ArticleBlock; id?: string }) {
-  if (block.type === 'poll' || block.type === 'mdx') return null
-  if (block.type === 'carousel') return <ArticleCarousel raw={block.text} />
-  if (block.type === 'callout') return <CalloutView raw={block.text} />
-  if (block.type === 'userblock') return <UserBlockView raw={block.text} />
-  if (block.type === 'ivideo') return <InteractiveVideo raw={block.text} />
-  if (block.type === 'faq') return <FaqView raw={block.text} />
-  if (block.type === 'button') return <ActionButtonView raw={block.text} />
-  if (block.type === 'h2') {
-    // id — якорь для TOC; scroll-mt под sticky-шапку (~64px)
-    return <h2 id={id} className="mt-10 scroll-mt-28 text-2xl font-extrabold tracking-tight">{block.text}</h2>
-  }
-  if (block.type === 'code') {
-    return (
-      <figure className="my-8">
-        <figcaption className="meta mb-0 rounded-t-md bg-primary px-4 py-2 text-primary-foreground/80">
-          {block.lang ?? 'code'}
-        </figcaption>
-        <pre className="overflow-x-auto rounded-b-md bg-primary p-5 text-[13px] leading-relaxed text-primary-foreground">
-          <code>{block.text}</code>
-        </pre>
-      </figure>
-    )
-  }
-  if (block.type === 'image') {
-    const src = safeImageSrc(block.text)
-    if (!src) return null
-    return (
-      <figure className="my-8">
-        <img src={src} alt={block.alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md border border-border" />
-        {block.alt && <figcaption className="meta mt-2 text-center !normal-case tracking-normal">{block.alt}</figcaption>}
-      </figure>
-    )
-  }
-  if (block.type === 'quote') {
-    return (
-      <blockquote className="my-8 border-l-2 border-accent pl-5 text-[17px] font-medium leading-relaxed">
-        {renderInline(block.text)}
-      </blockquote>
-    )
-  }
-  if (block.type === 'ul') {
-    return (
-      <ul className="mt-5 list-none space-y-1.5">
-        {block.text.split('\n').map((item, i) => (
-          <li key={i} className="flex gap-3 text-[16px] leading-relaxed">
-            <span className="mt-3 h-1.5 w-1.5 shrink-0 rounded-[1px] bg-accent" aria-hidden="true" />
-            <span>{renderInline(item)}</span>
-          </li>
-        ))}
-      </ul>
-    )
-  }
-  return <p className="mt-5 text-[17px] leading-[1.75]">{renderInline(block.text)}</p>
-}
 
 function ActionPicker({ value, onChange }: { value: LabelAction; onChange: (a: LabelAction) => void }) {
   const options: { key: LabelAction; label: string }[] = [
@@ -219,6 +158,26 @@ export default function ArticlePage() {
       alive = false
     }
   }, [threadUri])
+  // прямая ссылка на комментарий (/article/:id#c-…): тред грузится отдельно — прокручиваем, когда он пришёл
+  const location = useLocation()
+  // ждём и тред, и текст статьи: текст догружается выше комментариев и сдвинул бы прокрутку
+  const threadReady = (!threadUri || thread?.uri === threadUri) && !bodyLoading
+  useEffect(() => {
+    const anchor = location.hash.slice(1)
+    if (!anchor.startsWith('c-') || !threadReady) return
+    const el = document.getElementById(anchor)
+    if (!el) return
+    // мгновенно: плавная прокрутка (scroll-behavior: smooth на html) обрывается, пока страница ещё дорисовывается
+    el.scrollIntoView({ behavior: 'instant', block: 'center' })
+    // подсветка на пару секунд — классом в DOM, без лишнего рендера всей страницы
+    const flash = ['!border-accent', 'bg-accent/10']
+    el.classList.add(...flash)
+    const t = setTimeout(() => el.classList.remove(...flash), 2500)
+    return () => {
+      clearTimeout(t)
+      el.classList.remove(...flash)
+    }
+  }, [location.hash, threadReady])
   const [showHidden, setShowHidden] = useState(false)
   const [previewEnded, setPreviewEnded] = useState(false)
   const [replyTarget, setReplyTarget] = useState<string | null>(null)
@@ -346,7 +305,11 @@ export default function ArticlePage() {
     const replies = repliesByParent.get(c.id) ?? []
     const indent = Math.min(depth, MAX_COMMENT_DEPTH)
     return (
-      <li key={c.id} className={`border-l-2 border-border pl-4 ${indent > 0 ? 'ml-5' : ''}`}>
+      <li
+        key={c.id}
+        id={commentAnchor(c.id)}
+        className={`scroll-mt-28 border-l-2 border-border pl-4 transition-colors duration-700 ${indent > 0 ? 'ml-5' : ''}`}
+      >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="meta">
             @{c.author} · {c.at}
