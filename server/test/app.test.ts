@@ -122,6 +122,10 @@ function memRepo(): UserRepo {
       const r = rows.get(did)
       if (r) r.display_name = name
     },
+    async search(q, limit) {
+      const t = q.trim().toLowerCase()
+      return [...rows.values()].filter((r) => !t || r.did === t || r.handle.startsWith(t)).slice(0, limit)
+    },
     async setResidence(did, country) {
       const r = rows.get(did)
       if (r) r.residence_country = country
@@ -1408,6 +1412,19 @@ test('support tickets: guest or user writes, staff reads and changes status (aud
   const stranger = { authorization: `Bearer ${other.accessJwt}`, 'content-type': 'application/json' }
   assert.equal((await app.request(`/api/me/tickets/${own.id}/messages`, { method: 'POST', headers: stranger, body: JSON.stringify({ text: 'x' }) })).status, 404)
   assert.deepEqual(await (await app.request('/api/me/tickets', { headers: stranger })).json(), [])
+
+  // админка пользователей: поиск, карточка с обращениями, прямое сообщение
+  const found = await (await app.request('/api/admin/users?q=ticket', { headers: staff })).json()
+  assert.deepEqual(found.map((x: { handle: string }) => x.handle), [u.user.handle])
+  assert.equal(found[0].residenceCountry, found[0].signupCountry)
+  const card = await (await app.request(`/api/admin/users/${u.user.did}`, { headers: staff })).json()
+  assert.equal(card.tickets.length, 1)
+  const dm = await app.request(`/api/admin/users/${other.user.did}/messages`, { method: 'POST', headers: staff, body: JSON.stringify({ subject: 'Проверка аккаунта', text: 'Подтвердите, пожалуйста, email.' }) })
+  assert.equal(dm.status, 201)
+  const inbox = await (await app.request('/api/me/tickets', { headers: stranger })).json()
+  assert.equal(inbox.length, 1)
+  assert.equal(inbox[0].unread, 1, 'прямое сообщение — непрочитанный ответ поддержки')
+  assert.equal(auditLog.at(-1)?.action, 'user.message')
 })
 
 test('lava.top: invoice, forged webhook refused, access only after API confirms, idempotent', async () => {

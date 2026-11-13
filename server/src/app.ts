@@ -238,7 +238,7 @@ export function createApp(deps: Deps) {
     { bearer },
   )
   mountClaimRoutes(app, { users: d.users, pds: d.pds, claims: d.claims }, { bearer, requireStaff, audit })
-  mountTicketRoutes(app, { pds: d.pds, tickets: d.tickets }, { bearer, requireStaff, audit })
+  mountTicketRoutes(app, { pds: d.pds, tickets: d.tickets, users: d.users }, { bearer, requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })

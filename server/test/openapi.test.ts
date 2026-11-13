@@ -23,5 +23,11 @@ test('spec is valid-looking OpenAPI 3.1 and served', async () => {
   assert.deepEqual(login.requestBody.content['application/json'].schema.required, ['identifier', 'password'])
   const res = await app.request('/api/openapi.json')
   assert.equal(res.status, 200)
-  assert.equal((await res.json()).info.title, 'Indie.media AppView API')
+  const served = await res.json()
+  assert.equal(served.info.title, 'Indie.media AppView API')
+  // публичная документация не выдаёт, что есть админка
+  assert.deepEqual(Object.keys(served.paths).filter((p) => p.startsWith('/admin')), [])
+  assert.ok(!served.tags.some((t: { name: string }) => t.name === 'Администрирование'))
+  assert.equal(served.components.securitySchemes.staffToken, undefined)
+  assert.ok(Object.keys(buildOpenApi('/api', { internal: true }).paths).some((p) => p.startsWith('/admin')), 'внутренняя — полная')
 })

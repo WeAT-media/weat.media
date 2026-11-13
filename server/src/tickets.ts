@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
-import type { Sql } from './db.js'
+import type { Sql, UserRepo, UserRow } from './db.js'
 import { PdsError, type PdsClient } from './pds.js'
 import type { Staff, StaffRole } from './staff.js'
 
@@ -104,6 +104,9 @@ export function ticketRepo(sql: Sql): TicketRepo {
 
 export const MessageBody = z.object({ text: z.string().trim().min(1).max(10_000) })
 
+/** сотрудник пишет пользователю первым: получается обращение от поддержки */
+export const DirectMessageBody = z.object({ subject: z.string().trim().min(3).max(200), text: z.string().trim().min(1).max(10_000) })
+
 const Country = z.string().regex(/^([A-Z]{2}|other)$/)
 
 export const TicketBody = z.object({
@@ -177,7 +180,7 @@ const fail = (code: string, message: string, status: 400 | 401 | 404) => new Pds
 
 export function mountTicketRoutes(
   app: Hono,
-  d: { pds: PdsClient; tickets: TicketRepo },
+  d: { pds: PdsClient; tickets: TicketRepo; users: UserRepo },
   h: {
     bearer(c: Context): string | undefined
     requireStaff(c: Context, role: StaffRole): Promise<Staff | 'break-glass'>
@@ -238,6 +241,63 @@ export function mountTicketRoutes(
     await d.tickets.addMessage({ id: `tm_${randomBytes(8).toString('base64url')}`, ticket_id: t.id, author: 'staff', staff_sub: by, text: parsed.data.text })
     const row = t.status === 'resolved' || t.status === 'rejected' ? t : (await d.tickets.update(t.id, { status: 'waiting' }, by))!
     await h.audit(staff, 'ticket.reply', t.id, { deliverable: !!t.did })
+    return c.json(dto(row, await d.tickets.messages([t.id])), 201)
+  })
+
+  // ── пользователи: карточка, страны, прямое сообщение
+  const adminUser = (u: UserRow) => ({
+    did: u.did,
+    handle: u.handle,
+    displayName: u.display_name,
+    tier: u.tier,
+    createdAt: u.created_at.toISOString(),
+    signupCountry: u.signup_country,
+    residenceCountry: u.residence_country ?? u.signup_country,
+  })
+
+  app.get('/admin/users', async (c) => {
+    await h.requireStaff(c, 'support')
+    const rows = await d.users.search(c.req.query('q') ?? '', 100)
+    c.header('cache-control', 'private, no-store')
+    return c.json(rows.map(adminUser))
+  })
+
+  app.get('/admin/users/:did', async (c) => {
+    await h.requireStaff(c, 'support')
+    const u = await d.users.findByDid(c.req.param('did'))
+    if (!u) throw fail('NotFound', 'Пользователь не найден', 404)
+    const tickets = await d.tickets.byDid(u.did, 50)
+    const msgs = await d.tickets.messages(tickets.map((t) => t.id))
+    c.header('cache-control', 'private, no-store')
+    return c.json({ ...adminUser(u), tickets: tickets.map((t) => dto(t, msgs.filter((m) => m.ticket_id === t.id))) })
+  })
+
+  /** написать пользователю напрямую: обращение от поддержки — он увидит его в «Моих обращениях» и уведомлениях */
+  app.post('/admin/users/:did/messages', async (c) => {
+    const staff = await h.requireStaff(c, 'support')
+    const parsed = DirectMessageBody.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) throw fail('InvalidRequest', z.prettifyError(parsed.error), 400)
+    const u = await d.users.findByDid(c.req.param('did'))
+    if (!u) throw fail('NotFound', 'Пользователь не найден', 404)
+    const by = staff === 'break-glass' ? 'break-glass' : staff.sub
+    const t = await d.tickets.insert({
+      id: `tk_${randomBytes(8).toString('base64url')}`,
+      kind: 'support',
+      category: 'staff-message',
+      email: '',
+      did: u.did,
+      handle: u.handle,
+      article_url: null,
+      subject: parsed.data.subject,
+      message: 'Сообщение от поддержки — ответ ниже.',
+      country_from: null,
+      country_to: null,
+      doc_type: null,
+      doc_meta: null,
+    })
+    await d.tickets.addMessage({ id: `tm_${randomBytes(8).toString('base64url')}`, ticket_id: t.id, author: 'staff', staff_sub: by, text: parsed.data.text })
+    const row = (await d.tickets.update(t.id, { status: 'waiting' }, by))!
+    await h.audit(staff, 'user.message', u.did, { ticket: t.id })
     return c.json(dto(row, await d.tickets.messages([t.id])), 201)
   })
 

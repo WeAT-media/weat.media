@@ -28,7 +28,7 @@ import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
-import { MessageBody, TicketBody, TicketDto, TicketPatch } from './tickets.js'
+import { DirectMessageBody, MessageBody, TicketBody, TicketDto, TicketPatch } from './tickets.js'
 import { ApiArticleBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
 
 const TAGS = {
@@ -388,6 +388,17 @@ const ops: Op[] = [
     ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },
   {
+    method: 'get', path: '/admin/users', tag: 'admin', summary: 'Пользователи', auth: 'staff',
+    query: { q: { description: 'начало handle или DID; пусто — последние зарегистрированные' } },
+    ok: { status: 200, description: 'До 100: handle, тариф, страны регистрации и резидентства' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden']],
+  },
+  { method: 'get', path: '/admin/users/{did}', tag: 'admin', summary: 'Пользователь и его обращения', auth: 'staff', ok: { status: 200, description: 'Карточка и обращения с перепиской' }, errors: [[404, 'NotFound']] },
+  {
+    method: 'post', path: '/admin/users/{did}/messages', tag: 'admin', summary: 'Написать пользователю', auth: 'staff',
+    description: 'Создаёт обращение от поддержки: пользователь увидит его в «Моих обращениях» и уведомлениях и сможет ответить. В аудит.',
+    body: DirectMessageBody, ok: { status: 201, description: 'Обращение с сообщением' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
+  },
+  {
     method: 'put', path: '/admin/users/{did}/residence', tag: 'admin', summary: 'Сменить страну резидентства', auth: 'staff',
     description: 'По заявке из поддержки после проверки документа. Страна регистрации не меняется. Смена пишется в аудит.',
     body: ResidenceBody, ok: { status: 200, description: 'Профиль с новой страной резидентства' },
@@ -474,9 +485,17 @@ const ops: Op[] = [
 
 const json = (schema: z.ZodType, io: 'input' | 'output') => z.toJSONSchema(schema, { io, unrepresentable: 'any' })
 
-export function buildOpenApi(serverUrl = '/api') {
+/** служебное — не для публичной документации: /admin/* и всё, что требует сотрудника */
+const isInternal = (op: Op) => op.tag === 'admin' || op.auth === 'admin' || op.auth === 'staff'
+
+/**
+ * internal = false (по умолчанию, /api/openapi.json и страница /api): без админки — пользователям незачем знать,
+ * что она есть. Маршруты /admin/* от этого не открываются: их закрывает роль сотрудника (requireStaff).
+ */
+export function buildOpenApi(serverUrl = '/api', { internal = false }: { internal?: boolean } = {}) {
   const paths: Record<string, Record<string, unknown>> = {}
   for (const op of ops) {
+    if (!internal && isInternal(op)) continue
     const pathParams = [...op.path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!)
     const parameters = [
       ...pathParams.map((name) => ({
@@ -516,11 +535,13 @@ export function buildOpenApi(serverUrl = '/api') {
       description: 'Аккаунты, вход, безопасность и настройки Indie.media поверх AT Protocol.',
     },
     servers: [{ url: serverUrl }],
-    tags: Object.values(TAGS),
+    tags: Object.values(TAGS).filter((t) => internal || t !== TAGS.admin),
     components: {
       securitySchemes: {
         bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'accessJwt из ответа входа' },
-        staffToken: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Access-токен Zitadel сотрудника с ролью проекта (admin, support, moderator). Аварийно — ADMIN_TOKEN сервера.' },
+        ...(internal
+          ? { staffToken: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', description: 'Access-токен Zitadel сотрудника с ролью проекта (admin, support, moderator). Аварийно — ADMIN_TOKEN сервера.' } }
+          : {}),
         personalToken: { type: 'http', scheme: 'bearer', description: 'Персональный токен wm_pat_… (Настройки → Разработчикам)' },
       },
       schemas: { Error: json(S.ErrorSchema, 'output') },

@@ -50,6 +50,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   'country-change': 'Смена страны резидентства',
   other: 'Другое',
   'legal-request': 'Запрос органа',
+  'staff-message': 'Сообщение от поддержки',
 }
 const DOC_LABEL: Record<string, string> = { passport: 'паспорт', registration: 'регистрация', 'residence-permit': 'вид на жительство', other: 'другой документ' }
 
@@ -130,6 +131,7 @@ export default function AdminTicketsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Link to="/admin/users" className="btn-ghost !px-3 !py-2 !text-[11px]">Пользователи</Link>
           <Link to="/admin/claims" className="btn-ghost !px-3 !py-2 !text-[11px]">Заявки на авторство</Link>
           <Link to="/admin/crawler" className="btn-ghost !px-3 !py-2 !text-[11px]">Краулер</Link>
         </div>

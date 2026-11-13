@@ -33,6 +33,8 @@ export interface UserRepo {
   setDisplayName(did: string, name: string | null): Promise<void>
   /** смена страны резидентства — только по заявке, сотрудником поддержки */
   setResidence(did: string, country: string): Promise<UserRow | undefined>
+  /** админка: по началу handle или точному DID; пустой запрос — последние зарегистрированные */
+  search(q: string, limit: number): Promise<UserRow[]>
 }
 
 export interface Identity {
@@ -131,6 +133,12 @@ export function userRepo(sql: Sql): UserRepo {
     },
     async setDisplayName(did, name) {
       await sql`UPDATE users SET display_name = ${name} WHERE did = ${did}`
+    },
+    search(q, limit) {
+      const term = q.trim().toLowerCase()
+      return term
+        ? sql<UserRow[]>`SELECT * FROM users WHERE did = ${term} OR lower(handle) LIKE ${term.replace(/[%_\\]/g, '\\$&') + '%'} ORDER BY created_at DESC LIMIT ${limit}`
+        : sql<UserRow[]>`SELECT * FROM users ORDER BY created_at DESC LIMIT ${limit}`
     },
     async setResidence(did, country) {
       const [row] = await sql<UserRow[]>`UPDATE users SET residence_country = ${country} WHERE did = ${did} RETURNING *`
