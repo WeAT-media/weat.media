@@ -188,6 +188,7 @@ export default function AdminCrawlerPage() {
         <div className="flex flex-wrap items-center gap-2">
           {me && <span className="meta !normal-case tracking-normal">{me.name ?? 'сотрудник'} · {me.roles.join(', ')}</span>}
           <Link to="/admin/claims" className="btn-ghost !px-3 !py-2 !text-[11px]">Заявки на авторство</Link>
+          <Link to="/admin/tickets" className="btn-ghost !px-3 !py-2 !text-[11px]">Обращения</Link>
           <button type="button" onClick={() => void load()} className="btn-ghost !px-3 !py-2 !text-[11px]">
             <RefreshCw size={12} aria-hidden="true" /> Обновить
           </button>

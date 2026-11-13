@@ -14,6 +14,7 @@ import type { LavaClient, LavaInvoiceInfo, OrderRepo, OrderRow } from '../src/la
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { createStaffVerifier, type AuditEntry, type AuditRepo } from '../src/staff.ts'
 import type { ClaimRepo, ClaimRow } from '../src/claims.ts'
+import type { TicketRepo, TicketRow } from '../src/tickets.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
 const ZITADEL = 'https://auth.test'
@@ -45,6 +46,24 @@ function memClaims(): ClaimRepo {
     async decide(id, status, by, note) {
       const r = rows.find((x) => x.id === id && x.status === 'pending')
       if (r) Object.assign(r, { status, decided_by: by, decision_note: note, decided_at: new Date() })
+      return r
+    },
+  }
+}
+
+function memTickets(): TicketRepo {
+  const rows: TicketRow[] = []
+  return {
+    async insert(t) {
+      const row: TicketRow = { ...t, status: 'new', staff_note: null, updated_by: null, created_at: new Date(), updated_at: new Date() }
+      rows.push(row)
+      return row
+    },
+    async get(id) { return rows.find((r) => r.id === id) },
+    async list(status) { return rows.filter((r) => !status || r.status === status).reverse() },
+    async update(id, patch, by) {
+      const r = rows.find((x) => x.id === id)
+      if (r) Object.assign(r, { ...(patch.status ? { status: patch.status } : {}), ...(patch.staff_note !== undefined ? { staff_note: patch.staff_note } : {}), updated_by: by, updated_at: new Date() })
       return r
     },
   }
@@ -459,6 +478,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     developer: memDeveloper(),
     orders: (ordersLast = memOrders()),
     claims: memClaims(),
+    tickets: memTickets(),
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
     rateLimiter: opts.rateLimit ? undefined : false,
@@ -1310,6 +1330,42 @@ test('publish from the site: text and video records in the author repo, validati
   assert.equal(v.record.kind, 'video')
   assert.equal((v.record.videos as unknown[]).length, 2)
   assert.match((await video.json()).uri, /media\.weat\.article/)
+})
+
+test('support tickets: guest or user writes, staff reads and changes status (audited)', async () => {
+  const app = makeApp()
+  const body = { category: 'tech', email: 'reader@example.com', subject: 'Не грузится лента', message: 'Пустая страница после входа, Safari 18.' }
+  const post = (b: unknown, h: Record<string, string> = {}) => app.request('/api/support/tickets', { method: 'POST', headers: { 'content-type': 'application/json', ...h }, body: JSON.stringify(b) })
+
+  assert.equal((await post({ ...body, email: 'not-an-email' })).status, 400)
+  assert.equal((await post({ ...body, message: 'коротко' })).status, 400)
+  const guest = await post(body)
+  assert.equal(guest.status, 201)
+  const g = await guest.json()
+  assert.match(g.id, /^tk_/)
+  assert.equal(g.status, 'new')
+  assert.equal(g.message, undefined, 'заявителю содержимое не возвращаем')
+
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'ticketer', email: 'ticketer@example.com' }, '1.1.1.1'))).json()
+  await post({ ...body, category: 'country-change', subject: 'Смена страны резидентства', countryFrom: 'RU', countryTo: 'GE', docType: 'residence-permit', docFile: { name: 'vnzh.pdf', size: 1000, type: 'application/pdf' } }, { authorization: `Bearer ${u.accessJwt}` })
+
+  assert.equal((await app.request('/api/admin/tickets')).status, 401)
+  assert.equal((await app.request('/api/admin/tickets', { headers: { authorization: `Bearer ${u.accessJwt}` } })).status, 401, 'читатель — не сотрудник')
+  const staff = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  const list = await (await app.request('/api/admin/tickets', { headers: staff })).json()
+  assert.equal(list.length, 2)
+  assert.equal(list[0].did, u.user.did, 'вошедшему привязан DID')
+  assert.deepEqual(list[0].docFile, { name: 'vnzh.pdf', size: 1000, type: 'application/pdf' })
+  assert.equal(list[1].did, null, 'гость')
+
+  const patch = (id: string, b: unknown) => app.request(`/api/admin/tickets/${id}`, { method: 'PATCH', headers: staff, body: JSON.stringify(b) })
+  assert.equal((await patch(g.id, {})).status, 400)
+  assert.equal((await patch('tk_nope', { status: 'resolved' })).status, 404)
+  const done = await (await patch(g.id, { status: 'resolved', note: 'Почистили кэш' })).json()
+  assert.equal(done.status, 'resolved')
+  assert.equal(done.staffNote, 'Почистили кэш')
+  assert.equal(auditLog.at(-1)?.action, 'ticket.update')
+  assert.equal((await (await app.request('/api/admin/tickets?status=new', { headers: staff })).json()).length, 1)
 })
 
 test('lava.top: invoice, forged webhook refused, access only after API confirms, idempotent', async () => {

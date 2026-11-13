@@ -28,6 +28,7 @@ import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
+import { TicketBody, TicketDto, TicketPatch } from './tickets.js'
 import { ApiArticleBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
 
 const TAGS = {
@@ -391,6 +392,22 @@ const ops: Op[] = [
     description: 'По заявке из поддержки после проверки документа. Страна регистрации не меняется. Смена пишется в аудит.',
     body: ResidenceBody, ok: { status: 200, description: 'Профиль с новой страной резидентства' },
     errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [403, 'Forbidden — нужна роль support'], [404, 'NotFound']],
+  },
+  // ── обращения
+  {
+    method: 'post', path: '/support/tickets', tag: 'service', summary: 'Обращение в поддержку или запрос органа',
+    description: 'Можно без входа (ответ придёт на email). Вошедшему привязывается DID. Документ не загружается — только тип и метаданные файла.',
+    body: TicketBody, ok: { status: 201, schema: TicketDto, description: 'Номер и статус обращения' }, errors: [[400, 'InvalidRequest']],
+  },
+  {
+    method: 'get', path: '/admin/tickets', tag: 'admin', summary: 'Обращения', auth: 'staff',
+    query: { status: { description: 'new | in_progress | waiting | resolved | rejected; без параметра — все' } },
+    ok: { status: 200, description: 'Последние 500, новые сверху' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden — нужна роль support']],
+  },
+  { method: 'get', path: '/admin/tickets/{id}', tag: 'admin', summary: 'Обращение', auth: 'staff', ok: { status: 200, description: 'Обращение целиком' }, errors: [[404, 'NotFound']] },
+  {
+    method: 'patch', path: '/admin/tickets/{id}', tag: 'admin', summary: 'Статус и заметка сотрудника', auth: 'staff',
+    description: 'Смена пишется в аудит.', body: TicketPatch, ok: { status: 200, description: 'Обновлённое обращение' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
   },
   // ── лайки
   {

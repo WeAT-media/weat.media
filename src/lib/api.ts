@@ -323,6 +323,25 @@ export const articles = {
   }) => authed<{ uri: string; cid: string }>('/me/articles', post(b)),
 }
 
+/** Обращение в поддержку или запрос органа: на сервер (видят сотрудники в /admin/tickets) */
+export const support = {
+  create: (b: {
+    kind: 'support' | 'legal'
+    category: string
+    email: string
+    handle?: string
+    articleUrl?: string
+    subject: string
+    message: string
+    countryFrom?: string
+    countryTo?: string
+    docType?: string
+    docFile?: { name: string; size: number; type: string }
+  }) =>
+    // вошедшему сервер привяжет DID — сотрудник увидит, чей аккаунт
+    hasSession() ? authed<{ id: string; status: string; createdAt: string }>('/support/tickets', post(b)) : call<{ id: string; status: string; createdAt: string }>('/support/tickets', post(b)),
+}
+
 export interface ThreadComment {
   uri: string
   did: string

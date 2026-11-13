@@ -26,7 +26,9 @@ export default function SupportLegalPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [ticket, setTicket] = useState<SupportTicket | null>(null)
 
-  const submit = (e: FormEvent) => {
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
     const next: Record<string, string> = {}
     if (org.trim().length < 3) next.org = 'Укажите организацию.'
@@ -41,8 +43,11 @@ export default function SupportLegalPage() {
     if (!confirmed) next.confirmed = 'Подтвердите служебные полномочия.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
-    setTicket(
-      addSupportTicket({
+    setSending(true)
+    setSendError('')
+    try {
+      setTicket(
+        await addSupportTicket({
         kind: 'legal',
         category: 'legal-request',
         email: email.trim(),
@@ -50,19 +55,24 @@ export default function SupportLegalPage() {
         articleUrl: materialUrl.trim(),
         subject: `Запрос ${requestRef.trim()} от ${requestDate}`,
         message: `Основание: ${basis.trim()}\n\n${description.trim()}`,
-      }),
-    )
+        }),
+      )
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'Не удалось отправить. Попробуйте ещё раз.')
+    } finally {
+      setSending(false)
+    }
   }
 
   if (ticket) {
     return (
       <div className="mx-auto max-w-[720px] px-5 py-24 text-center">
         <CheckCircle2 size={26} className="mx-auto text-accent" aria-hidden="true" />
-        <p className="meta mt-4">запрос зарегистрирован (демо)</p>
+        <p className="meta mt-4">запрос зарегистрирован</p>
         <h1 className="mt-4 text-3xl font-extrabold tracking-tight">Тикет {ticket.id}</h1>
         <p className="mx-auto mt-4 max-w-[52ch] text-[15px] leading-relaxed text-muted-foreground">
-          Прототип: запрос сохранён локально и никуда не отправлен. В боевой системе официальные запросы идут
-          через верифицированный защищённый канал с проверкой полномочий — не через эту форму.
+          Запрос передан сотрудникам площадки. Полномочия проверяются отдельно: мы свяжемся с вами по служебному
+          email, указанному в запросе.
         </p>
         <Link to="/support" className="btn-ghost mt-8">
           <ArrowLeft size={14} aria-hidden="true" /> К поддержке
@@ -186,7 +196,8 @@ export default function SupportLegalPage() {
           </span>
         </label>
         {errors.confirmed && <p id="lg-confirmed-err" className="text-sm text-destructive">{errors.confirmed}</p>}
-        <button type="submit" className="btn-primary">Зарегистрировать запрос (демо)</button>
+        {sendError && <p role="alert" className="text-sm text-destructive">{sendError}</p>}
+        <button type="submit" className="btn-primary" disabled={sending}>{sending ? 'Отправляем…' : 'Зарегистрировать запрос'}</button>
       </form>
     </div>
   )

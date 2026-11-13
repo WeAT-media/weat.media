@@ -16,6 +16,7 @@ import { developerRepo } from './developer.js'
 import { createLavaClient, orderRepo } from './lava.js'
 import { auditRepo, createStaffVerifier } from './staff.js'
 import { claimRepo } from './claims.js'
+import { ticketRepo } from './tickets.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
@@ -31,6 +32,7 @@ const app = createApp({
   developer: developerRepo(sql),
   orders: orderRepo(sql),
   claims: claimRepo(sql),
+  tickets: ticketRepo(sql),
   feedUrl: config.FEED_URL,
   staff:
     config.ZITADEL_ISSUER && config.ZITADEL_PROJECT_ID

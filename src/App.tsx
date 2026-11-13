@@ -31,6 +31,7 @@ const TelegramAuthPage = lazy(() => import('@/pages/TelegramAuthPage'))
 const PasswordResetPage = lazy(() => import('@/pages/PasswordResetPage'))
 const AdminCrawlerPage = lazy(() => import('@/pages/admin/AdminCrawlerPage'))
 const AdminClaimsPage = lazy(() => import('@/pages/admin/AdminClaimsPage'))
+const AdminTicketsPage = lazy(() => import('@/pages/admin/AdminTicketsPage'))
 const AtmospherePage = lazy(() => import('@/pages/AtmospherePage'))
 const PremiumPage = lazy(() => import('@/pages/PremiumPage'))
 const PurchaseReturnPage = lazy(() => import('@/pages/PurchaseReturnPage'))
@@ -120,6 +121,7 @@ export default function App() {
             <Route path="/profile/:id" element={<ProfilePage />} />
             <Route path="/admin/crawler" element={<AdminCrawlerPage />} />
             <Route path="/admin/claims" element={<AdminClaimsPage />} />
+            <Route path="/admin/tickets" element={<AdminTicketsPage />} />
             <Route path="/support" element={<SupportPage />} />
             <Route path="/support/contact" element={<SupportContactPage />} />
             <Route path="/support/legal" element={<SupportLegalPage />} />

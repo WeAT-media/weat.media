@@ -22,7 +22,7 @@ import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, articles as articlesApi, clearSession, comments, hasSession, likes, type ServerSettings } from '@/lib/api'
+import { api, articles as articlesApi, clearSession, comments, hasSession, likes, support as supportApi, type ServerSettings } from '@/lib/api'
 import { videoFromLink, type RecordVideo } from '@/lib/videoLink'
 
 type SettingsSection = keyof ServerSettings
@@ -154,7 +154,8 @@ interface StoreValue extends Persisted {
   saveTier: (t: SubscriptionTier) => void
   deleteTier: (id: string) => void
   addReport: (r: Omit<Report, 'id' | 'createdAt' | 'status'>) => Report
-  addSupportTicket: (t: Omit<SupportTicket, 'id' | 'createdAt' | 'status'> & { status?: SupportTicket['status'] }) => SupportTicket
+  /** обращение уходит на сервер (номер — его); копия — в браузере заявителя. Ошибка API пробрасывается */
+  addSupportTicket: (t: Omit<SupportTicket, 'id' | 'createdAt' | 'status'> & { status?: SupportTicket['status'] }) => Promise<SupportTicket>
   setPrefs: (patch: Partial<Preferences>) => void
   setEditorPrefs: (patch: Partial<EditorPreferences>) => void
   setBlockDefs: (defs: BlockDef[]) => void
@@ -663,14 +664,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         patch({ reports: [report, ...persisted.reports] })
         return report
       },
-      addSupportTicket: (t) => {
-        const ticket: SupportTicket = {
-          ...t,
-          id: `IM-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-          status: t.status ?? 'received-demo',
-          createdAt: new Date().toISOString(),
-        }
-        patch({ supportTickets: [ticket, ...persisted.supportTickets] })
+      addSupportTicket: async (t) => {
+        const { status: _local, ...body } = t
+        void _local
+        const saved = await supportApi.create(body)
+        const ticket: SupportTicket = { ...t, id: saved.id, status: t.status ?? 'received', createdAt: saved.createdAt }
+        setPersisted((prev) => ({ ...prev, supportTickets: [ticket, ...prev.supportTickets] }))
         return ticket
       },
       setPrefs: (p) =>

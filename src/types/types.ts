@@ -320,5 +320,6 @@ export interface SupportTicket {
   /** только метаданные файла — содержимое документа в прототипе не сохраняется */
   docFile?: { name: string; size: number; type: string }
   createdAt: string
-  status: 'received-demo' | 'verification-pending'
+  /** received — принято сервером; verification-pending — ждёт проверки документа; received-demo — старые локальные */
+  status: 'received' | 'received-demo' | 'verification-pending'
 }

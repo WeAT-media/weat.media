@@ -63,7 +63,9 @@ export default function SupportContactPage() {
     setErrors((p) => ({ ...p, docFile: '' }))
   }
 
-  const submit = (e: FormEvent) => {
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
     const next: Record<string, string> = {}
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) next.email = 'Укажите рабочий email для ответа.'
@@ -80,8 +82,11 @@ export default function SupportContactPage() {
     }
     setErrors(next)
     if (Object.keys(next).length > 0) return
-    setTicket(
-      addSupportTicket(
+    setSending(true)
+    setSendError('')
+    try {
+      setTicket(
+        await addSupportTicket(
         isCountryChange
           ? {
               kind: 'support',
@@ -105,8 +110,13 @@ export default function SupportContactPage() {
               subject: subject.trim(),
               message: message.trim(),
             },
-      ),
-    )
+        ),
+      )
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : 'Не удалось отправить. Попробуйте ещё раз.')
+    } finally {
+      setSending(false)
+    }
   }
 
   if (ticket) {
@@ -122,8 +132,8 @@ export default function SupportContactPage() {
         <h1 className="mt-4 text-3xl font-extrabold tracking-tight">Тикет {ticket.id}</h1>
         <p className="mx-auto mt-4 max-w-[52ch] text-[15px] leading-relaxed text-muted-foreground">
           {pending
-            ? 'Заявка на смену страны резидентства принята (verification-pending): документы будут проверены вручную, страна профиля не меняется автоматически. Это демонстрационный прототип: тикет и метаданные файла сохранены локально, содержимое документа никуда не отправлено.'
-            : `Это демонстрационный прототип: тикет сохранён локально в вашем браузере (статус «received-demo») и никуда не отправлен. В боевой версии ответ пришёл бы на ${ticket.email}.`}
+            ? `Заявка на смену страны резидентства принята: сотрудник проверит документ вручную, страна в профиле не меняется автоматически. Сам файл мы не загружаем — запросим его отдельно по ${ticket.email}.`
+            : `Обращение принято, ответ придёт на ${ticket.email}. Номер обращения — ${ticket.id}.`}
         </p>
         <Link to="/support" className="btn-ghost mt-8">
           <ArrowLeft size={14} aria-hidden="true" /> К поддержке
@@ -305,7 +315,8 @@ export default function SupportContactPage() {
             страна профиля не меняется автоматически — заявка уходит на ручную проверку документов
           </p>
         )}
-        <button type="submit" className="btn-primary">Зарегистрировать обращение</button>
+        {sendError && <p role="alert" className="text-sm text-destructive">{sendError}</p>}
+        <button type="submit" className="btn-primary" disabled={sending}>{sending ? 'Отправляем…' : 'Зарегистрировать обращение'}</button>
       </form>
     </div>
   )

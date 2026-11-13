@@ -16,6 +16,7 @@ import { mountLikeRoutes } from './likes.js'
 import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
+import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
 import type { AuditRepo, Staff, StaffRole, StaffVerifier } from './staff.js'
 import { mountLavaRoutes, type LavaClient, type OrderRepo } from './lava.js'
@@ -38,6 +39,7 @@ export interface Deps {
   developer: DeveloperRepo
   orders: OrderRepo
   claims: ClaimRepo
+  tickets: TicketRepo
   /** сервис ленты; не задан — лента собирается обходом PDS */
   feedUrl?: string
   /** lava.top; не задан — оплата выключена (503 PaymentsDisabled) */
@@ -236,6 +238,7 @@ export function createApp(deps: Deps) {
     { bearer },
   )
   mountClaimRoutes(app, { users: d.users, pds: d.pds, claims: d.claims }, { bearer, requireStaff, audit })
+  mountTicketRoutes(app, { pds: d.pds, tickets: d.tickets }, { bearer, requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
