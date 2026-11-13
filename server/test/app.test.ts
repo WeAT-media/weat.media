@@ -584,6 +584,16 @@ test('settings: auth required, section merge, validation', async () => {
   assert.equal((await patch({ prefs: { ...prefs, font: 'comic' } })).status, 400)
   assert.equal((await patch({ unknownSection: 1 })).status, 400)
   assert.equal((await patch({ tiers: [{ ...tiers[0], priceMonthly: -1 }] })).status, 400)
+
+  // «продолжить с места» и история прочтений — приватные разделы с ограниченным размером
+  const videoProgress = { 'a1:v0': { t: 83, d: 600, at: 1 } }
+  const readHistory = [{ id: 'a1', title: 'Статья', kind: 'video', at: 1 }]
+  assert.equal((await patch({ videoProgress, readHistory })).status, 200)
+  assert.deepEqual((await (await app.request('/api/me/settings', { headers: auth })).json()).data.videoProgress, videoProgress)
+  assert.equal((await patch({ videoProgress: { k: { t: -1, at: 1 } } })).status, 400)
+  const many = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [`k${i}`, { t: 10, at: 1 }]))
+  assert.equal((await patch({ videoProgress: many })).status, 400, 'не больше 200 роликов')
+  assert.equal((await patch({ readHistory: Array.from({ length: 201 }, () => readHistory[0]) })).status, 400)
 })
 
 /** проходит /start и /callback как браузер, возвращает Location callback-а */

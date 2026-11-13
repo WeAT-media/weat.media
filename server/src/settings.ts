@@ -86,6 +86,32 @@ const PayoutDetails = z.strictObject({
   cryptoAddress: z.string().max(128).regex(/^[A-Za-z0-9:_-]*$/),
 })
 
+/** «Продолжить с места»: ключ ролика → секунда, длительность, когда смотрел (мс). Видно только владельцу */
+const VideoProgress = z
+  .record(
+    z.string().min(1).max(400),
+    z.strictObject({
+      t: z.number().int().min(0).max(86_400),
+      d: z.number().int().min(0).max(86_400).optional(),
+      at: z.number().int().min(0),
+    }),
+  )
+  .refine((r) => Object.keys(r).length <= 200, 'videoProgress: не больше 200 роликов')
+
+/** История прочтений — приватная, новые сверху; читатель может отключить и очистить */
+const ReadHistory = z
+  .array(
+    z.strictObject({
+      id: z.string().min(1).max(100),
+      uri: z.string().max(400).optional(),
+      title: z.string().max(300),
+      author: z.string().max(253).optional(),
+      kind: z.enum(['text', 'video']),
+      at: z.number().int().min(0),
+    }),
+  )
+  .max(200)
+
 /** Каждый раздел заменяется целиком; отсутствующие разделы не трогаются */
 export const SettingsPatch = z
   .strictObject({
@@ -97,6 +123,8 @@ export const SettingsPatch = z
     tiers: Tiers,
     blockDefs: BlockDefs,
     payoutDetails: PayoutDetails,
+    videoProgress: VideoProgress,
+    readHistory: ReadHistory,
   })
   .partial()
 

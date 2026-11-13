@@ -1,6 +1,6 @@
 /**
- * «Продолжить с места»: позиция ролика в браузере зрителя. Это удобство одного читателя —
- * на сервер не уходит, при очищенном хранилище ролик просто начнётся сначала.
+ * «Продолжить с места». Локально — каждые 5 с (переживает закрытие вкладки); в аккаунт (настройки,
+ * store.syncVideoProgress) — реже, чтобы продолжить на другом устройстве. Берём более свежую из двух.
  */
 const PREFIX = 'indie-media:resume:'
 /** не запоминаем начало (ещё не смотрел) и хвост (титры — считай досмотрел) */
@@ -14,15 +14,18 @@ interface Saved {
   at: number
 }
 
-export function getResume(key: string, duration: number): number | null {
+/** remote — позиция из аккаунта (другое устройство); из двух берём более свежую */
+export function getResume(key: string, duration: number, remote?: Saved): number | null {
+  let local: Saved | null = null
   try {
     const raw = localStorage.getItem(PREFIX + key)
-    if (!raw) return null
-    const { t } = JSON.parse(raw) as Saved
-    return t >= RESUME_MIN_S && (!duration || t < duration - RESUME_TAIL_S) ? t : null
+    local = raw ? (JSON.parse(raw) as Saved) : null
   } catch {
-    return null
+    local = null
   }
+  const best = !local ? remote : !remote ? local : remote.at > local.at ? remote : local
+  if (!best) return null
+  return best.t >= RESUME_MIN_S && (!duration || best.t < duration - RESUME_TAIL_S) ? best.t : null
 }
 
 export function saveResume(key: string, t: number, duration: number) {

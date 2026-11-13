@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { videoTracker } from '@/lib/tracking'
-import { clearResume, clock, getResume, saveResume } from '@/lib/videoResume'
+import { RESUME_MIN_S, RESUME_TAIL_S, clearResume, clock, getResume, saveResume } from '@/lib/videoResume'
 import videojs from 'video.js'
 import 'video.js/dist/video-js.css'
 
@@ -30,13 +30,17 @@ interface Props {
   trackId?: string
   /** ключ ролика для «продолжить с места»; без него (превью, интерактивное видео) — всегда с начала */
   resumeKey?: string
+  /** позиция из аккаунта (смотрел на другом устройстве) */
+  resumeRemote?: { t: number; at: number }
+  /** позиция для аккаунта: на паузе, раз в 30 с и при уходе со страницы; 0 — досмотрен или с начала */
+  onSyncProgress?: (t: number, duration: number) => void
 }
 
 const typeOf = (src: string) => (/\.webm(\?|$)/i.test(src) ? 'video/webm' : 'video/mp4')
 
 /** Плеер на video.js. Источник меняется без пересоздания плеера (нужно для ветвления интерактивного видео). */
 const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  { src, title, previewRange, onPreviewEnd, onTime, onEnded, onLoaded, overlay, caption, trackId, resumeKey },
+  { src, title, previewRange, onPreviewEnd, onTime, onEnded, onLoaded, overlay, caption, trackId, resumeKey, resumeRemote, onSyncProgress },
   ref,
 ) {
   const holder = useRef<HTMLDivElement>(null)
@@ -49,6 +53,11 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   const initialSrc = useRef(src)
   const initialTrackId = useRef(trackId)
   const initialResumeKey = useRef(resumeKey)
+  const initialResumeRemote = useRef(resumeRemote)
+  const syncRef = useRef(onSyncProgress)
+  useEffect(() => {
+    syncRef.current = onSyncProgress
+  }, [onSyncProgress])
   /** с какой секунды продолжили — плашка «Продолжаем с … · С начала» */
   const [resumedAt, setResumedAt] = useState<number | null>(null)
 
@@ -103,7 +112,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
     if (rk) {
       let lastSave = 0
       player.on('loadedmetadata', () => {
-        const t = getResume(rk, player.duration() ?? 0)
+        const t = getResume(rk, player.duration() ?? 0, initialResumeRemote.current)
         if (t !== null) {
           player.currentTime(t)
           setResumedAt(t)
@@ -111,19 +120,38 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
           player.one('play', () => setTimeout(() => setResumedAt(null), 6_000))
         }
       })
+      let lastSync = Date.now()
       const save = () => saveResume(rk, player.currentTime() ?? 0, player.duration() ?? 0)
+      // в аккаунт — та же позиция, но с теми же правилами начала и хвоста (иначе t = 0: забыть)
+      const sync = () => {
+        lastSync = Date.now()
+        const t = player.currentTime() ?? 0
+        const d = player.duration() ?? 0
+        syncRef.current?.(t >= RESUME_MIN_S && (!d || t < d - RESUME_TAIL_S) ? t : 0, d)
+      }
       player.on('timeupdate', () => {
         const now = Date.now()
         if (now - lastSave >= 5_000) {
           lastSave = now
           save()
         }
+        if (now - lastSync >= 30_000) sync()
       })
-      player.on('pause', save)
-      player.on('ended', () => clearResume(rk))
+      player.on('pause', () => {
+        save()
+        sync()
+      })
+      player.on('ended', () => {
+        clearResume(rk)
+        syncRef.current?.(0, player.duration() ?? 0)
+      })
       // закрыли вкладку посреди ролика — позиция всё равно сохранится
-      window.addEventListener('pagehide', save)
-      player.on('dispose', () => window.removeEventListener('pagehide', save))
+      const leave = () => {
+        save()
+        if (!player.paused()) sync()
+      }
+      window.addEventListener('pagehide', leave)
+      player.on('dispose', () => window.removeEventListener('pagehide', leave))
     }
 
     if (previewStart !== undefined && previewEnd !== undefined) {
@@ -166,6 +194,7 @@ const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
               onClick={() => {
                 playerRef.current?.currentTime(0)
                 if (initialResumeKey.current) clearResume(initialResumeKey.current)
+                syncRef.current?.(0, playerRef.current?.duration() ?? 0)
                 setResumedAt(null)
               }}
               className="cursor-pointer text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

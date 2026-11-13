@@ -13,6 +13,8 @@ import type {
   SupportTicket,
   User,
   VoteValue,
+  ReadEntry,
+  VideoProgressEntry,
 } from '@/types/types'
 import { defaultEditorPreferences, defaultPreferences } from '@/types/types'
 // статьи, дела и подборки — только настоящие (индекс ленты и свои); из моков — модераторы и аноним
@@ -37,6 +39,24 @@ import { PDS_URL } from '@/config/site'
 import { fetchRemoteFeed, toComment } from '@/lib/remoteFeed'
 
 const STORAGE_KEY = 'indie-media:v1'
+/** столько же принимает сервер (server/src/settings.ts) */
+const VIDEO_PROGRESS_MAX = 200
+const HISTORY_MAX = 200
+
+function mergeProgress(a: Record<string, VideoProgressEntry> = {}, b: Record<string, VideoProgressEntry> = {}) {
+  const out = { ...a }
+  for (const [k, v] of Object.entries(b)) if (!out[k] || out[k].at < v.at) out[k] = v
+  return Object.fromEntries(Object.entries(out).sort((x, y) => y[1].at - x[1].at).slice(0, VIDEO_PROGRESS_MAX))
+}
+
+function mergeHistory(a: ReadEntry[] = [], b: ReadEntry[] = []) {
+  const byId = new Map<string, ReadEntry>()
+  for (const e of [...a, ...b]) {
+    const cur = byId.get(e.id)
+    if (!cur || cur.at < e.at) byId.set(e.id, e)
+  }
+  return [...byId.values()].sort((x, y) => y.at - x.at).slice(0, HISTORY_MAX)
+}
 
 interface Persisted {
   settings: Record<string, LabelerSettings>
@@ -86,6 +106,10 @@ interface Persisted {
   upvotes: string[]
   /** articleId -> в закладках у читателя */
   bookmarks: string[]
+  /** «продолжить с места»: ключ ролика → позиция; синхронизируется с аккаунтом */
+  videoProgress: Record<string, VideoProgressEntry>
+  /** история прочтений, новые сверху (до HISTORY_MAX) */
+  readHistory: ReadEntry[]
   prefs: Preferences
   /** пользователь сам выбрал язык интерфейса; иначе язык берётся по региону */
   uiLangExplicit?: boolean
@@ -116,6 +140,11 @@ interface StoreValue extends Persisted {
   closePoll: (pollKey: string) => void
   toggleUpvote: (articleId: string) => void
   toggleBookmark: (articleId: string) => void
+  /** позиция ролика для других устройств; t = 0 — досмотрен или начат заново, запись убираем */
+  syncVideoProgress: (key: string, t: number, d?: number) => void
+  /** открыл статью — в начало истории (если история включена) */
+  recordRead: (article: Article) => void
+  clearHistory: () => void
   toggleFollow: (handle: string) => void
   markNotificationsRead: (ids: string[]) => void
   setJuryOptOut: (v: boolean) => void
@@ -179,6 +208,8 @@ function loadPersisted(): Persisted {
     pollClosed: {},
     upvotes: [],
     bookmarks: [],
+    videoProgress: {},
+    readHistory: [],
     following: [],
     readNotifications: [],
     juryOptOut: false,
@@ -321,6 +352,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       payoutConnected: persisted.payoutConnected,
       tiers: persisted.tiers,
       blockDefs: persisted.blockDefs,
+      videoProgress: persisted.videoProgress,
+      readHistory: persisted.prefs.historyEnabled === false ? [] : persisted.readHistory,
       payoutDetails: {
         country: persisted.payoutCountry,
         method: persisted.payoutMethod,
@@ -332,6 +365,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [
       persisted.prefs, persisted.editorPrefs, settings, persisted.juryOptOut, persisted.payoutConnected, persisted.tiers, persisted.blockDefs,
       persisted.payoutCountry, persisted.payoutMethod, persisted.payoutAsset, persisted.payoutNetwork, persisted.cryptoAddress,
+      persisted.videoProgress, persisted.readHistory,
     ],
   )
   const localRef = useRef(localSections)
@@ -354,7 +388,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const missing = Object.fromEntries(
           (Object.keys(local) as SettingsSection[]).filter((k) => data[k] === undefined).map((k) => [k, local[k]]),
         ) as ServerSettings
-        const merged = { ...local, ...data }
+        const merged = {
+          ...local,
+          ...data,
+          // с телефона и ноутбука: не «сервер перекрывает», а объединяем — свежее побеждает
+          videoProgress: mergeProgress(local.videoProgress, data.videoProgress),
+          readHistory: mergeHistory(local.readHistory, data.readHistory),
+        }
         setPersisted((prev) => ({
           ...prev,
           prefs: { ...defaultPreferences, ...merged.prefs },
@@ -364,6 +404,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           payoutConnected: merged.payoutConnected,
           tiers: merged.tiers,
           blockDefs: merged.blockDefs ?? [],
+          videoProgress: merged.videoProgress,
+          readHistory: merged.readHistory,
           ...(merged.payoutDetails
             ? {
                 payoutCountry: merged.payoutDetails.country,
@@ -519,7 +561,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       login: (u) => patch({ user: u ?? anonUser }),
       logout: () => {
         clearSession()
-        patch({ user: null })
+        // история и позиции — личные: на общем устройстве после выхода их не видно
+        patch({ user: null, readHistory: [], videoProgress: {} })
       },
       setPremium: (v) =>
         patch({
@@ -561,6 +604,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ;(on ? likes.like(a.atUri, a.cid) : likes.unlike(a.atUri)).catch(() => set(!on))
         }
       },
+      syncVideoProgress: (key, t, d) =>
+        setPersisted((prev) => {
+          const rest = { ...prev.videoProgress }
+          delete rest[key]
+          if (t <= 0) return { ...prev, videoProgress: rest }
+          // самые старые — вон: на сервере не больше VIDEO_PROGRESS_MAX
+          const kept = Object.entries(rest).sort((a, b) => b[1].at - a[1].at).slice(0, VIDEO_PROGRESS_MAX - 1)
+          return { ...prev, videoProgress: { ...Object.fromEntries(kept), [key]: { t: Math.floor(t), ...(d ? { d: Math.floor(d) } : {}), at: Date.now() } } }
+        }),
+      recordRead: (article) =>
+        setPersisted((prev) => {
+          if (prev.prefs.historyEnabled === false) return prev
+          const entry: ReadEntry = {
+            id: article.id,
+            ...(article.atUri?.startsWith('at://did:') ? { uri: article.atUri } : {}),
+            title: article.title.slice(0, 300),
+            author: article.author.handle,
+            kind: article.kind === 'video' ? 'video' : 'text',
+            at: Date.now(),
+          }
+          return { ...prev, readHistory: [entry, ...prev.readHistory.filter((e) => e.id !== article.id)].slice(0, HISTORY_MAX) }
+        }),
+      clearHistory: () => patch({ readHistory: [] }),
       toggleBookmark: (articleId) =>
         patch({
           bookmarks: persisted.bookmarks.includes(articleId)

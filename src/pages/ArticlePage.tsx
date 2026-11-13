@@ -129,7 +129,7 @@ export default function ArticlePage() {
   const {
     articles, cases, collections, settings, actionForLabel, setLabelAction,
     addComment, deleteComment, extraComments, unlocked, unlock, user, reportToCourt,
-    watchedArticles, toggleWatchArticle,
+    watchedArticles, toggleWatchArticle, videoProgress, syncVideoProgress, recordRead,
   } = useStore()
   const navigate = useNavigate()
   const videoPlayerRef = useRef<VideoPlayerHandle>(null)
@@ -194,6 +194,14 @@ export default function ArticlePage() {
   // низ текста в зоне видимости = дочитывание
   const endRef = useRef<HTMLDivElement>(null)
   useArticleTracking(article?.id, endRef)
+  // история прочтений: один раз на открытие статьи (заголовок дождёмся, если тело ещё грузится)
+  const historyId = article?.id
+  const historyReady = !!article?.title
+  useEffect(() => {
+    if (historyId && historyReady && article) recordRead(article)
+    // article берём на момент открытия — без пересчёта на каждое обновление карточки
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyId, historyReady])
 
   if (!article) {
     return (
@@ -706,7 +714,15 @@ export default function ArticlePage() {
                               <p className="meta !text-primary-foreground/60">Полное видео доступно после покупки</p>
                             </div>
                           ) : (
-                            <VideoPlayer ref={videoPlayerRef} src={v.src ?? videoSrc} title={v.title} trackId={videoTrackId} resumeKey={`${videoTrackId}:${v.id}`} />
+                            <VideoPlayer
+                              ref={videoPlayerRef}
+                              src={v.src ?? videoSrc}
+                              title={v.title}
+                              trackId={videoTrackId}
+                              resumeKey={`${videoTrackId}:${v.id}`}
+                              resumeRemote={videoProgress[`${videoTrackId}:${v.id}`]}
+                              onSyncProgress={(t, d) => syncVideoProgress(`${videoTrackId}:${v.id}`, t, d)}
+                            />
                           )
                         ) : (
                           <div className="my-4 aspect-video w-full overflow-hidden rounded-md border border-border bg-primary/95">

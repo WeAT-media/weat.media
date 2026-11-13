@@ -233,6 +233,25 @@ export interface Preferences {
   currency: 'RUB' | 'USD' | 'EUR'
   /** экспериментальные функции: интерактивное видео и т. п. */
   devPreview?: boolean
+  /** вести историю прочтений; нет поля — ведём */
+  historyEnabled?: boolean
+}
+
+/** «Продолжить с места»: секунда, длительность и когда смотрел (мс) — синхронизируется между устройствами */
+export interface VideoProgressEntry {
+  t: number
+  d?: number
+  at: number
+}
+
+/** Запись истории прочтений: приватна, видна только в своём профиле */
+export interface ReadEntry {
+  id: string
+  uri?: string
+  title: string
+  author?: string
+  kind: 'text' | 'video'
+  at: number
 }
 
 export const defaultPreferences: Preferences = {

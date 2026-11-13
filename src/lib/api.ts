@@ -1,6 +1,6 @@
 import { firstTouchUtm, lastTouchUtm } from '@/lib/utm'
 import type { BlockDef } from '@/lib/userBlocks'
-import type { EditorPreferences, LabelerSettings, Preferences, SubscriptionTier, User } from '@/types/types'
+import type { EditorPreferences, LabelerSettings, Preferences, SubscriptionTier, User, ReadEntry, VideoProgressEntry } from '@/types/types'
 
 /** Ответы AppView (server/src/app.ts) */
 import type { RecordVideo } from '@/lib/videoLink'
@@ -187,6 +187,8 @@ export interface ServerSettings {
   tiers?: SubscriptionTier[]
   blockDefs?: BlockDef[]
   payoutDetails?: { country: string; method: 'fiat' | 'crypto'; asset: string; network: string; cryptoAddress: string }
+  videoProgress?: Record<string, VideoProgressEntry>
+  readHistory?: ReadEntry[]
 }
 
 export function atprotoStartUrl(handle: string, returnTo: string): string {
