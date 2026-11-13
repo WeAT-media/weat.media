@@ -25,7 +25,7 @@ import { GrantBody, PublishPaidBody } from './paidContent.js'
 import { PurchaseBody } from './lava.js'
 import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
-import { CommentBody, CommentDto } from './comments.js'
+import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { ApiArticleBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
 
 const TAGS = {
@@ -363,9 +363,9 @@ const ops: Op[] = [
   },
   // ── комментарии
   {
-    method: 'get', path: '/feed/comments', tag: 'profile', summary: 'Тред статьи',
-    query: { subject: { description: 'at://did/media.weat.article/rkey', required: true } },
-    ok: { status: 200, schema: z.object({ comments: z.array(CommentDto) }), description: 'По возрастанию времени; ответы — с parent' },
+    method: 'get', path: '/feed/comments', tag: 'profile', summary: 'Тред статьи или комментарии пользователя',
+    query: { subject: { description: 'at://did/media.weat.article/rkey — тред по возрастанию времени' }, author: { description: 'did:… — комментарии пользователя, новые сверху, с заголовком статьи' } },
+    ok: { status: 200, schema: z.object({ comments: z.union([z.array(CommentDto), z.array(AuthorCommentDto)]) }), description: 'subject → CommentDto[]; author → AuthorCommentDto[]' },
     errors: [[400, 'InvalidRequest'], [503, 'FeedUnavailable — индекс ленты недоступен']],
   },
   {

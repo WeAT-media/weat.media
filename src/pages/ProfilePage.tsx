@@ -9,7 +9,8 @@ import Reveal from '@/components/Reveal'
 import ReportDialog from '@/components/ReportDialog'
 import RssButton from '@/components/RssButton'
 import { buildAuthorFeed } from '@/lib/rss'
-import { api, countryLabel, type ApiUser } from '@/lib/api'
+import { api, comments as commentsApi, countryLabel, type ApiUser, type AuthorComment } from '@/lib/api'
+import { remoteId } from '@/lib/remoteFeed'
 import type { Author } from '@/types/types'
 import { PDS_URL } from '@/config/site'
 
@@ -21,13 +22,15 @@ function slugify(name: string): string {
 export default function ProfilePage() {
   const { id = '' } = useParams()
   const { articles, collections, cases, caseStats, user, following, toggleFollow, authorSubscriptions, toggleAuthorSubscription, bookmarks, toggleBookmark } = useStore()
-  const [tab, setTab] = useState<'posts' | 'collections' | 'cases' | 'bookmarks'>('posts')
+  const [tab, setTab] = useState<'posts' | 'comments' | 'collections' | 'cases' | 'bookmarks'>('posts')
   const [copied, setCopied] = useState(false)
   const [remoteProfile, setRemoteProfile] = useState<ApiUser | null>(null)
+  /** для какого адреса сервер уже ответил — до ответа вместо 404 показываем загрузку */
+  const [lookedUp, setLookedUp] = useState<string | null>(null)
 
   const decoded = decodeURIComponent(id)
 
-  const author = useMemo<Author | undefined>(() => {
+  const local = useMemo<Author | undefined>(() => {
     const byArticle = articles.find(
       (a) =>
         a.author.handle === decoded ||
@@ -41,18 +44,44 @@ export default function ProfilePage() {
     return undefined
   }, [articles, user, decoded])
 
-  const authorHandle = author?.handle
+  // профиль на сервере: у того, кто только комментирует, статей в ленте нет — ищем по адресу страницы
+  const lookup = local?.handle ?? decoded
   useEffect(() => {
-    if (!authorHandle) return
+    if (!lookup) return
     let cancelled = false
-    api.user(authorHandle).then(
+    api.user(lookup).then(
       (p) => !cancelled && setRemoteProfile(p),
       () => !cancelled && setRemoteProfile(null),
+    ).finally(() => !cancelled && setLookedUp(lookup))
+    return () => {
+      cancelled = true
+    }
+  }, [lookup])
+  const author = useMemo<Author | undefined>(() => {
+    if (local) return local
+    const p = remoteProfile
+    if (p && (p.handle === decoded || p.did === decoded)) return { name: p.displayName || p.handle, handle: p.handle, did: p.did }
+    return undefined
+  }, [local, remoteProfile, decoded])
+
+  // комментарии из индекса ленты: все, что пользователь оставил под статьями площадки
+  const [userComments, setUserComments] = useState<{ did: string; list: AuthorComment[] } | null>(null)
+  const authorDid = author?.did?.startsWith('did:') ? author.did : undefined
+  useEffect(() => {
+    if (!authorDid) return
+    let cancelled = false
+    commentsApi.byAuthor(authorDid).then(
+      (r) => !cancelled && setUserComments({ did: authorDid, list: r.comments }),
+      () => !cancelled && setUserComments({ did: authorDid, list: [] }),
     )
     return () => {
       cancelled = true
     }
-  }, [authorHandle])
+  }, [authorDid])
+
+  if (!author && lookedUp !== lookup) {
+    return <p className="meta mx-auto max-w-[720px] px-5 py-24 text-center">Загружаем профиль…</p>
+  }
 
   if (!author) {
     return (
@@ -80,6 +109,7 @@ export default function ProfilePage() {
   const followers = (meta?.followers ?? 0) + (isFollowed ? 1 : 0)
 
   const posts = articles.filter((a) => a.author.handle === author.handle)
+  const authorComments = userComments?.did === author.did ? userComments.list : []
   const cols = collections.filter((c) => c.authorHandle === author.handle)
   // дела, связанные со статьями автора; роль присяжного в данных не смоделирована
   const authorCases = cases.filter((c) => posts.some((p) => p.id === c.articleId))
@@ -271,11 +301,12 @@ export default function ProfilePage() {
         {(
           [
             { key: 'posts', label: `Публикации · ${posts.length}` },
+            { key: 'comments', label: `Комментарии · ${authorComments.length}` },
             { key: 'collections', label: `Подборки · ${cols.length}` },
             { key: 'cases', label: `Судебные разбирательства · ${authorCases.length}` },
             // закладки — приватный список, только в своём профиле
             ...(isSelf ? [{ key: 'bookmarks' as const, label: `Закладки · ${bookmarkedArticles.length}` }] : []),
-          ] as { key: 'posts' | 'collections' | 'cases' | 'bookmarks'; label: string }[]
+          ] as { key: 'posts' | 'comments' | 'collections' | 'cases' | 'bookmarks'; label: string }[]
         ).map((t) => (
           <button
             key={t.key}
@@ -321,6 +352,39 @@ export default function ProfilePage() {
                         {' · '}
                         {a.tags.map((t) => `#${t}`).join(' ')}
                       </>
+                    )}
+                  </p>
+                </article>
+              </Reveal>
+            ))
+          )}
+        </section>
+      ) : tab === 'comments' ? (
+        <section aria-label="Комментарии пользователя" className="mt-6">
+          {authorComments.length === 0 ? (
+            <p className="rule py-10 text-muted-foreground">
+              {userComments?.did === author.did ? 'Комментариев пока нет.' : 'Загружаем комментарии…'}
+            </p>
+          ) : (
+            authorComments.map((c) => (
+              <Reveal key={c.uri}>
+                <article className="rule py-5 first:border-t-0 first:pt-2">
+                  <p className="meta">
+                    {c.createdAt.slice(0, 16).replace('T', ' ')}
+                    {c.parent && ' · ответ'}
+                  </p>
+                  <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-[15px] leading-relaxed">{c.text}</p>
+                  <p className="meta mt-2 !normal-case tracking-normal">
+                    к статье{' '}
+                    {c.subjectTitle ? (
+                      <Link
+                        to={`/article/${remoteId(c.subject)}`}
+                        className="font-semibold text-foreground decoration-accent underline-offset-4 hover:text-accent hover:underline"
+                      >
+                        {c.subjectTitle}
+                      </Link>
+                    ) : (
+                      <span>«удалена или ещё не проиндексирована»</span>
                     )}
                   </p>
                 </article>

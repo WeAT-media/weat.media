@@ -141,6 +141,37 @@ pub async fn comments_of(
     .await
 }
 
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct AuthorCommentRow {
+    pub uri: String,
+    pub text: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: DateTime<Utc>,
+    pub parent: Option<String>,
+    /// статья, к которой оставлен комментарий
+    pub subject: String,
+    /// заголовок статьи; None — статьи нет в индексе (удалена или ещё не пришла)
+    #[serde(rename = "subjectTitle")]
+    pub subject_title: Option<String>,
+}
+
+/// комментарии пользователя, новые сверху — для профиля
+pub async fn comments_by(
+    pool: &PgPool,
+    did: &str,
+    limit: i64,
+) -> sqlx::Result<Vec<AuthorCommentRow>> {
+    sqlx::query_as(
+        "SELECT c.uri, c.text, c.created_at, c.parent_uri AS parent, c.subject_uri AS subject, a.title AS subject_title
+         FROM comments c LEFT JOIN articles a ON a.uri = c.subject_uri
+         WHERE c.did = $1 ORDER BY c.created_at DESC LIMIT $2",
+    )
+    .bind(did)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn article(pool: &PgPool, uri: &str) -> sqlx::Result<Option<Row>> {
     sqlx::query_as(
         "SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at, a.record,

@@ -177,23 +177,33 @@ async fn one(State(s): State<AppState>, Query(q): Query<One>) -> Response {
 
 #[derive(Deserialize)]
 pub struct CommentsParams {
-    /// at://… статьи
-    subject: String,
+    /// at://… статьи — тред
+    subject: Option<String>,
+    /// DID — комментарии пользователя (профиль)
+    author: Option<String>,
     limit: Option<i64>,
 }
 
-/// тред статьи по возрастанию времени: ответы ссылаются на parent
+/// subject — тред статьи по возрастанию времени (ответы ссылаются на parent);
+/// author — комментарии пользователя, новые сверху, с заголовком статьи
 async fn comments(State(s): State<AppState>, Query(p): Query<CommentsParams>) -> Response {
-    if !p.subject.starts_with("at://did:") || p.subject.len() > 400 {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-    let limit = p.limit.unwrap_or(500).clamp(1, 1000);
-    match index::comments_of(&s.pool, &p.subject, limit, false).await {
-        Ok(rows) => (
-            [(header::CACHE_CONTROL, "public, max-age=5")],
-            Json(serde_json::json!({ "comments": rows })),
-        )
-            .into_response(),
+    let rows = match (p.subject.as_deref(), p.author.as_deref()) {
+        (Some(subject), None) if subject.starts_with("at://did:") && subject.len() <= 400 => {
+            let limit = p.limit.unwrap_or(500).clamp(1, 1000);
+            index::comments_of(&s.pool, subject, limit, false)
+                .await
+                .map(|r| serde_json::json!({ "comments": r }))
+        }
+        (None, Some(did)) if did.starts_with("did:") && did.len() <= 200 => {
+            let limit = p.limit.unwrap_or(50).clamp(1, 200);
+            index::comments_by(&s.pool, did, limit)
+                .await
+                .map(|r| serde_json::json!({ "comments": r }))
+        }
+        _ => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match rows {
+        Ok(body) => ([(header::CACHE_CONTROL, "public, max-age=5")], Json(body)).into_response(),
         Err(err) => {
             tracing::error!(%err, "comments");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()

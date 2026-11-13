@@ -1246,6 +1246,8 @@ test('comments from site session: written to reader repo, reply keeps parent, ow
   const del = await app.request(`/api/me/comments/${reply.uri.split('/').pop()}`, { method: 'DELETE', headers: auth })
   assert.equal(del.status, 200)
   assert.equal((await app.request('/api/feed/comments?subject=https://x')).status, 400)
+  assert.equal((await app.request('/api/feed/comments?author=nobody')).status, 400)
+  assert.equal((await app.request(`/api/feed/comments?author=${u.user.did}`)).status, 503)
   assert.equal((await app.request(`/api/feed/comments?subject=${encodeURIComponent(subject)}`)).status, 503, 'без индекса ленты треда нет')
 })
 

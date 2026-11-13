@@ -115,6 +115,7 @@ impl Sort {
 }
 
 /// та же формула, что в SQL, — для тестов и для тех, кто считает у себя
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn hot_score(likes: i32, comments: i32, age_hours: f64) -> f64 {
     (likes as f64 + COMMENT_WEIGHT * comments as f64 + 1.0)
         / (age_hours.max(0.0) + 2.0).powf(GRAVITY)

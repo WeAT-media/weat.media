@@ -312,9 +312,22 @@ export interface ThreadComment {
   parent: string | null
 }
 
+export interface AuthorComment {
+  uri: string
+  text: string
+  createdAt: string
+  parent: string | null
+  /** статья */
+  subject: string
+  /** null — статьи нет в индексе */
+  subjectTitle: string | null
+}
+
 /** Комментарии статей из индекса: запись media.weat.comment в репозитории читателя */
 export const comments = {
   thread: (subject: string) => call<{ comments: ThreadComment[] }>(`/feed/comments?${new URLSearchParams({ subject })}`),
+  /** комментарии пользователя, новые сверху — для профиля */
+  byAuthor: (did: string) => call<{ comments: AuthorComment[] }>(`/feed/comments?${new URLSearchParams({ author: did })}`),
   create: (b: { subject: string; parent?: string; text: string }) => authed<ThreadComment>('/me/comments', post(b)),
   remove: (rkey: string) => authed<{ ok: true }>(`/me/comments/${encodeURIComponent(rkey)}`, { method: 'DELETE' }),
 }
