@@ -837,8 +837,9 @@ test('imports: posts of linked AT account become drafts; re-import does not dupl
   const { drafts } = await (await app.request('/api/me/imports?status=pending', { headers: auth })).json()
   assert.equal(drafts.length, 2)
   assert.equal(drafts[0].title, 'Смотри сайт')
-  assert.equal(drafts[0].text, 'Смотри [сайт](https://x.org)\n\n![кот](https://ext.pds/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Aperfscalesu&cid=bafyimg)')
-  assert.equal(drafts[1].text, 'Первый пост\n\nвторой абзац')
+  assert.equal(drafts[0].text, '![кот](https://ext.pds/xrpc/com.atproto.sync.getBlob?did=did%3Aplc%3Aperfscalesu&cid=bafyimg)')
+  assert.equal(drafts[1].title, 'Первый пост')
+  assert.equal(drafts[1].text, 'второй абзац')
 
   const pub = await app.request(`/api/me/imports/${drafts[0].id}`, { method: 'PATCH', headers: auth, body: JSON.stringify({ status: 'published', articleUri: 'at://did:plc:x/media.weat.article/1' }) })
   assert.equal((await pub.json()).articleUri, 'at://did:plc:x/media.weat.article/1')

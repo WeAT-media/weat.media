@@ -111,7 +111,8 @@ export function atprotoPostSource(plcUrl = 'https://plc.directory'): PostSource 
 export const POST_COLLECTION = 'app.bsky.feed.post'
 /** больше постов за один импорт не читаем: 10 страниц по 100 */
 const MAX_PAGES = 10
-const TITLE_MAX = 80
+/** длиннее — заголовок обрезается, а абзац целиком остаётся в тексте */
+const TITLE_MAX = 120
 
 interface Facet {
   index?: { byteStart?: number; byteEnd?: number }
@@ -151,6 +152,9 @@ export function postToDraft(did: string, pds: string, r: SourceRecord): Omit<New
   const text = withLinks(v.text ?? '', v.facets).trim()
   const blob = (cid: string) => `${pds}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`
   const parts = text ? text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean) : []
+  // заголовок — первый абзац (без markdown ссылок); короткий уходит из текста целиком
+  const first = (v.text ?? '').split(/\n{2,}/).map((p) => p.replace(/\s+/g, ' ').trim()).find(Boolean) ?? ''
+  const title = first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX - 1).trimEnd()}…` : first || 'Пост без текста'
   const images = v.embed?.images ?? v.embed?.media?.images ?? []
   for (const img of images) {
     const cid = img.image?.ref?.$link
@@ -158,9 +162,9 @@ export function postToDraft(did: string, pds: string, r: SourceRecord): Omit<New
   }
   const ext = v.embed?.external
   if (ext?.uri?.startsWith('http')) parts.push(`[${(ext.title || ext.uri).replace(/[[\]\n]/g, ' ').trim()}](${ext.uri})`)
+  // абзац-заголовок не повторяем в тексте, если после него что-то остаётся (абзацы, картинки, ссылка)
+  if (text && first.length <= TITLE_MAX && parts.length > 1) parts.shift()
   if (!parts.length) return null
-  const firstLine = (v.text ?? '').split('\n').find((l) => l.trim())?.trim() ?? ''
-  const title = firstLine.length > TITLE_MAX ? `${firstLine.slice(0, TITLE_MAX - 1).trimEnd()}…` : firstLine || 'Пост без текста'
   const at = v.createdAt && !Number.isNaN(Date.parse(v.createdAt)) ? new Date(v.createdAt) : new Date()
   return { source_uri: r.uri, source_created_at: at, title, text: parts.join('\n\n') }
 }

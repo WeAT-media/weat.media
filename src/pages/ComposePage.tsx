@@ -169,8 +169,10 @@ export default function ComposePage() {
     imports
       .get(importId)
       .then((d) => {
-        setTitle(d.title)
-        setBodyText(d.text)
+        // заголовок — и в state, и строкой `# …`: редактор берёт page-title из неё
+        const t = d.title || d.text.split(/\n{2,}/)[0]?.trim() || 'Без заголовка'
+        setTitle(t)
+        setBodyText(`# ${t}\n\n${d.text}`)
       })
       .catch(() => {})
       .finally(() => setImportReady(true))
@@ -785,7 +787,7 @@ export default function ComposePage() {
                   <DialogTitle>Выплаты не настроены</DialogTitle>
                   <DialogDescription>
                     Платные посты доступны авторам только после подключения реквизитов выплат — 90%* каждой
-                    продажи (с Premium — 99%*) уходит на них. <span className="block text-[10px] leading-snug">{FEE_NOTE}</span> Это локальный демо-мок: платежей и реальных провайдеров нет.
+                    продажи (с Premium — 99%*) уходит на них. <span className="block text-[10px] leading-snug">{FEE_NOTE}</span> Читатели платят через lava.top; реквизиты хранятся в вашем аккаунте, выплаты на них делает площадка.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-wrap gap-3">
