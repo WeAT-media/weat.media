@@ -82,9 +82,10 @@ impl Sort {
 
     /// (score, доп. условие WHERE, ORDER BY) — только константы из этого модуля, без ввода пользователя
     pub fn sql(self) -> (String, String, String) {
+        // float8: extract(epoch …) отдаёт numeric, а numeric-арифметика по окну заметно медленнее
         let hot = format!(
-            "(a.like_score + {COMMENT_WEIGHT} * a.comment_count + 1)
-             / power(greatest(extract(epoch FROM now() - a.published_at), 0) / 3600 + 2, {GRAVITY})"
+            "(a.like_score + {COMMENT_WEIGHT} * a.comment_count + 1)::float8
+             / power(greatest(extract(epoch FROM now() - a.published_at)::float8, 0) / 3600 + 2, {GRAVITY})"
         );
         match self {
             Sort::New => (
@@ -93,7 +94,7 @@ impl Sort {
                 "a.created_at DESC, a.uri DESC".into(),
             ),
             Sort::Hot => (
-                format!("({hot})::float8"),
+                hot.clone(),
                 format!("AND a.published_at > now() - interval '{HOT_WINDOW_DAYS} days'"),
                 format!("{hot} DESC, a.published_at DESC, a.uri DESC"),
             ),
@@ -121,30 +122,54 @@ impl Sort {
 pub const TAG_WEIGHT: f64 = 3.0;
 pub const CO_LIKE_WEIGHT: f64 = 2.0;
 
+/// кандидаты ограничены: у популярной статьи тысячи лайков, полный «кто лайкнул обе» — это самосоединение
+/// таблицы лайков. Берём последних читателей и их последние лайки — для «похожего» этого хватает.
+pub const RELATED_TAG_CANDIDATES: i64 = 2_000;
+pub const RELATED_LIKERS: i64 = 500;
+pub const RELATED_LIKES_PER_READER: i64 = 50;
+
 pub fn related_sql() -> String {
     format!(
         "WITH src AS (SELECT uri, tags FROM articles WHERE uri = $1),
-         co AS (
-           SELECT l2.subject_uri AS uri, count(DISTINCT l2.did) AS n
-           FROM likes l1 JOIN likes l2 ON l2.did = l1.did AND l2.subject_uri <> l1.subject_uri
-           WHERE l1.subject_uri = $1 AND l1.weight > 0 AND l2.weight > 0
-           GROUP BY l2.subject_uri
+         readers AS (
+           SELECT did FROM likes WHERE subject_uri = $1 AND weight > 0
+           ORDER BY created_at DESC LIMIT {RELATED_LIKERS}
          ),
-         scored AS (
+         co AS (
+           SELECT l.subject_uri AS uri, count(*) AS n
+           FROM readers r CROSS JOIN LATERAL (
+             SELECT subject_uri FROM likes
+             WHERE did = r.did AND subject_uri <> $1 AND weight > 0
+             ORDER BY created_at DESC LIMIT {RELATED_LIKES_PER_READER}
+           ) l
+           GROUP BY l.subject_uri
+         ),
+         by_tags AS (
+           SELECT a.uri, a.tags, a.published_at FROM articles a, src
+           WHERE a.tags && src.tags AND a.uri <> src.uri
+           ORDER BY a.published_at DESC LIMIT {RELATED_TAG_CANDIDATES}
+         ),
+         -- общие читатели приходят вместе с кандидатом: отдельный join с co планировщик делал вложенным циклом
+         cand AS (
+           SELECT uri, max(n) AS n FROM (
+             SELECT uri, 0 AS n FROM by_tags UNION ALL SELECT uri, n FROM co
+           ) x GROUP BY uri
+         ),
+         top AS (
            SELECT a.uri,
              ({TAG_WEIGHT} * cardinality(ARRAY(SELECT unnest(a.tags) INTERSECT SELECT unnest(src.tags)))
-              + {CO_LIKE_WEIGHT} * coalesce(co.n, 0))
-             / sqrt(greatest(extract(epoch FROM now() - a.published_at), 0) / 86400 + 1) AS score
-           FROM articles a CROSS JOIN src LEFT JOIN co ON co.uri = a.uri
-           WHERE a.uri <> src.uri AND (a.tags && src.tags OR co.n IS NOT NULL)
+              + {CO_LIKE_WEIGHT} * cand.n)::float8
+             / sqrt(greatest(extract(epoch FROM now() - a.published_at)::float8, 0) / 86400 + 1) AS score
+           FROM cand JOIN articles a ON a.uri = cand.uri CROSS JOIN src
+           ORDER BY score DESC, a.published_at DESC
+           LIMIT $2
          )
          SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at, a.record - 'text' AS record,
                 coalesce(char_length(a.record->>'text'), 0) AS text_length, a.like_count, a.comment_count,
-                s.score::float8 AS score
-         FROM scored s JOIN articles a ON a.uri = s.uri LEFT JOIN handles h ON h.did = a.did
-         WHERE s.score > 0
-         ORDER BY s.score DESC, a.published_at DESC
-         LIMIT $2"
+                top.score
+         FROM top JOIN articles a ON a.uri = top.uri LEFT JOIN handles h ON h.did = a.did
+         WHERE top.score > 0
+         ORDER BY top.score DESC, a.published_at DESC"
     )
 }
 

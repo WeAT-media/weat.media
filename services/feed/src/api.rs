@@ -20,6 +20,36 @@ pub struct AppState {
     /// публичный адрес сайта — для ссылок в RSS
     pub site_url: String,
     pub site_name: String,
+    /// готовые ответы hot, best и related (cache.rs)
+    pub cache: std::sync::Arc<crate::cache::Cache>,
+}
+
+/// медленнее этого — warn в лог: сигнал, что пора предрасчитывать score (см. rank.rs)
+const SLOW: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// JSON из кэша или свежий; x-cache: hit | miss, время запроса к базе — в лог
+fn json_body(body: String, cache_control: &'static str, hit: bool) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (header::CACHE_CONTROL, cache_control),
+            (
+                header::HeaderName::from_static("x-cache"),
+                if hit { "hit" } else { "miss" },
+            ),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+fn log_timing(what: &str, key: &str, elapsed: std::time::Duration, rows: usize) {
+    let ms = elapsed.as_secs_f64() * 1000.0;
+    if elapsed >= SLOW {
+        tracing::warn!(what, key, ms, rows, "slow ranked query");
+    } else {
+        tracing::info!(what, key, ms, rows, "ranked query");
+    }
 }
 
 pub fn router(state: AppState) -> Router {
@@ -132,8 +162,20 @@ async fn articles(State(s): State<AppState>, Query(p): Query<Params>) -> Respons
                 .into_response();
         }
     };
+    // new — дешёвый keyset и должен быть свежим; кэшируем только ранжирование
+    let cache_key = (q.sort != Sort::New).then(|| format!("feed:{q:?}"));
+    let now = std::time::Instant::now();
+    if let Some(body) = cache_key
+        .as_deref()
+        .and_then(|k| s.cache.get(k, crate::cache::RANKED_TTL, now))
+    {
+        return json_body(body, "public, max-age=5", true);
+    }
     match index::feed(&pool, &q).await {
         Ok(rows) => {
+            if let Some(key) = &cache_key {
+                log_timing("feed", key, now.elapsed(), rows.len());
+            }
             let full_page = rows.len() as i64 == q.limit;
             let cursor = match q.sort {
                 Sort::New => full_page
@@ -141,11 +183,12 @@ async fn articles(State(s): State<AppState>, Query(p): Query<Params>) -> Respons
                     .flatten(),
                 _ => full_page.then(|| encode_offset(q.offset + q.limit)),
             };
-            (
-                [(header::CACHE_CONTROL, "public, max-age=5")],
-                Json(serde_json::json!({ "articles": rows, "cursor": cursor })),
-            )
-                .into_response()
+            let body = serde_json::json!({ "articles": rows, "cursor": cursor }).to_string();
+            if let Some(key) = cache_key {
+                s.cache
+                    .put(key, body.clone(), crate::cache::RANKED_TTL, now);
+            }
+            json_body(body, "public, max-age=5", false)
         }
         Err(err) => {
             tracing::error!(%err, "feed query");
@@ -187,12 +230,20 @@ async fn related(State(s): State<AppState>, Query(p): Query<RelatedParams>) -> R
     if !p.uri.starts_with("at://did:") || p.uri.len() > 400 {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    match index::related(&s.pool, &p.uri, p.limit.unwrap_or(3).clamp(1, 20)).await {
-        Ok(rows) => (
-            [(header::CACHE_CONTROL, "public, max-age=60")],
-            Json(serde_json::json!({ "articles": rows })),
-        )
-            .into_response(),
+    let limit = p.limit.unwrap_or(3).clamp(1, 20);
+    let key = format!("related:{}:{limit}", p.uri);
+    let now = std::time::Instant::now();
+    if let Some(body) = s.cache.get(&key, crate::cache::RELATED_TTL, now) {
+        return json_body(body, "public, max-age=60", true);
+    }
+    match index::related(&s.pool, &p.uri, limit).await {
+        Ok(rows) => {
+            log_timing("related", &key, now.elapsed(), rows.len());
+            let body = serde_json::json!({ "articles": rows }).to_string();
+            s.cache
+                .put(key, body.clone(), crate::cache::RELATED_TTL, now);
+            json_body(body, "public, max-age=60", false)
+        }
         Err(err) => {
             tracing::error!(%err, "related");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()

@@ -3,6 +3,7 @@
 
 mod api;
 mod backfill;
+mod cache;
 mod firehose;
 mod index;
 mod rank;
@@ -72,6 +73,7 @@ async fn main() {
             .trim_end_matches('/')
             .to_string(),
         site_name: env("SITE_NAME", "weAT.media"),
+        cache: Default::default(),
     };
     let app = api::router(state).layer(
         CorsLayer::new()

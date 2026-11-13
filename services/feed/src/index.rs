@@ -310,32 +310,53 @@ pub struct Row {
 }
 
 pub async fn feed(pool: &PgPool, q: &Query) -> sqlx::Result<Vec<Row>> {
-    let (after_at, after_uri) = q.after.clone().unzip();
     let (score, window, order) = q.sort.sql();
-    sqlx::query_as::<_, Row>(&format!(
-        "SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at,
-                CASE WHEN $8 THEN a.record ELSE a.record - 'text' END AS record,
+    // два шага: сначала топ uri по узким колонкам (у hot без фильтров — только индекс articles_rank_idx),
+    // затем карточки лишь для этой страницы. В условиях — только включённые фильтры: упоминание любой
+    // другой колонки лишило бы Postgres index-only scan.
+    let mut b = sqlx::QueryBuilder::<sqlx::Postgres>::new(format!(
+        "WITH top AS (SELECT a.uri, a.created_at, a.published_at, a.like_score, a.comment_count, {score} AS score
+         FROM articles a WHERE true {window}"
+    ));
+    if let Some((at, uri)) = &q.after {
+        b.push(" AND (a.created_at, a.uri) < (")
+            .push_bind(*at)
+            .push(", ")
+            .push_bind(uri.clone())
+            .push(")");
+    }
+    if !q.tags.is_empty() {
+        b.push(" AND a.tags && ").push_bind(q.tags.clone());
+    }
+    if let Some(lang) = &q.lang {
+        b.push(" AND (")
+            .push_bind(lang.clone())
+            .push(" = ANY(a.langs) OR (cardinality(a.langs) = 0 AND ");
+        b.push_bind(lang.clone()).push(" = 'ru'))");
+    }
+    if let Some(external) = q.external {
+        b.push(" AND (a.source_site IS NOT NULL) = ")
+            .push_bind(external);
+    }
+    if let Some(did) = &q.did {
+        b.push(" AND a.did = ").push_bind(did.clone());
+    }
+    b.push(format!(" ORDER BY {order} LIMIT "))
+        .push_bind(q.limit)
+        .push(" OFFSET ")
+        .push_bind(q.offset)
+        .push(
+            ")
+         SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at,
+                CASE WHEN ",
+        )
+        .push_bind(q.full)
+        .push(format!(
+            " THEN a.record ELSE a.record - 'text' END AS record,
                 coalesce(char_length(a.record->>'text'), 0) AS text_length, a.like_count, a.comment_count,
-                {score} AS score
-         FROM articles a LEFT JOIN handles h ON h.did = a.did
-         WHERE ($1::timestamptz IS NULL OR (a.created_at, a.uri) < ($1, $2))
-           AND (cardinality($3::text[]) = 0 OR a.tags && $3)
-           AND ($4::text IS NULL OR $4 = ANY(a.langs) OR (cardinality(a.langs) = 0 AND $4 = 'ru'))
-           AND ($5::bool IS NULL OR (a.source_site IS NOT NULL) = $5)
-           AND ($6::text IS NULL OR a.did = $6)
-           {window}
-         ORDER BY {order}
-         LIMIT $7 OFFSET $9"
-    ))
-    .bind(after_at)
-    .bind(after_uri)
-    .bind(&q.tags)
-    .bind(&q.lang)
-    .bind(q.external)
-    .bind(&q.did)
-    .bind(q.limit)
-    .bind(q.full)
-    .bind(q.offset)
-    .fetch_all(pool)
-    .await
+                top.score
+         FROM top JOIN articles a ON a.uri = top.uri LEFT JOIN handles h ON h.did = a.did
+         ORDER BY {order}"
+        ));
+    b.build_query_as::<Row>().fetch_all(pool).await
 }
