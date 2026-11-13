@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, Flag, Gavel, Landmark, LineChart, MessageSquare, Rss, Share2 } from 'lucide-react'
+import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, Flag, Gavel, Landmark, LineChart, MessageSquare, Rss, Share2, Trash2 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { labelers } from '@/data/mock'
 import { languageName } from '@/data/languages'
@@ -189,7 +189,7 @@ export default function ArticlePage() {
   const { id } = useParams()
   const {
     articles, cases, collections, settings, actionForLabel, setLabelAction,
-    addComment, extraComments, unlocked, unlock, user, reportToCourt,
+    addComment, deleteComment, extraComments, unlocked, unlock, user, reportToCourt,
     watchedArticles, toggleWatchArticle,
   } = useStore()
   const navigate = useNavigate()
@@ -223,6 +223,8 @@ export default function ArticlePage() {
   const [previewEnded, setPreviewEnded] = useState(false)
   const [replyTarget, setReplyTarget] = useState<string | null>(null)
   const [composerKey, setComposerKey] = useState(0)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<{ id: string; message: string } | null>(null)
   const [courtOpen, setCourtOpen] = useState(false)
   const [courtError, setCourtError] = useState('')
   const [charges, setCharges] = useState('')
@@ -326,6 +328,20 @@ export default function ArticlePage() {
 
   const MAX_COMMENT_DEPTH = 3
 
+  // свой: запись в моём репозитории (at://<мой did>/…) или отправленный только что локально
+  const isMine = (c: Comment) =>
+    !!user && (c.id.startsWith('at://') ? c.id.split('/')[2] === user.did : (extraComments[article.id] ?? []).some((x) => x.id === c.id))
+  const removeComment = async (c: Comment) => {
+    setDeleteError(null)
+    try {
+      await deleteComment(article.id, c.id)
+      setThread((t) => (t ? { ...t, comments: t.comments.filter((x) => x.id !== c.id) } : t))
+      setConfirmDelete(null)
+    } catch (e) {
+      setDeleteError({ id: c.id, message: e instanceof Error ? e.message : 'Не удалось удалить комментарий.' })
+    }
+  }
+
   const renderComment = (c: (typeof allComments)[number], depth: number) => {
     const replies = repliesByParent.get(c.id) ?? []
     const indent = Math.min(depth, MAX_COMMENT_DEPTH)
@@ -344,6 +360,30 @@ export default function ArticlePage() {
             >
               Ответить
             </button>
+            {isMine(c) &&
+              (confirmDelete === c.id ? (
+                <span className="inline-flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.06em]">
+                  <button
+                    onClick={() => removeComment(c)}
+                    className="cursor-pointer text-destructive hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Удалить навсегда
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(null)}
+                    className="cursor-pointer text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Отмена
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={() => setConfirmDelete(c.id)}
+                  className="inline-flex cursor-pointer items-center gap-1 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Trash2 size={10} aria-hidden="true" /> Удалить
+                </button>
+              ))}
             <ReportDialog
               targetType="comment"
               targetId={c.id}
@@ -357,6 +397,7 @@ export default function ArticlePage() {
           </div>
         </div>
         <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed">{renderInline(c.text)}</p>
+        {deleteError?.id === c.id && <p className="mt-1 text-sm text-destructive">{deleteError.message}</p>}
         {replies.length > 0 && depth >= MAX_COMMENT_DEPTH && (
           <p className="meta mt-1">ответов: {replies.length} — дальше ветка показана плоско</p>
         )}

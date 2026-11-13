@@ -136,6 +136,8 @@ interface StoreValue extends Persisted {
   publishArticle: (article: Article) => void
   /** у статьи из индекса — запись в репозиторий читателя; ошибка API пробрасывается (ApiError) */
   addComment: (articleId: string, text: string, parentId?: string) => Promise<void>
+  /** свой комментарий: из репозитория читателя (AT URI) или локальный; ошибка API пробрасывается */
+  deleteComment: (articleId: string, commentId: string) => Promise<void>
   toggleAuthorSubscription: (handle: string) => void
   toggleWatchArticle: (articleId: string) => void
   unlock: (articleId: string) => void
@@ -648,6 +650,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           extraComments: { ...prev.extraComments, [articleId]: [...(prev.extraComments[articleId] ?? []), comment] },
           // автор комментария автоматически следит за ответами в треде
           watchedArticles: prev.watchedArticles.includes(articleId) ? prev.watchedArticles : [...prev.watchedArticles, articleId],
+        }))
+      },
+      deleteComment: async (articleId, commentId) => {
+        if (commentId.startsWith('at://')) await comments.remove(commentId.split('/').pop()!)
+        setPersisted((prev) => ({
+          ...prev,
+          extraComments: { ...prev.extraComments, [articleId]: (prev.extraComments[articleId] ?? []).filter((c) => c.id !== commentId) },
         }))
       },
       toggleAuthorSubscription: (handle) =>
