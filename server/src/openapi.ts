@@ -341,7 +341,7 @@ const ops: Op[] = [
   { method: 'delete', path: '/v1/comments/{rkey}', tag: 'publicApi', summary: 'Удалить свой комментарий', auth: 'pat', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[401, 'InvalidToken'], [403, 'Forbidden — нет comments:write']] },
   {
     method: 'get', path: '/feed', tag: 'profile', summary: 'Лента статей площадки',
-    description: 'Статьи media.weat.article, новые сверху. Индекс обновляется по потоку событий PDS за ~1 с.',
+    description: 'Статьи media.weat.article. Индекс обновляется по потоку событий PDS за ~1 с. sort=hot — (лайки + 2·комментарии + 1) / (часы + 2)^1.5 за 14 дней; sort=best — по лайкам или комментариям за период. У hot и best в ответе есть score.',
     query: {
       limit: { description: '1–100' },
       cursor: { description: 'cursor из прошлого ответа — следующая страница' },
@@ -349,6 +349,9 @@ const ops: Op[] = [
       lang: { description: 'ru, en, …' },
       source: { description: 'all | internal (написано на площадке) | external (краулер, репост)' },
       author: { description: 'DID автора' },
+      sort: { description: 'new (по умолчанию) | hot | best' },
+      metric: { description: 'для best: likes | comments' },
+      period: { description: 'для best: day | week (по умолчанию) | month | all' },
       view: { description: 'full — записи целиком; по умолчанию карточки без текста (record без text, textLength — длина текста)' },
     },
     ok: { status: 200, description: '{ articles: [{ uri, cid, did, handle, createdAt, indexedAt, record }], cursor }' },

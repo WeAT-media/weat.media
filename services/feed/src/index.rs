@@ -144,7 +144,8 @@ pub async fn comments_of(
 pub async fn article(pool: &PgPool, uri: &str) -> sqlx::Result<Option<Row>> {
     sqlx::query_as(
         "SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at, a.record,
-                coalesce(char_length(a.record->>'text'), 0) AS text_length, a.like_count, a.comment_count
+                coalesce(char_length(a.record->>'text'), 0) AS text_length, a.like_count, a.comment_count,
+                NULL::float8 AS score
          FROM articles a LEFT JOIN handles h ON h.did = a.did WHERE a.uri = $1",
     )
     .bind(uri)
@@ -224,6 +225,9 @@ pub struct Query {
     pub did: Option<String>,
     /** true — запись целиком; false — карточка ленты без текста статьи */
     pub full: bool,
+    pub sort: crate::rank::Sort,
+    /// для hot и best: сколько записей пропустить (after у них не используется)
+    pub offset: i64,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -244,23 +248,29 @@ pub struct Row {
     pub like_count: i32,
     #[serde(rename = "commentCount")]
     pub comment_count: i32,
+    /// очки ранжирования (hot, best); у new — нет
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
 }
 
 pub async fn feed(pool: &PgPool, q: &Query) -> sqlx::Result<Vec<Row>> {
     let (after_at, after_uri) = q.after.clone().unzip();
-    sqlx::query_as::<_, Row>(
+    let (score, window, order) = q.sort.sql();
+    sqlx::query_as::<_, Row>(&format!(
         "SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at,
                 CASE WHEN $8 THEN a.record ELSE a.record - 'text' END AS record,
-                coalesce(char_length(a.record->>'text'), 0) AS text_length, a.like_count, a.comment_count
+                coalesce(char_length(a.record->>'text'), 0) AS text_length, a.like_count, a.comment_count,
+                {score} AS score
          FROM articles a LEFT JOIN handles h ON h.did = a.did
          WHERE ($1::timestamptz IS NULL OR (a.created_at, a.uri) < ($1, $2))
            AND (cardinality($3::text[]) = 0 OR a.tags && $3)
            AND ($4::text IS NULL OR $4 = ANY(a.langs) OR (cardinality(a.langs) = 0 AND $4 = 'ru'))
            AND ($5::bool IS NULL OR (a.source_site IS NOT NULL) = $5)
            AND ($6::text IS NULL OR a.did = $6)
-         ORDER BY a.created_at DESC, a.uri DESC
-         LIMIT $7",
-    )
+           {window}
+         ORDER BY {order}
+         LIMIT $7 OFFSET $9"
+    ))
     .bind(after_at)
     .bind(after_uri)
     .bind(&q.tags)
@@ -269,6 +279,7 @@ pub async fn feed(pool: &PgPool, q: &Query) -> sqlx::Result<Vec<Row>> {
     .bind(&q.did)
     .bind(q.limit)
     .bind(q.full)
+    .bind(q.offset)
     .fetch_all(pool)
     .await
 }

@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { MessageSquare, Trophy, ArrowBigUp } from 'lucide-react'
 import { commentCount, upvoteCount } from '@/lib/analytics'
+import { fetchRanked } from '@/lib/remoteFeed'
 import type { Article } from '@/types/types'
 
 type Period = 'day' | 'week'
@@ -21,17 +22,38 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
   // момент открытия ленты: окно «день/неделя» считается от него
   const [now] = useState(() => Date.now())
 
+  // топ по всему индексу с сервера; null — ещё грузится, пусто — считаем по загруженным
+  const [server, setServer] = useState<{ key: string; list: Article[] } | null>(null)
+  const key = `${period}|${metric}|${origin}`
+  useEffect(() => {
+    let alive = true
+    fetchRanked({
+      sort: 'best',
+      metric: metric === 'comments' ? 'comments' : 'likes',
+      period,
+      ...(origin === 'all' ? {} : { source: origin }),
+      limit: 5,
+    }).then((r) => alive && setServer({ key, list: r.map((x) => x.article) }))
+    return () => {
+      alive = false
+    }
+  }, [key, period, metric, origin])
+
   const top = useMemo(() => {
+    const score = (a: Article) => (metric === 'comments' ? commentCount(a) : upvoteCount(a, upvoted.includes(a.id)))
+    const byId = new Map(articles.map((a) => [a.id, a]))
+    // карточка из стора знает о моём лайке — берём её, если статья уже загружена
+    const ranked = server?.key === key ? server.list.map((a) => byId.get(a.id) ?? a) : []
+    if (ranked.length) return ranked.map((a) => ({ a, score: score(a) }))
     // publishedAt — дата без времени: «день» = сегодня и вчера, «неделя» = 7 суток
     const since = now - (period === 'day' ? 2 : 7) * DAY
-    const score = (a: Article) => (metric === 'comments' ? commentCount(a) : upvoteCount(a, upvoted.includes(a.id)))
     return articles
       .filter((a) => Date.parse(a.publishedAt) >= since)
       .filter((a) => origin === 'all' || (origin === 'internal') === isInternal(a))
       .map((a) => ({ a, score: score(a) }))
       .sort((x, y) => y.score - x.score)
       .slice(0, 5)
-  }, [articles, upvoted, period, metric, origin, now])
+  }, [articles, upvoted, period, metric, origin, now, server, key])
 
   const seg = <T extends string>(value: T, set: (v: T) => void, opts: { key: T; label: string }[], label: string) => (
     <div role="group" aria-label={label} className="flex rounded-full border border-border bg-secondary/60 p-0.5">

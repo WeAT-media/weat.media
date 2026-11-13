@@ -10,6 +10,8 @@ interface FeedItem {
   handle: string
   /** длина текста: лента отдаёт карточки без самого текста */
   textLength?: number
+  /** очки ранжирования (sort=hot | best) */
+  score?: number
   likeCount?: number
   commentCount?: number
   record: {
@@ -158,6 +160,31 @@ export function fetchArticleBody(uri: string): Promise<Article | null> {
     if (bodies.size > 50) bodies.delete(bodies.keys().next().value!)
   }
   return p
+}
+
+export interface RankQuery {
+  sort: 'hot' | 'best'
+  metric?: 'likes' | 'comments'
+  period?: 'day' | 'week' | 'month' | 'all'
+  source?: 'internal' | 'external'
+  limit?: number
+}
+
+/** ранжирование индекса (services/feed/src/rank.rs); ошибка или пустой индекс — [] */
+export async function fetchRanked(q: RankQuery): Promise<{ article: Article; score: number }[]> {
+  const params = new URLSearchParams({ limit: String(q.limit ?? 50), sort: q.sort })
+  for (const k of ['metric', 'period', 'source'] as const) if (q[k]) params.set(k, q[k]!)
+  try {
+    const res = await fetch(`${BASE}/feed?${params}`)
+    if (!res.ok) return []
+    const page = (await res.json()) as { articles: FeedItem[] }
+    return page.articles.flatMap((i) => {
+      const article = toArticle(i)
+      return article ? [{ article, score: i.score ?? 0 }] : []
+    })
+  } catch {
+    return []
+  }
 }
 
 /** до pages страниц по 100: лента и «Лучшее» считаются по последним записям */

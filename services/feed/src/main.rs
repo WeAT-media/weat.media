@@ -5,6 +5,7 @@ mod api;
 mod backfill;
 mod firehose;
 mod index;
+mod rank;
 mod record;
 mod rss;
 

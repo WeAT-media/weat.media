@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Flame } from 'lucide-react'
 import { useStore } from '@/lib/store'
@@ -5,18 +6,35 @@ import Stamp from '@/components/Stamp'
 import Reveal from '@/components/Reveal'
 import PaywallBadge from '@/components/PaywallBadge'
 import { commentCount, upvoteCount } from '@/lib/analytics'
+import { fetchRanked } from '@/lib/remoteFeed'
+import { SOURCE_URL } from '@/config/site'
+import type { Article } from '@/types/types'
 
 /** Дайджест «Горячее»: ранжирование BigData-движком по горячести */
 export default function HotPage() {
   const { articles, unlocked, upvotes } = useStore()
+  // ранжирует сервер по всему индексу; пока не ответил или индекс пуст — локальная оценка загруженного
+  const [ranked, setRanked] = useState<{ a: Article; score: number }[] | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetchRanked({ sort: 'hot', limit: 50 }).then((r) => alive && setRanked(r.map(({ article, score }) => ({ a: article, score }))))
+    return () => {
+      alive = false
+    }
+  }, [])
   const now = new Date().toISOString()
-  const hot = articles
+  const local = articles
     .filter((a) => !a.publishAt || a.publishAt <= now)
     .map((a) => ({
       a,
       score: (a.hotScore ?? 0) + commentCount(a) * 2 + upvoteCount(a, upvotes.includes(a.id)),
     }))
     .sort((x, y) => y.score - x.score)
+  // карточка из стора знает о моём лайке и свежих комментариях — берём её, если есть
+  const byId = new Map(articles.map((a) => [a.id, a]))
+  const hot = ranked?.length
+    ? ranked.map(({ a, score }) => ({ a: byId.get(a.id) ?? a, score: Math.round(score * 1000) / 10 }))
+    : local
 
   return (
     <div className="mx-auto max-w-[860px] px-5 pb-24 md:px-8">
@@ -26,8 +44,12 @@ export default function HotPage() {
           <Flame size={34} className="text-accent" aria-hidden="true" /> Горячее
         </h1>
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
-          Подборка, которую собирает BigData-движок: сигналы чтения, обсуждений и темпа набора просмотров.
-          Никакой ручной модерации — алгоритм можно форкнуть и запустить свой дайджест.
+          Лайки и комментарии делятся на возраст записи: (лайки + 2 × комментарии + 1) / (часы + 2)^1.5. Никакой
+          ручной модерации —{' '}
+          <a href={`${SOURCE_URL}/blob/main/services/feed/src/rank.rs`} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+            алгоритм открыт
+          </a>
+          , его можно форкнуть и запустить свой дайджест.
         </p>
       </div>
 
@@ -54,7 +76,7 @@ export default function HotPage() {
                     </Link>
                   </h2>
                   <p className="meta mt-1.5">
-                    @{a.author.handle} · {a.comments.length} коммент. · {a.readingTime} мин
+                    @{a.author.handle} · {commentCount(a)} коммент. · {a.readingTime} мин
                   </p>
                 </div>
               </div>

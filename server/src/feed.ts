@@ -79,7 +79,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     if (d.feedUrl) {
       // фильтры и курсор — как есть; ответ той же формы { articles, cursor }
       const q = new URLSearchParams()
-      for (const k of ['cursor', 'tags', 'lang', 'source', 'author', 'view']) {
+      for (const k of ['cursor', 'tags', 'lang', 'source', 'author', 'view', 'sort', 'metric', 'period']) {
         const v = c.req.query(k)
         if (v) q.set(k, v)
       }
@@ -90,6 +90,8 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
           c.header('cache-control', 'public, max-age=5')
           return c.json(await res.json())
         }
+        // ошибка запроса (неверный sort, курсор) — отдаём как есть: обход PDS её только спрятал бы
+        if (res.status >= 400 && res.status < 500) return c.json(await res.json().catch(() => ({ error: 'InvalidRequest' })), res.status as 400)
       } catch (err) {
         console.warn('feed service unavailable, falling back to PDS scan', err instanceof Error ? err.message : err)
       }

@@ -12,6 +12,7 @@ use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::index;
+use crate::rank::Sort;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -48,6 +49,12 @@ pub struct Params {
     author: Option<String>,
     /// full — записи целиком (по умолчанию карточки без текста)
     view: Option<String>,
+    /// new | hot | best (см. rank.rs)
+    sort: Option<String>,
+    /// для best: likes | comments
+    metric: Option<String>,
+    /// для best: day | week | month | all
+    period: Option<String>,
 }
 
 /// курсор — позиция последней записи страницы: base64url("<микросекунды>|<uri>")
@@ -63,10 +70,24 @@ pub fn decode_cursor(c: &str) -> Option<(DateTime<Utc>, String)> {
     ))
 }
 
+/// курсор hot и best — смещение: base64url("off|<n>")
+pub fn encode_offset(n: i64) -> String {
+    URL_SAFE_NO_PAD.encode(format!("off|{n}"))
+}
+pub fn decode_offset(c: &str) -> Option<i64> {
+    let raw = String::from_utf8(URL_SAFE_NO_PAD.decode(c).ok()?).ok()?;
+    raw.strip_prefix("off|")?
+        .parse()
+        .ok()
+        .filter(|n| (0..=10_000).contains(n))
+}
+
 pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
-    let after = match p.cursor.as_deref() {
-        Some(c) => Some(decode_cursor(c).ok_or("bad cursor")?),
-        None => None,
+    let sort = Sort::parse(p.sort.as_deref(), p.metric.as_deref(), p.period.as_deref())?;
+    let (after, offset) = match (p.cursor.as_deref(), sort) {
+        (None, _) => (None, 0),
+        (Some(c), Sort::New) => (Some(decode_cursor(c).ok_or("bad cursor")?), 0),
+        (Some(c), _) => (None, decode_offset(c).ok_or("bad cursor")?),
     };
     let tags: Vec<String> = p
         .tags
@@ -93,6 +114,8 @@ pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
         external,
         did,
         full,
+        sort,
+        offset,
     })
 }
 
@@ -110,9 +133,13 @@ async fn articles(State(s): State<AppState>, Query(p): Query<Params>) -> Respons
     };
     match index::feed(&pool, &q).await {
         Ok(rows) => {
-            let cursor = (rows.len() as i64 == q.limit)
-                .then(|| rows.last().map(|r| encode_cursor(r.created_at, &r.uri)))
-                .flatten();
+            let full_page = rows.len() as i64 == q.limit;
+            let cursor = match q.sort {
+                Sort::New => full_page
+                    .then(|| rows.last().map(|r| encode_cursor(r.created_at, &r.uri)))
+                    .flatten(),
+                _ => full_page.then(|| encode_offset(q.offset + q.limit)),
+            };
             (
                 [(header::CACHE_CONTROL, "public, max-age=5")],
                 Json(serde_json::json!({ "articles": rows, "cursor": cursor })),
@@ -212,6 +239,35 @@ async fn likes(State(s): State<AppState>, Query(p): Query<LikesParams>) -> Respo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ranked_params_use_offset_cursor() {
+        let q = to_query(Params {
+            sort: Some("hot".into()),
+            cursor: Some(encode_offset(60)),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!((q.sort, q.offset, q.after.is_none()), (Sort::Hot, 60, true));
+        // курсор времени к hot не подходит
+        let t = encode_cursor(Utc::now(), "at://did:plc:x/media.weat.article/1");
+        assert!(
+            to_query(Params {
+                sort: Some("hot".into()),
+                cursor: Some(t),
+                ..Default::default()
+            })
+            .is_err()
+        );
+        assert!(decode_offset(&encode_offset(20_000)).is_none());
+        assert!(
+            to_query(Params {
+                sort: Some("top".into()),
+                ..Default::default()
+            })
+            .is_err()
+        );
+    }
 
     #[test]
     fn subjects_filtered() {
