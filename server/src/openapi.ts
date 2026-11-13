@@ -4,6 +4,7 @@
  */
 import { z } from 'zod'
 import * as S from './schemas.js'
+import { ResidenceBody } from './schemas.js'
 import { SettingsPatch } from './settings.js'
 
 type Method = 'get' | 'post' | 'put' | 'patch' | 'delete'
@@ -384,6 +385,12 @@ const ops: Op[] = [
   {
     method: 'delete', path: '/me/comments/{rkey}', tag: 'profile', summary: 'Удалить свой комментарий', auth: 'bearer',
     ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
+  },
+  {
+    method: 'put', path: '/admin/users/{did}/residence', tag: 'admin', summary: 'Сменить страну резидентства', auth: 'staff',
+    description: 'По заявке из поддержки после проверки документа. Страна регистрации не меняется. Смена пишется в аудит.',
+    body: ResidenceBody, ok: { status: 200, description: 'Профиль с новой страной резидентства' },
+    errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [403, 'Forbidden — нужна роль support'], [404, 'NotFound']],
   },
   // ── лайки
   {

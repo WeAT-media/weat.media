@@ -18,7 +18,8 @@ import UpvoteButton from '@/components/UpvoteButton'
 import BookmarkButton from '@/components/BookmarkButton'
 import { buildCommentsFeed } from '@/lib/rss'
 import { useArticleTracking } from '@/lib/tracking'
-import { commentAnchor, fetchArticleBody, fetchComments, remoteId } from '@/lib/remoteFeed'
+import { commentAnchor, fetchArticleBody, fetchComments, markdownToBlocks, remoteId } from '@/lib/remoteFeed'
+import { hasSession, paidContent } from '@/lib/api'
 import { safeHref } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
 import BlocksEditor from '@/components/BlocksEditor'
@@ -92,7 +93,7 @@ import MdxBlock from '@/components/MdxBlock'
 import Recommendations from '@/components/Recommendations'
 import { SITE_NAME } from '@/config/site'
 import Block from '@/components/ArticleBlock'
-import type { Comment, LabelAction } from '@/types/types'
+import type { ArticleBlock, Comment, LabelAction } from '@/types/types'
 
 // локальный демо-ролик (H.264/AAC, 45 c): внешний GCS-бакет BigBuckBunny отдаёт 403
 const DEMO_VIDEO = '/demo-video.mp4'
@@ -145,7 +146,24 @@ export default function ArticlePage() {
       alive = false
     }
   }, [pendingUri, card])
-  const article = full && full.id === card?.id ? full.article : card
+  const loaded = full && full.id === card?.id ? full.article : card
+  // закрытая часть платной статьи: сервер отдаёт её автору, купившему и подписчику тира — остальным 402.
+  // Поэтому «своя статья доступна» и «купил — читаю» — одно и то же: спросили сервер и показали
+  const privateId = loaded?.paywall?.privateContentId
+  const [paid, setPaid] = useState<{ id: string; blocks: ArticleBlock[] } | null>(null)
+  useEffect(() => {
+    if (!privateId || !hasSession()) return
+    let alive = true
+    paidContent.get(privateId).then(
+      (r) => alive && r && setPaid({ id: privateId, blocks: markdownToBlocks(r.body) }),
+      () => {},
+    )
+    return () => {
+      alive = false
+    }
+  }, [privateId, user?.did])
+  const paidBlocks = paid && paid.id === privateId ? paid.blocks : null
+  const article = loaded && paidBlocks ? { ...loaded, blocks: paidBlocks } : loaded
   const bodyLoading = !!article?.bodyPending
   // тред статьи из индекса: комментарии всех читателей, не только свои
   const [thread, setThread] = useState<{ uri: string; comments: Comment[] } | null>(null)
@@ -224,7 +242,8 @@ export default function ArticlePage() {
   const subscribed = settings[labelerId]?.subscribed ?? false
   const action = actionForLabel(article.verdictLabel ?? '') ?? 'warn'
   const bodyHidden = article.verdict === 'guilty' && subscribed && action === 'hide' && !showHidden
-  const isUnlocked = !article.paywall || !!unlocked[article.id]
+  // доступ: сервер отдал закрытую часть (автор, купивший) или демо-статья открыта локально
+  const isUnlocked = !article.paywall || !!paidBlocks || !!unlocked[article.id]
   // без покупки: тизер вместо тела; если тизер не задан — как раньше, первые два блока
   const visibleBlocks = isUnlocked ? article.blocks : article.teaser ? [] : article.blocks.slice(0, 2)
   // номер опроса среди всех опросов статьи (visibleBlocks — префикс article.blocks)
@@ -813,7 +832,7 @@ export default function ArticlePage() {
               {article.paywall && (
                 <Paywall
                   article={article}
-                  unlocked={!!unlocked[article.id]}
+                  unlocked={isUnlocked}
                   onUnlock={() => unlock(article.id)}
                 />
               )}

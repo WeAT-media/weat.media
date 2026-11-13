@@ -209,8 +209,10 @@ export interface User {
   premiumSinceMonths?: number
   /** ISO-дата регистрации (AppView) */
   createdAt?: string
-  /** ISO 3166-1 alpha-2 по GeoIP при регистрации; 'ZZ' — не определена */
+  /** ISO 3166-1 alpha-2 по GeoIP при регистрации; 'ZZ' — не определена. Не меняется */
   signupCountry?: string
+  /** где живёт сейчас; меняется по заявке в поддержку (см. /legal/register-and-residency) */
+  residenceCountry?: string
 }
 
 /** Централизованные пользовательские настройки (persisted в localStorage) */

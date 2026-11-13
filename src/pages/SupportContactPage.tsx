@@ -10,7 +10,7 @@ const categories = [
   { key: 'tech', label: 'Техническая проблема' },
   { key: 'money', label: 'Монетизация и выплаты' },
   { key: 'safety', label: 'Безопасность и жалобы' },
-  { key: 'country-change', label: 'Смена страны регистрации' },
+  { key: 'country-change', label: 'Смена страны резидентства' },
   { key: 'other', label: 'Другое' },
 ]
 
@@ -39,7 +39,7 @@ export default function SupportContactPage() {
   const [articleUrl, setArticleUrl] = useState('')
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
-  const [countryFrom, setCountryFrom] = useState(user?.signupCountry ?? 'RU')
+  const [countryFrom, setCountryFrom] = useState(user?.residenceCountry ?? user?.signupCountry ?? 'RU')
   const [countryTo, setCountryTo] = useState('')
   const [docType, setDocType] = useState<(typeof DOC_TYPES)[number]['key']>('passport')
   const [docFile, setDocFile] = useState<{ name: string; size: number; type: string } | null>(null)
@@ -68,7 +68,7 @@ export default function SupportContactPage() {
     const next: Record<string, string> = {}
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) next.email = 'Укажите рабочий email для ответа.'
     if (isCountryChange) {
-      if (!countryTo) next.countryTo = 'Выберите новую страну регистрации.'
+      if (!countryTo) next.countryTo = 'Выберите новую страну резидентства.'
       if (countryTo && countryTo === countryFrom) next.countryTo = 'Новая страна совпадает с текущей.'
       if (message.trim().length < 20) next.message = 'Опишите причину смены — минимум 20 символов.'
       if (!docFile) next.docFile = 'Приложите подтверждающий документ (PDF/JPG/PNG до 10 МБ).'
@@ -88,7 +88,7 @@ export default function SupportContactPage() {
               category,
               email: email.trim(),
               handle: handle.trim() || undefined,
-              subject: 'Смена страны регистрации',
+              subject: 'Смена страны резидентства',
               message: message.trim(),
               countryFrom,
               countryTo,
@@ -122,7 +122,7 @@ export default function SupportContactPage() {
         <h1 className="mt-4 text-3xl font-extrabold tracking-tight">Тикет {ticket.id}</h1>
         <p className="mx-auto mt-4 max-w-[52ch] text-[15px] leading-relaxed text-muted-foreground">
           {pending
-            ? 'Заявка на смену страны регистрации принята (verification-pending): документы будут проверены вручную, страна профиля не меняется автоматически. Это демонстрационный прототип: тикет и метаданные файла сохранены локально, содержимое документа никуда не отправлено.'
+            ? 'Заявка на смену страны резидентства принята (verification-pending): документы будут проверены вручную, страна профиля не меняется автоматически. Это демонстрационный прототип: тикет и метаданные файла сохранены локально, содержимое документа никуда не отправлено.'
             : `Это демонстрационный прототип: тикет сохранён локально в вашем браузере (статус «received-demo») и никуда не отправлен. В боевой версии ответ пришёл бы на ${ticket.email}.`}
         </p>
         <Link to="/support" className="btn-ghost mt-8">
@@ -189,7 +189,7 @@ export default function SupportContactPage() {
         </div>
         {isCountryChange && (
           <fieldset className="space-y-5 rounded-md border border-border bg-secondary/40 p-5">
-            <legend className="meta px-1">Смена страны регистрации</legend>
+            <legend className="meta px-1">Смена страны резидентства · <Link to="/legal/register-and-residency" className="text-accent hover:underline">чем отличается от регистрации</Link></legend>
             <div className="grid gap-5 sm:grid-cols-2">
               <div>
                 <label htmlFor="sp-country-from" className="meta">Текущая страна</label>

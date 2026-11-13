@@ -88,6 +88,11 @@ function memRepo(): UserRepo {
       const r = rows.get(did)
       if (r) r.display_name = name
     },
+    async setResidence(did, country) {
+      const r = rows.get(did)
+      if (r) r.residence_country = country
+      return r
+    },
     async setTier(did, tier: Tier) {
       const r = rows.get(did)
       if (!r) return undefined
@@ -492,8 +497,27 @@ test('register stores signup country and returns session', async () => {
   assert.equal(body.user.createdAt, '2026-11-12T10:00:00.000Z')
   assert.ok(body.accessJwt)
 
+  assert.equal(body.user.residenceCountry, 'DE', 'резидентство по умолчанию — страна регистрации')
+
+  // страны — персональные данные: в публичном профиле их нет, владельцу — в /me
   const pub = await (await app.request('/api/users/alina.indie.media')).json()
-  assert.equal(pub.signupCountry, 'DE')
+  assert.equal(pub.signupCountry, undefined)
+  assert.equal(pub.residenceCountry, undefined)
+  const me = await (await app.request('/api/me', { headers: { authorization: `Bearer ${body.accessJwt}` } })).json()
+  assert.equal(me.signupCountry, 'DE')
+
+  // резидентство меняет поддержка по заявке; регистрация остаётся прежней, смена — в аудите
+  const staff = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  const put = (b: unknown, h: Record<string, string> = staff) =>
+    app.request(`/api/admin/users/${body.user.did}/residence`, { method: 'PUT', headers: h, body: JSON.stringify(b) })
+  assert.equal((await put({ country: 'GE' }, { authorization: `Bearer ${body.accessJwt}`, 'content-type': 'application/json' })).status, 401, 'токен читателя — не сотрудник')
+  assert.equal((await put({ country: 'georgia' })).status, 400)
+  const movedRes = await put({ country: 'GE', ticket: 'T-42' })
+  const moved = await movedRes.json()
+  assert.equal(movedRes.status, 200, JSON.stringify(moved))
+  assert.equal(moved.residenceCountry, 'GE')
+  assert.equal(moved.signupCountry, 'DE')
+  assert.deepEqual(auditLog.at(-1)?.details, { from: 'DE', to: 'GE', ticket: 'T-42' })
 })
 
 test('ru contour blocks registration from non-RU IP, login stays open (business trip)', async () => {

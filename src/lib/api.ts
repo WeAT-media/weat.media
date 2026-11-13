@@ -14,7 +14,9 @@ export interface ApiUser {
   tier: 'free' | 'premium'
   premiumSince: string | null
   createdAt: string
-  signupCountry: string
+  /** только свой профиль (сессия, /me): регистрации — неизменна, резидентства — меняется по заявке */
+  signupCountry?: string
+  residenceCountry?: string
 }
 
 export interface GeoInfo {
@@ -174,6 +176,7 @@ export function toUser(u: ApiUser): User {
     premiumSinceMonths: monthsSince(u.premiumSince),
     createdAt: u.createdAt,
     signupCountry: u.signupCountry,
+    residenceCountry: u.residenceCountry ?? u.signupCountry,
   }
 }
 
@@ -348,6 +351,19 @@ export const comments = {
   byAuthor: (did: string) => call<{ comments: AuthorComment[] }>(`/feed/comments?${new URLSearchParams({ author: did })}`),
   create: (b: { subject: string; parent?: string; text: string }) => authed<ThreadComment>('/me/comments', post(b)),
   remove: (rkey: string) => authed<{ ok: true }>(`/me/comments/${encodeURIComponent(rkey)}`, { method: 'DELETE' }),
+}
+
+/** Закрытая часть платной статьи: сервер сам решает, открыть ли её (автор, купивший, подписчик тира) */
+export const paidContent = {
+  /** null — доступа нет (402) */
+  get: async (id: string): Promise<{ body: string } | null> => {
+    try {
+      return await authed<{ body: string }>(`/paid-content/${encodeURIComponent(id)}`)
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 402 || err.status === 401)) return null
+      throw err
+    }
+  },
 }
 
 export interface Purchase {

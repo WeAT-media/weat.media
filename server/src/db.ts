@@ -10,6 +10,8 @@ export interface UserRow {
   handle: string
   display_name: string | null
   signup_country: string
+  /** null — не менялась, совпадает со страной регистрации */
+  residence_country?: string | null
   signup_utm?: Record<string, string> | null
   tier: Tier
   premium_since: Date | null
@@ -29,6 +31,8 @@ export interface UserRepo {
   setTier(did: string, tier: Tier): Promise<UserRow | undefined>
   setPasswordLogin(did: string, value: boolean): Promise<void>
   setDisplayName(did: string, name: string | null): Promise<void>
+  /** смена страны резидентства — только по заявке, сотрудником поддержки */
+  setResidence(did: string, country: string): Promise<UserRow | undefined>
 }
 
 export interface Identity {
@@ -127,6 +131,10 @@ export function userRepo(sql: Sql): UserRepo {
     },
     async setDisplayName(did, name) {
       await sql`UPDATE users SET display_name = ${name} WHERE did = ${did}`
+    },
+    async setResidence(did, country) {
+      const [row] = await sql<UserRow[]>`UPDATE users SET residence_country = ${country} WHERE did = ${did} RETURNING *`
+      return row
     },
     async setTier(did, tier) {
       const [row] = await sql<UserRow[]>`

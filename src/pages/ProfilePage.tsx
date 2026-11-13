@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, AtSign, BadgeCheck, Bell, BellRing, Bookmark, Check, Copy, Crown, Flag, Rss, UserPlus, UserCheck, X } from 'lucide-react'
+import { ArrowLeft, AtSign, CircleHelp, BadgeCheck, Bell, BellRing, Bookmark, Check, Copy, Crown, Flag, Rss, UserPlus, UserCheck, X } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { profileMetaSeed } from '@/data/profiles'
 import { languageName } from '@/data/languages'
@@ -11,7 +11,6 @@ import RssButton from '@/components/RssButton'
 import { buildAuthorFeed } from '@/lib/rss'
 import { api, comments as commentsApi, countryLabel, type ApiUser, type AuthorComment } from '@/lib/api'
 import { commentAnchor, remoteId } from '@/lib/remoteFeed'
-import { clock } from '@/lib/videoResume'
 import type { Author } from '@/types/types'
 import { PDS_URL } from '@/config/site'
 
@@ -20,13 +19,26 @@ function slugify(name: string): string {
 }
 
 /** Публичный профиль автора: идентичность ATProto (демо), публикации и подборки */
+/** «?» у страны: что это за страна и почему её нельзя (или можно) сменить */
+function CountryHelp({ what }: { what: string }) {
+  return (
+    <Link
+      to="/legal/register-and-residency"
+      aria-label={`Что такое страна ${what}`}
+      title={`Что такое страна ${what}`}
+      className="inline-flex text-muted-foreground transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <CircleHelp size={12} aria-hidden="true" />
+    </Link>
+  )
+}
+
 export default function ProfilePage() {
   const { id = '' } = useParams()
   const {
     articles, collections, cases, caseStats, user, following, toggleFollow, authorSubscriptions, toggleAuthorSubscription, bookmarks, toggleBookmark,
-    readHistory, clearHistory, videoProgress, prefs, setPrefs,
   } = useStore()
-  const [tab, setTab] = useState<'posts' | 'comments' | 'collections' | 'cases' | 'bookmarks' | 'history'>('posts')
+  const [tab, setTab] = useState<'posts' | 'comments' | 'collections' | 'cases' | 'bookmarks'>('posts')
   const [copied, setCopied] = useState(false)
   const [remoteProfile, setRemoteProfile] = useState<ApiUser | null>(null)
   /** для какого адреса сервер уже ответил — до ответа вместо 404 показываем загрузку */
@@ -107,7 +119,8 @@ export default function ProfilePage() {
   const remote = remoteProfile?.handle === author.handle ? remoteProfile : null
   const isPremiumUser = remote ? remote.tier === 'premium' : isSelf ? !!user?.premium : !!meta?.premium
   const joinedAt = remote?.createdAt ?? (isSelf ? user?.createdAt : undefined) ?? meta?.joinedAt
-  const signupCountry = remote?.signupCountry ?? (isSelf ? user?.signupCountry : undefined)
+  const signupCountry = isSelf ? (remote?.signupCountry ?? user?.signupCountry) : undefined
+  const residenceCountry = isSelf ? (remote?.residenceCountry ?? user?.residenceCountry) : undefined
   const isFollowed = following.includes(author.handle)
   const isSubscribedToArticles = authorSubscriptions.includes(author.handle)
   const followers = (meta?.followers ?? 0) + (isFollowed ? 1 : 0)
@@ -238,21 +251,30 @@ export default function ProfilePage() {
                 : '—'}
             </dd>
           </div>
-          {signupCountry && (
-            <div className="flex flex-wrap items-center gap-2">
-              <dt className="meta w-28 shrink-0">Страна регистрации</dt>
-              <dd className="meta" title="Определена по IP при регистрации">
-                {countryLabel(signupCountry)}
-              </dd>
-              {isSelf && (
+          {/* страны — только себе: персональные данные, в публичном профиле сервер их не отдаёт */}
+          {isSelf && signupCountry && (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <dt className="meta inline-flex w-28 shrink-0 items-center gap-1">
+                  Регистрация <CountryHelp what="регистрации" />
+                </dt>
+                <dd className="meta" title="Определена при регистрации и не меняется">
+                  {countryLabel(signupCountry)}
+                </dd>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <dt className="meta inline-flex w-28 shrink-0 items-center gap-1">
+                  Резидентство <CountryHelp what="резидентства" />
+                </dt>
+                <dd className="meta">{countryLabel(residenceCountry ?? signupCountry)}</dd>
                 <Link
                   to="/support/contact?category=country-change"
                   className="meta text-accent underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   Запросить изменение
                 </Link>
-              )}
-            </div>
+              </div>
+            </>
           )}
         </dl>
 
@@ -310,9 +332,7 @@ export default function ProfilePage() {
             { key: 'cases', label: `Судебные разбирательства · ${authorCases.length}` },
             // закладки — приватный список, только в своём профиле
             ...(isSelf ? [{ key: 'bookmarks' as const, label: `Закладки · ${bookmarkedArticles.length}` }] : []),
-            // история — приватная, только в своём профиле
-            ...(isSelf ? [{ key: 'history' as const, label: `История · ${readHistory.length}` }] : []),
-          ] as { key: 'posts' | 'comments' | 'collections' | 'cases' | 'bookmarks' | 'history'; label: string }[]
+          ] as { key: 'posts' | 'comments' | 'collections' | 'cases' | 'bookmarks'; label: string }[]
         ).map((t) => (
           <button
             key={t.key}
@@ -406,61 +426,6 @@ export default function ProfilePage() {
                 </article>
               </Reveal>
             ))
-          )}
-        </section>
-      ) : tab === 'history' && isSelf ? (
-        <section aria-label="История прочтений" className="mt-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={prefs.historyEnabled !== false}
-                onChange={(e) => setPrefs({ historyEnabled: e.target.checked })}
-                className="h-4 w-4 accent-[hsl(var(--accent))]"
-              />
-              Вести историю
-            </label>
-            {readHistory.length > 0 && (
-              <button type="button" onClick={clearHistory} className="btn-ghost !px-3 !py-1 !text-[11px]">
-                Очистить историю
-              </button>
-            )}
-          </div>
-          <p className="meta mt-2 !normal-case tracking-normal">
-            видна только вам; с аккаунтом — на всех ваших устройствах. После выхода из аккаунта стирается из браузера
-          </p>
-          {readHistory.length === 0 ? (
-            <p className="rule mt-4 py-10 text-muted-foreground">
-              {prefs.historyEnabled === false ? 'История выключена.' : 'Вы ещё ничего не открывали.'}
-            </p>
-          ) : (
-            <ul className="mt-4">
-              {readHistory.map((e) => {
-                // позиция ролика: ключ плеера — id в индексе (или локальный) и id видео
-                const prefix = `${e.uri ? remoteId(e.uri) : e.id}:`
-                const resume = e.kind === 'video' ? Object.entries(videoProgress).find(([k]) => k.startsWith(prefix))?.[1] : undefined
-                return (
-                  <li key={e.id} className="rule flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-4 first:border-t-0">
-                    <span className="min-w-0">
-                      <Link
-                        to={`/article/${e.id}`}
-                        className="font-semibold decoration-accent underline-offset-4 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {e.title}
-                      </Link>
-                      <span className="meta ml-2">
-                        {e.kind === 'video' ? 'видео' : 'статья'}
-                        {e.author && ` · @${e.author}`}
-                      </span>
-                    </span>
-                    <span className="meta shrink-0">
-                      {resume && <span className="mr-2 text-accent">продолжить с {clock(resume.t)}</span>}
-                      {new Date(e.at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
           )}
         </section>
       ) : tab === 'collections' ? (

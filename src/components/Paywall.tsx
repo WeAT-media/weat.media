@@ -1,19 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Lock } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router'
-import { hasSession, payments } from '@/lib/api'
+import { api, hasSession, payments } from '@/lib/api'
 import type { Article } from '@/types/types'
 import { useStore } from '@/lib/store'
 import { SITE_NAME } from '@/config/site'
 import { formatMoney } from '@/lib/money'
 
 /**
- * Пейволл платной статьи. Политика платформы: 90% — автору, 10% — комиссия
- * на инфраструктуру. Статья с закрытой частью на площадке (privateContentId) покупается
+ * Пейволл платной статьи. Доля автора — как считает сервер (server/src/lava.ts): 90% обычно,
+ * 99% у Premium-автора; остальное — инфраструктура площадки. Статья с закрытой частью на площадке (privateContentId) покупается
  * через lava.top; у демо-записей клик открывает доступ локально.
  */
 export default function Paywall({ article, unlocked, onUnlock }: { article: Article; unlocked: boolean; onUnlock: () => void }) {
-  const { tiers, prefs } = useStore()
+  const { tiers, prefs, user } = useStore()
+  const own = !!user && user.handle === article.author.handle
   const pw = article.paywall
   const isSubscription = pw?.accessType === 'subscription'
   const tier = isSubscription ? tiers.find((t) => t.id === pw?.tierId) : undefined
@@ -28,6 +29,17 @@ export default function Paywall({ article, unlocked, onUnlock }: { article: Arti
   const location = useLocation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // тариф автора — с сервера: от него зависит доля (у демо-автора без аккаунта — обычная)
+  const [authorPremium, setAuthorPremium] = useState(false)
+  const authorHandle = article.author.handle
+  useEffect(() => {
+    let alive = true
+    api.user(authorHandle).then((u) => alive && setAuthorPremium(u.tier === 'premium'), () => {})
+    return () => {
+      alive = false
+    }
+  }, [authorHandle])
+  const share = authorPremium ? 99 : 90
 
   const buy = async (method?: 'CARD' | 'SBP') => {
     if (!real) return onUnlock()
@@ -62,26 +74,29 @@ export default function Paywall({ article, unlocked, onUnlock }: { article: Arti
         </div>
       </div>
 
-      {/* визуализация сплита 90/10 */}
-      <div className="mt-6" role="img" aria-label="90 процентов автору, 10 процентов — комиссия площадки">
+      {/* сплит: у Premium-автора 99/1, иначе 90/10 */}
+      <div className="mt-6" role="img" aria-label={`${share} процентов автору, ${100 - share} — комиссия площадки`}>
         <div className="flex h-3 w-full overflow-hidden rounded-sm">
-          <div className="h-full bg-accent" style={{ width: '90%' }} />
-          <div className="h-full bg-primary" style={{ width: '10%' }} />
+          <div className="h-full bg-accent" style={{ width: `${share}%` }} />
+          <div className="h-full bg-primary" style={{ width: `${100 - share}%` }} />
         </div>
         <div className="mt-2 flex flex-wrap justify-between gap-x-6 gap-y-1">
-          <span className="meta">90% — автору</span>
-          <span className="meta">10% — инфраструктура {SITE_NAME}</span>
+          <span className="meta">
+            {share}% — автору{authorPremium && ' · Premium-автор'}
+          </span>
+          <span className="meta">{100 - share}% — инфраструктура {SITE_NAME}</span>
         </div>
       </div>
 
       <p className="mt-5 max-w-[60ch] text-sm leading-relaxed text-muted-foreground">
-        Подписка идёт напрямую автору — платформа удерживает фиксированные 10% на хостинг, relay и
-        хранение репозиториев. Отмена в любой момент, доступ остаётся до конца периода.
+        {isSubscription
+          ? `Подписка идёт напрямую автору — площадка удерживает ${100 - share}% на хостинг, relay и хранение репозиториев. Отмена в любой момент, доступ остаётся до конца периода.`
+          : `Оплата идёт автору — площадка удерживает ${100 - share}% на хостинг, relay и хранение репозиториев. Доступ — навсегда.`}
       </p>
 
       {unlocked ? (
         <p className="mt-6 inline-flex items-center gap-2 font-mono text-[13px] font-semibold uppercase tracking-[0.06em] text-accent">
-          <Check size={15} aria-hidden="true" /> Доступ открыт — приятного чтения
+          <Check size={15} aria-hidden="true" /> {own ? 'Это ваша статья — читателям текст откроется после оплаты' : 'Доступ открыт — приятного чтения'}
         </p>
       ) : (
         <div className="mt-6">

@@ -19,6 +19,7 @@ const CaseAnalyticsPage = lazy(() => import('@/pages/CaseAnalyticsPage'))
 const CasesPage = lazy(() => import('@/pages/CasesPage'))
 const SettingsLayout = lazy(() => import('@/pages/settings/SettingsLayout'))
 const FeedSettingsPage = lazy(() => import('@/pages/settings/FeedSettingsPage'))
+const HistorySettingsPage = lazy(() => import('@/pages/settings/HistorySettingsPage'))
 const AppearanceSettingsPage = lazy(() => import('@/pages/settings/AppearanceSettingsPage'))
 const JurySettingsPage = lazy(() => import('@/pages/settings/JurySettingsPage'))
 const PayoutsSettingsPage = lazy(() => import('@/pages/settings/PayoutsSettingsPage'))
@@ -96,6 +97,7 @@ export default function App() {
               <Route index element={<Navigate to="feed" replace />} />
               <Route path="feed" element={<FeedSettingsPage />} />
               <Route path="appearance" element={<AppearanceSettingsPage />} />
+              <Route path="history" element={<HistorySettingsPage />} />
               <Route path="editor" element={<EditorSettingsPage />} />
               <Route path="jury" element={<JurySettingsPage />} />
               <Route path="payouts" element={<PayoutsSettingsPage />} />

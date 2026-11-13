@@ -24,7 +24,7 @@ import type { OAuthClient, OAuthProviderId } from './providers.js'
 import { contourAllows, type GeoLookup } from './geo.js'
 import { PdsError, type PdsClient, type PdsSession } from './pds.js'
 import { buildOpenApi } from './openapi.js'
-import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, TierBody } from './schemas.js'
+import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, ResidenceBody, TierBody } from './schemas.js'
 import { SettingsPatch, type SettingsRepo } from './settings.js'
 
 export interface Deps {
@@ -71,7 +71,9 @@ export interface PublicUser {
   tier: Tier
   premiumSince: string | null
   createdAt: string
-  signupCountry: string
+  /** только себе (сессия, /me): в публичном профиле страны не отдаём */
+  signupCountry?: string
+  residenceCountry?: string
 }
 
 export function toPublic(u: UserRow): PublicUser {
@@ -82,14 +84,18 @@ export function toPublic(u: UserRow): PublicUser {
     tier: u.tier,
     premiumSince: u.premium_since?.toISOString() ?? null,
     createdAt: u.created_at.toISOString(),
-    signupCountry: u.signup_country,
   }
+}
+
+/** свой профиль: плюс страны — регистрации (неизменна) и резидентства (меняется по заявке) */
+export function toSelf(u: UserRow): PublicUser {
+  return { ...toPublic(u), signupCountry: u.signup_country, residenceCountry: u.residence_country ?? u.signup_country }
 }
 
 
 
 function sessionDto(s: PdsSession, user: UserRow) {
-  return { accessJwt: s.accessJwt, refreshJwt: s.refreshJwt, user: toPublic(user) }
+  return { accessJwt: s.accessJwt, refreshJwt: s.refreshJwt, user: toSelf(user) }
 }
 
 function bearer(c: Context): string | undefined {
@@ -364,7 +370,7 @@ export function createApp(deps: Deps) {
     if (!did) return unauthorized(c)
     const user = await d.users.findByDid(did)
     if (!user) return c.json({ error: 'NotFound', message: 'Пользователь не найден' }, 404)
-    return c.json(toPublic(user))
+    return c.json(toSelf(user))
   })
 
   app.get('/me/settings', async (c) => {
@@ -402,6 +408,19 @@ export function createApp(deps: Deps) {
     if (!user) return c.json({ error: 'NotFound', message: 'Пользователь не найден' }, 404)
     await audit(staff, 'user.tier', user.did, { tier: body.data.tier })
     return c.json(toPublic(user))
+  })
+
+  /** страна резидентства — по заявке из поддержки, после проверки документа; в аудит */
+  app.put('/admin/users/:did/residence', async (c) => {
+    const staff = await requireStaff(c, 'support')
+    const body = ResidenceBody.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return c.json({ error: 'InvalidRequest', message: 'country: ISO 3166-1 alpha-2, например RU' }, 400)
+    const before = await d.users.findByDid(c.req.param('did'))
+    if (!before) return c.json({ error: 'NotFound', message: 'Пользователь не найден' }, 404)
+    const from = before.residence_country ?? before.signup_country
+    const user = (await d.users.setResidence(before.did, body.data.country))!
+    await audit(staff, 'user.residence', user.did, { from, to: body.data.country, ticket: body.data.ticket })
+    return c.json(toSelf(user))
   })
 
   return app
