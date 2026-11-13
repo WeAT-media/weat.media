@@ -114,11 +114,29 @@ services:
       POSTGRES_USER: ${PG_USER:-indie}
       POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD обязателен}
       POSTGRES_DB: ${PG_DB:-indie}
-    # логическая репликация между узлами контура
-    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
+    # логическая репликация между узлами контура; снаружи — только replicator по TLS (postgres/pg_hba.conf)
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/tls/server.crt
+      - -c
+      - ssl_key_file=/tls/server.key
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
     ports: ["${PG_BIND:-127.0.0.1}:5432:5432"]
     volumes:
       - pg-data:/var/lib/postgresql/data
+      # самоподписанный сертификат узла — создаёт деплой (владелец uid 70, postgres в alpine)
+      - ./pg-tls:/tls:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       # базы ленты и аналитики — при первом создании тома
       - ./db-init:/docker-entrypoint-initdb.d:ro
     profiles: ["selfhosted-db"]

@@ -142,6 +142,9 @@ jobs:
           REPLICATION_PRIMARY_DSN: ${{ secrets.REPLICATION_PRIMARY_DSN }}
           # резерв глобального контура на Supabase (Session pooler, IPv4): логическая реплика AppView
           SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
+          # пароль пользователя replicator: им резерв подписывается на публикацию indie_all
+          REPLICATION_PASSWORD: ${{ secrets.REPLICATION_PASSWORD }}
+          PG_BIND: ${{ vars.PG_BIND }}
           SECRETS_KEY: ${{ secrets.SECRETS_KEY }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           PAID_CONTENT_KEY: ${{ secrets.PAID_CONTENT_KEY }}
@@ -174,7 +177,7 @@ jobs:
           line() { [ -n "${!1:-}" ] && printf '%s=%s\n' "$1" "${!1}" || true; }
           {
             for k in CONTOUR NODE_ROLE COMPOSE_PROFILES SITE_DOMAINS PDS_HOST PEER_CONTOUR_URL ACME_EMAIL ACME_DNS_USERNAME ACME_DNS_PASSWORD ACME_DNS_SUBDOMAIN \
-                     PG_PASSWORD DATABASE_URL FEED_DATABASE_URL ANALYTICS_DATABASE_URL REPLICATION_PRIMARY_DSN SUPABASE_DSN \
+                     PG_PASSWORD DATABASE_URL FEED_DATABASE_URL ANALYTICS_DATABASE_URL REPLICATION_PRIMARY_DSN SUPABASE_DSN REPLICATION_PASSWORD PG_BIND \
                      SECRETS_KEY ADMIN_TOKEN PAID_CONTENT_KEY PDS_ADMIN_PASSWORD ANALYTICS_VISITOR_SECRET \
                      LAVA_API_KEY LAVA_OFFER_ID LAVA_WEBHOOK_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
                      GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET TELEGRAM_BOT_TOKEN RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
@@ -216,6 +219,13 @@ jobs:
           git fetch --quiet origin
           git checkout --quiet --force "$SHA"
           cd deploy/node
+          # TLS Postgres: самоподписанный, один раз на узел (подписчик проверяет sslmode=require)
+          if [ ! -s pg-tls/server.key ]; then
+            install -d -m 700 pg-tls
+            openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=$(hostname)" \
+              -keyout pg-tls/server.key -out pg-tls/server.crt 2>/dev/null
+          fi
+          chown -R 70:70 pg-tls && chmod 600 pg-tls/server.key && chmod 644 pg-tls/server.crt
           printf 'EDGE_IMAGE=%s\nAPPVIEW_IMAGE=%s\nFEED_IMAGE=%s\nANALYTICS_IMAGE=%s\n' "$EDGE" "$APPVIEW" "$FEED" "$ANALYTICS" > .env.images
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null
@@ -223,6 +233,20 @@ jobs:
           compose pull --quiet edge appview feed analytics
           compose up -d --remove-orphans
           docker image prune -f >/dev/null
+          # пользователь репликации и публикация всех таблиц — если узел держит свой Postgres и пароль задан
+          if grep -q '^REPLICATION_PASSWORD=' .env && compose ps --services --status running | grep -qx postgres; then
+            sleep 3
+            compose exec -T postgres psql -U indie -d indie -X -q -v ON_ERROR_STOP=1 \
+              -v pw="$(grep '^REPLICATION_PASSWORD=' .env | cut -d= -f2-)" <<'SQL'
+          SELECT format('CREATE ROLE replicator LOGIN REPLICATION PASSWORD %L', :'pw')
+            WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'replicator') \gexec
+          SELECT format('ALTER ROLE replicator LOGIN REPLICATION PASSWORD %L', :'pw') \gexec
+          GRANT SELECT ON ALL TABLES IN SCHEMA public TO replicator;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO replicator;
+          SELECT 'CREATE PUBLICATION indie_all FOR ALL TABLES'
+            WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'indie_all') \gexec
+          SQL
+          fi
           compose ps --format '{{.Service}}: {{.Status}}'
           REMOTE
 
