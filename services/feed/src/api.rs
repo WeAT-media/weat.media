@@ -350,7 +350,16 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
-        assert_eq!((q.sort, q.offset, q.after.is_none()), (Sort::Hot, 60, true));
+        assert_eq!(
+            (q.sort, q.offset, q.after.is_none()),
+            (
+                Sort::Hot {
+                    days: crate::rank::HOT_WINDOW_DAYS
+                },
+                60,
+                true
+            )
+        );
         // курсор времени к hot не подходит
         let t = encode_cursor(Utc::now(), "at://did:plc:x/media.weat.article/1");
         assert!(

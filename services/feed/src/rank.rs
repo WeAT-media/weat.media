@@ -48,7 +48,10 @@ impl Period {
 pub enum Sort {
     #[default]
     New,
-    Hot,
+    /// days — окно: запись старше не рассматривается (по умолчанию HOT_WINDOW_DAYS)
+    Hot {
+        days: i32,
+    },
     Best {
         metric: Metric,
         period: Period,
@@ -63,7 +66,16 @@ impl Sort {
     ) -> Result<Self, &'static str> {
         match sort.unwrap_or("new") {
             "new" | "" => Ok(Sort::New),
-            "hot" => Ok(Sort::Hot),
+            // у hot окно задаёт period: «горячее за день» — только записи последних суток
+            "hot" => Ok(Sort::Hot {
+                days: match period {
+                    None | Some("") => HOT_WINDOW_DAYS,
+                    Some("day") => 1,
+                    Some("week") => 7,
+                    Some("month") => 30,
+                    Some(_) => return Err("period для hot: day | week | month"),
+                },
+            }),
             "best" => {
                 let metric = match metric.unwrap_or("likes") {
                     "likes" => Metric::Likes,
@@ -96,9 +108,9 @@ impl Sort {
                 String::new(),
                 "a.created_at DESC, a.uri DESC".into(),
             ),
-            Sort::Hot => (
+            Sort::Hot { days } => (
                 hot.clone(),
-                format!("AND a.published_at > now() - interval '{HOT_WINDOW_DAYS} days'"),
+                format!("AND a.published_at > now() - interval '{days} days'"),
                 format!("{hot} DESC, a.published_at DESC, a.uri DESC"),
             ),
             Sort::Best { metric, period } => {
@@ -204,7 +216,24 @@ mod tests {
     #[test]
     fn parses_sort() {
         assert_eq!(Sort::parse(None, None, None), Ok(Sort::New));
-        assert_eq!(Sort::parse(Some("hot"), None, None), Ok(Sort::Hot));
+        assert_eq!(
+            Sort::parse(Some("hot"), None, None),
+            Ok(Sort::Hot {
+                days: HOT_WINDOW_DAYS
+            })
+        );
+        assert_eq!(
+            Sort::parse(Some("hot"), None, Some("day")),
+            Ok(Sort::Hot { days: 1 })
+        );
+        assert_eq!(
+            Sort::parse(Some("hot"), None, Some("month")),
+            Ok(Sort::Hot { days: 30 })
+        );
+        assert!(
+            Sort::parse(Some("hot"), None, Some("all")).is_err(),
+            "у hot нет «за всё время» — формула и так гасит старое"
+        );
         assert_eq!(
             Sort::parse(Some("best"), Some("comments"), Some("day")),
             Ok(Sort::Best {

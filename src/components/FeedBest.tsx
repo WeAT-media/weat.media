@@ -5,7 +5,7 @@ import { commentCount, upvoteCount } from '@/lib/analytics'
 import { fetchRanked } from '@/lib/remoteFeed'
 import type { Article } from '@/types/types'
 
-type Period = 'day' | 'week'
+type Period = 'day' | 'week' | 'month'
 type Metric = 'comments' | 'upvotes'
 type Origin = 'all' | 'internal' | 'external'
 
@@ -14,7 +14,7 @@ const DAY = 86_400_000
 /** внутренние — написаны на площадке; внешние — свои PDS, краулер, репосты */
 const isInternal = (a: Article) => (a.sourceType ?? 'native-pds') === 'native-pds'
 
-/** «Лучшее»: топ-5 за день или неделю по комментариям или голосам, с фильтром источника */
+/** «Лучшее»: топ-5 за день, неделю или месяц по комментариям или голосам, с фильтром источника */
 export default function FeedBest({ articles, upvoted }: { articles: Article[]; upvoted: string[] }) {
   const [period, setPeriod] = useState<Period>('week')
   const [metric, setMetric] = useState<Metric>('upvotes')
@@ -46,7 +46,7 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
     const ranked = server?.key === key ? server.list.map((a) => byId.get(a.id) ?? a) : []
     if (ranked.length) return ranked.map((a) => ({ a, score: score(a) }))
     // publishedAt — дата без времени: «день» = сегодня и вчера, «неделя» = 7 суток
-    const since = now - (period === 'day' ? 2 : 7) * DAY
+    const since = now - (period === 'day' ? 2 : period === 'week' ? 7 : 30) * DAY
     return articles
       .filter((a) => Date.parse(a.publishedAt) >= since)
       .filter((a) => origin === 'all' || (origin === 'internal') === isInternal(a))
@@ -79,7 +79,7 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
         <Trophy size={14} className="text-accent" aria-hidden="true" /> Лучшее
       </h2>
       <div className="mt-3 grid gap-1.5">
-        {seg(period, setPeriod, [{ key: 'day', label: 'За день' }, { key: 'week', label: 'За неделю' }], 'Период')}
+        {seg(period, setPeriod, [{ key: 'day', label: 'За день' }, { key: 'week', label: 'За неделю' }, { key: 'month', label: 'За месяц' }], 'Период')}
         {seg(metric, setMetric, [{ key: 'upvotes', label: 'Голоса' }, { key: 'comments', label: 'Комментарии' }], 'Критерий')}
         {seg(origin, setOrigin, [{ key: 'all', label: 'Все' }, { key: 'internal', label: 'Внутренние' }, { key: 'external', label: 'Внешние' }], 'Источник')}
       </div>
