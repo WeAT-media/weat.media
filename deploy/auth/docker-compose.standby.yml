@@ -1,0 +1,10 @@
+# Резервный Zitadel (RU-1): база — потоковая реплика NL-1 (только чтение), Zitadel и Login UI не запущены.
+# Пока primary жив, работает только zitadel-db:
+#   docker compose -f docker-compose.yml -f docker-compose.node.yml -f docker-compose.standby.yml up -d zitadel-db
+# Переключение: ./replica.sh promote (база принимает запись, Zitadel стартует), затем GeoDNS auth -> RU-1.
+services:
+  zitadel-db:
+    # реплика: каталог данных заполняет pg_basebackup (./replica.sh standby), standby.signal — в нём
+    command: ["postgres", "-c", "hot_standby=on", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+    volumes:
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro

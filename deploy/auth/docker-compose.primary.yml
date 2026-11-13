@@ -1,0 +1,25 @@
+# Основной Zitadel (NL-1): база отдаёт поток WAL резерву на RU-1 через порт 5433, только TLS.
+# Пользователь replicator создаётся ./replica.sh primary.
+services:
+  zitadel-db:
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=5
+      - -c
+      - wal_keep_size=1GB
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/tls/server.crt
+      - -c
+      - ssl_key_file=/tls/server.key
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+    ports: ["5433:5432"]
+    volumes:
+      # сертификат узла — тот же, что у Postgres AppView (deploy/node/pg-tls)
+      - ../node/pg-tls:/tls:ro
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
