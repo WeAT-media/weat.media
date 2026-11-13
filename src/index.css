@@ -1,0 +1,536 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Тёплая «бумажная» палитра: OKLCH-логика через HSL-токены */
+    --background: 26 41% 97%;        /* #faf6f3 тёплый off-white */
+    --foreground: 25 6% 22%;         /* #3c3835 угольно-коричневый */
+    --card: 26 44% 93%;              /* #f5ece5 персиковый крем */
+    --card-foreground: 25 6% 22%;
+    --popover: 26 41% 97%;
+    --popover-foreground: 25 6% 22%;
+    --primary: 25 6% 22%;            /* основные кнопки — уголь */
+    --primary-foreground: 26 41% 97%;
+    --secondary: 26 44% 93%;
+    --secondary-foreground: 25 6% 22%;
+    --muted: 26 35% 91%;
+    --muted-foreground: 25 8% 40%;   /* #6e675f */
+    --accent: 27 50% 49%;            /* #bc773f терракота */
+    --accent-foreground: 26 41% 97%;
+    --destructive: 27 62% 40%;
+    --destructive-foreground: 26 41% 97%;
+    --border: 27 36% 80%;            /* #dec9b8 песочная линия */
+    --input: 27 36% 80%;
+    --ring: 27 50% 49%;
+    --radius: 0.375rem;
+  }
+
+  html {
+    font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .font-mono,
+  code,
+  pre,
+  kbd {
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  ::selection {
+    background: hsl(27 50% 49% / 0.25);
+  }
+
+  /* Тёмная тема (appearance: dark/system) */
+  html.dark {
+    --background: 25 8% 11%;
+    --foreground: 26 30% 90%;
+    --card: 25 8% 16%;
+    --card-foreground: 26 30% 90%;
+    --popover: 25 8% 11%;
+    --popover-foreground: 26 30% 90%;
+    --primary: 26 30% 90%;
+    --primary-foreground: 25 8% 12%;
+    --secondary: 25 8% 16%;
+    --secondary-foreground: 26 30% 90%;
+    --muted: 25 8% 18%;
+    --muted-foreground: 26 12% 62%;
+    --destructive: 27 55% 55%;
+    --destructive-foreground: 26 41% 97%;
+    --border: 25 10% 26%;
+    --input: 25 10% 26%;
+  }
+
+  /* Шрифт интерфейса */
+  html[data-font='serif'] body {
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  html[data-font='mono'] body {
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  /* Варианты акцента */
+  html[data-accent='forest'] {
+    --accent: 145 40% 36%;
+    --ring: 145 40% 36%;
+  }
+  html[data-accent='indigo'] {
+    --accent: 235 45% 50%;
+    --ring: 235 45% 50%;
+  }
+  html[data-accent='crimson'] {
+    --accent: 350 55% 44%;
+    --ring: 350 55% 44%;
+  }
+}
+
+@layer components {
+  /* Мелкая mono-метка: даты, номера дел, метаданные */
+  .meta {
+    @apply font-mono text-[12px] uppercase tracking-[0.08em] text-muted-foreground;
+  }
+
+  /* Судебный штамп-«печать» */
+  .stamp {
+    @apply inline-block select-none font-mono font-bold uppercase;
+    border: 2px solid currentColor;
+    padding: 0.2em 0.6em;
+    letter-spacing: 0.14em;
+    line-height: 1.4;
+    transform: rotate(-3.5deg);
+    box-shadow: inset 0 0 0 2px hsl(var(--background)), inset 0 0 0 3.5px currentColor;
+    border-radius: 2px;
+  }
+  .stamp--guilty {
+    color: hsl(27 50% 49%);
+  }
+  .stamp--acquitted {
+    color: hsl(25 6% 22%);
+    transform: rotate(2.5deg);
+  }
+  .stamp--trial {
+    color: hsl(25 8% 40%);
+    border-style: dashed;
+    transform: rotate(-1.5deg);
+  }
+  .stamp--sm {
+    font-size: 10px;
+    padding: 0.15em 0.5em;
+  }
+
+  /* Ссылка с эффектом «вверх уходит, снизу приезжает дубль» */
+  .link-slide {
+    @apply relative inline-block overflow-hidden align-bottom;
+  }
+  .link-slide > span {
+    @apply block transition-transform duration-200 ease-out;
+  }
+  .link-slide > span:last-child {
+    @apply absolute left-0 top-full;
+  }
+  .link-slide:hover > span:first-child,
+  .link-slide:focus-visible > span:first-child {
+    transform: translateY(-100%);
+  }
+  .link-slide:hover > span:last-child,
+  .link-slide:focus-visible > span:last-child {
+    transform: translateY(-100%);
+  }
+
+  /* Появление при скролле (opacity + translate, только transform/opacity) */
+  .reveal {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.45s ease-out, transform 0.45s ease-out;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+    .link-slide > span {
+      transition: none;
+    }
+    html {
+      scroll-behavior: auto;
+    }
+    .ticker-track {
+      animation: none;
+    }
+    .ticker {
+      overflow-x: auto;
+    }
+  }
+
+  /* Бегущая строка событий: непрерывный скролл, дубль для бесшовности */  .ticker {
+    overflow: hidden;
+  }
+  .ticker-track {
+    display: flex;
+    width: max-content;
+    animation: ticker-scroll 50s linear infinite;
+  }
+  @keyframes ticker-scroll {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  .ticker:hover .ticker-track,
+  .ticker:focus-within .ticker-track {
+    animation-play-state: paused;
+  }
+
+  /* Разделитель-линия вместо карточек */
+  .rule {
+    @apply border-t border-border;
+  }
+
+  /* Кнопка: угольная, одна первичная на экран */
+  .btn-primary {
+    @apply inline-flex cursor-pointer items-center gap-2 rounded-full bg-primary px-5 py-2.5
+      font-mono text-[13px] font-semibold uppercase tracking-[0.06em] text-primary-foreground
+      transition-colors duration-200 hover:bg-accent focus-visible:outline-none
+      focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+      focus-visible:ring-offset-background active:bg-accent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex cursor-pointer items-center gap-2 rounded-full border border-border bg-transparent
+      px-5 py-2.5 font-mono text-[13px] font-semibold uppercase tracking-[0.06em] text-foreground
+      transition-colors duration-200 hover:border-accent hover:text-accent
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+      focus-visible:ring-offset-2 focus-visible:ring-offset-background active:text-accent;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+}
+
+/* Тема video.js в стиле Indie.media: тёплые токены, акцентная big-play, стабильные контролы.
+   Скоуп по .vjs-theme-indie (класс ставит VideoPlayer) — глобальное поведение video.js не тронуто. */
+.video-js.vjs-theme-indie {
+  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  border-radius: var(--radius);
+  max-width: 100%;
+}
+.video-js.vjs-theme-indie .vjs-big-play-button {
+  width: 2.2em;
+  height: 2.2em;
+  line-height: 2.2em;
+  border: none;
+  border-radius: 9999px;
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  transition: background-color 0.2s, transform 0.2s;
+}
+.video-js.vjs-theme-indie .vjs-big-play-button:hover {
+  background-color: hsl(var(--accent) / 0.85);
+  transform: scale(1.06);
+}
+.video-js.vjs-theme-indie .vjs-big-play-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Control bar: стабильная высота всегда (до и после загрузки), flex без растяжения */
+.video-js.vjs-theme-indie .vjs-control-bar {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  min-height: 56px;
+  padding: 0 6px;
+  background: hsl(var(--primary) / 0.94);
+  color: hsl(var(--primary-foreground));
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+/* Все контролы одинаковые: фикс. ширина, без растяжения и сжатия иконок */
+.video-js.vjs-theme-indie .vjs-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  height: 100%;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+}
+.video-js.vjs-theme-indie .vjs-control .vjs-icon-placeholder {
+  flex: 0 0 auto;
+}
+/* иконки video.js — абсолютный ::before со своим line-height (под бар 3em);
+   в нашем баре другой высоты центрируем flex'ом, иначе глиф уезжает вверх */
+.video-js.vjs-theme-indie .vjs-control-bar .vjs-icon-placeholder::before {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+/* значение скорости тоже absolute на всю кнопку — центрируем по вертикали */
+.video-js.vjs-theme-indie .vjs-playback-rate .vjs-playback-rate-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* play-control — обычная кнопка бара, никогда не big-play и не растягивается */
+.video-js.vjs-theme-indie .vjs-play-control {
+  width: 44px;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 1.6em;
+  line-height: 1;
+}
+.video-js.vjs-theme-indie .vjs-button:hover,
+.video-js.vjs-theme-indie .vjs-button:focus-visible {
+  color: hsl(var(--accent));
+}
+.video-js.vjs-theme-indie .vjs-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -4px;
+}
+/* progress занимает всё оставшееся место, высота стабильна */
+.video-js.vjs-theme-indie .vjs-progress-control {
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+.video-js.vjs-theme-indie .vjs-progress-holder {
+  height: 8px;
+  border-radius: 9999px;
+}
+.video-js.vjs-theme-indie .vjs-progress-holder .vjs-play-progress,
+.video-js.vjs-theme-indie .vjs-volume-level {
+  background-color: hsl(var(--accent));
+}
+.video-js.vjs-theme-indie .vjs-play-progress::before {
+  color: hsl(var(--accent));
+}
+.video-js.vjs-theme-indie .vjs-slider:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+/* время: tabular-nums + зарезервированная ширина — не прыгает при смене цифр/длительности */
+.video-js.vjs-theme-indie .vjs-time-control {
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  flex: 0 0 auto;
+  padding: 0 2px;
+  text-align: center;
+  align-self: center;
+  height: auto;
+  line-height: 1;
+  display: block;
+}
+.video-js.vjs-theme-indie .vjs-current-time,
+.video-js.vjs-theme-indie .vjs-duration { min-width: 46px; }
+.video-js.vjs-theme-indie .vjs-time-divider { min-width: 10px; }
+/* volume: панель фиксирована, бар не раздвигает бар */
+.video-js.vjs-theme-indie .vjs-volume-panel {
+  flex: 0 0 auto;
+}
+.video-js.vjs-theme-indie .vjs-volume-panel .vjs-volume-control {
+  height: 100%;
+}
+.video-js.vjs-theme-indie .vjs-volume-bar {
+  margin: 0;
+}
+/* playback rate: зарезервированная ширина и mono, меню читабельное */
+.video-js.vjs-theme-indie .vjs-playback-rate {
+  width: auto;
+  min-width: 52px;
+  flex: 0 0 auto;
+}
+.video-js.vjs-theme-indie .vjs-playback-rate .vjs-playback-rate-value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* fullscreen / pip фиксированы справа */
+.video-js.vjs-theme-indie .vjs-picture-in-picture-control,
+.video-js.vjs-theme-indie .vjs-fullscreen-control {
+  flex: 0 0 auto;
+  width: 44px;
+}
+/* tooltips и меню в токенах */
+.video-js.vjs-theme-indie .vjs-time-tooltip,
+.video-js.vjs-theme-indie .vjs-mouse-display .vjs-time-tooltip,
+.video-js.vjs-theme-indie .vjs-volume-tooltip {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.video-js.vjs-theme-indie .vjs-menu-button-popup .vjs-menu .vjs-menu-content {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-radius: var(--radius);
+  border: 1px solid hsl(var(--border));
+}
+.video-js.vjs-theme-indie .vjs-menu li {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.video-js.vjs-theme-indie .vjs-menu li.vjs-selected {
+  background: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+.video-js.vjs-theme-indie .vjs-menu li:hover,
+.video-js.vjs-theme-indie .vjs-menu li:focus-visible {
+  background: hsl(var(--accent) / 0.25);
+}
+/* узкие экраны: бар компактный, без горизонтального переполнения */
+@media (max-width: 480px) {
+  .video-js.vjs-theme-indie .vjs-control-bar {
+    height: 48px;
+    min-height: 48px;
+    padding: 0 4px;
+  }
+  .video-js.vjs-theme-indie .vjs-control {
+    width: 38px;
+    min-width: 38px;
+  }
+  .video-js.vjs-theme-indie .vjs-time-divider,
+  .video-js.vjs-theme-indie .vjs-duration,
+  .video-js.vjs-theme-indie .vjs-remaining-time {
+    display: none;
+  }
+  .video-js.vjs-theme-indie .vjs-current-time { min-width: 42px; }
+}
+
+/* BlockSuite slash-menu/поповеры: маппим affine-токены на наши (light/dark через наши var) */
+:root {
+  --affine-background-overlay-panel-color: hsl(var(--popover));
+  --affine-background-primary-color: hsl(var(--background));
+  --affine-background-secondary-color: hsl(var(--secondary));
+  --affine-text-primary-color: hsl(var(--foreground));
+  --affine-text-secondary-color: hsl(var(--muted-foreground));
+  --affine-border-color: hsl(var(--border));
+  --affine-hover-color: hsl(var(--secondary));
+  --affine-icon-color: hsl(var(--muted-foreground));
+  --affine-popover-shadow: 0 8px 24px hsl(25 6% 22% / 0.18);
+}
+affine-slash-menu {
+  z-index: 60;
+}
+
+/* Тема редактора: скоуп на обёртку BlocksEditor. Официальная тема инжектится
+   позже нашего :root и даёт белый фон — переопределяем токены на wrapper'е
+   (специфичность выше :root, light/dark идут через наши hsl-переменные) и
+   убираем собственные фоны контейнеров редактора. Текст маппим на foreground,
+   чтобы в тёмной теме он не стал невидимым; inputs кастомных блоков получают
+   фон страницы и остаются различимы за счёт рамок. */
+.blocksuite-editor,
+.blocksuite-editor .affine-page-viewport,
+.blocksuite-editor editor-host {
+  --affine-background-primary-color: hsl(var(--background));
+  --affine-background-secondary-color: hsl(var(--secondary));
+  --affine-background-tertiary-color: hsl(var(--secondary));
+  --affine-background-code-block: hsl(var(--secondary));
+  --affine-background-overlay-panel-color: hsl(var(--popover));
+  --affine-text-primary-color: hsl(var(--foreground));
+  --affine-text-secondary-color: hsl(var(--muted-foreground));
+  --affine-border-color: hsl(var(--border));
+  --affine-hover-color: hsl(var(--secondary));
+  --affine-icon-color: hsl(var(--muted-foreground));
+  /* заводские 96px боковых отступов съедают статью/комментарий: 16px у статьи */
+  --affine-editor-side-padding: 16px;
+  --affine-editor-width: 100%;
+}
+/* compact-редактор комментариев: ещё плотнее, но текст не вплотную к рамке */
+.blocksuite-editor--compact,
+.blocksuite-editor--compact .affine-page-viewport,
+.blocksuite-editor--compact editor-host {
+  --affine-editor-side-padding: 8px;
+}
+/* doc-title: заводские 38px вертикальных отступов уменьшаем */
+.blocksuite-editor doc-title .doc-title-container {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+.blocksuite-editor--compact doc-title .doc-title-container {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.blocksuite-editor page-editor,
+.blocksuite-editor .affine-page-viewport,
+.blocksuite-editor editor-host,
+.blocksuite-editor affine-page-root,
+.blocksuite-editor affine-note,
+.blocksuite-editor affine-paragraph,
+.blocksuite-editor doc-title {
+  background: transparent;
+}
+
+/* @mention-ссылки внутри редактора */
+.blocksuite-editor rich-text a,
+.blocksuite-editor doc-title a {
+  color: hsl(var(--accent));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* mention-автодополнение: попап внутри holder'а (position: relative) */
+.mention-popup {
+  position: absolute;
+  z-index: 70;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--popover, var(--background)));
+  box-shadow: 0 8px 24px hsl(25 6% 22% / 0.18);
+  font-size: 13px;
+}
+.mention-popup__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.mention-popup__item.is-active {
+  background: hsl(var(--secondary));
+}
+.mention-popup__item.is-empty {
+  cursor: default;
+  color: hsl(var(--muted-foreground));
+}
+.mention-popup__handle {
+  font-family: theme('fontFamily.mono');
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mention-popup__name {
+  flex-shrink: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}

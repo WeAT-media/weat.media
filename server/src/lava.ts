@@ -1,0 +1,237 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto'
+import type { Context, Hono } from 'hono'
+import { z } from 'zod'
+import type { Sql, UserRepo, UserRow } from './db.js'
+import { PdsError, type PdsClient } from './pds.js'
+import type { PaidRepo } from './paidContent.js'
+
+/**
+ * lava.top: оплата платных статей.
+ * Счёт создаётся на один продукт с ценой «по запросу API» — сумму передаём сами.
+ * Доступ выдаётся только по вебхуку payment.success и только после перепроверки счёта через API:
+ * статус в return URL и тело вебхука можно подделать, ответ API — нет.
+ */
+
+/** доля автора: 90% обычно, 99% у Premium-автора (комиссия площадки 10% / 1%) */
+export const AUTHOR_SHARE = 0.9
+export const PREMIUM_AUTHOR_SHARE = 0.99
+
+export interface LavaInvoice {
+  id: string
+  status: string
+  paymentUrl: string | null
+}
+
+export interface LavaInvoiceInfo {
+  id: string
+  status: 'NEW' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | string
+  receipt?: { amount?: number; currency?: string }
+}
+
+export interface LavaClient {
+  createInvoice(body: Record<string, unknown>): Promise<LavaInvoice>
+  getInvoice(id: string): Promise<LavaInvoiceInfo>
+}
+
+export function createLavaClient(apiKey: string, baseUrl = 'https://gate.lava.top'): LavaClient {
+  const call = async <T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> => {
+    const res = await fetch(new URL(path, baseUrl), {
+      method,
+      headers: { 'X-Api-Key': apiKey, accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(15_000),
+    })
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+    if (!res.ok) {
+      // подробности — в лог; клиенту — общий текст
+      console.error('lava.top', method, path, res.status, JSON.stringify(data).slice(0, 500))
+      throw new PdsError(502, 'PaymentProviderError', 'Платёжный сервис временно недоступен. Попробуйте позже.')
+    }
+    return data as T
+  }
+  return {
+    createInvoice: (body) => call('POST', '/api/v3/invoice', body),
+    getInvoice: (id) => call('GET', `/api/v1/invoices/${encodeURIComponent(id)}`),
+  }
+}
+
+export interface OrderRow {
+  id: string
+  contract_id: string | null
+  reader_did: string
+  content_id: string
+  author_did: string
+  amount: number
+  currency: string
+  author_share: number
+  platform_fee: number
+  status: 'pending' | 'paid' | 'failed' | 'refunded'
+  created_at: Date
+  paid_at: Date | null
+}
+
+export interface OrderRepo {
+  insert(o: Omit<OrderRow, 'status' | 'created_at' | 'paid_at'>): Promise<void>
+  get(id: string): Promise<OrderRow | undefined>
+  byContract(contractId: string): Promise<OrderRow | undefined>
+  /** переход только из pending: повтор вебхука ничего не меняет */
+  settle(id: string, status: 'paid' | 'failed'): Promise<boolean>
+}
+
+export function orderRepo(sql: Sql): OrderRepo {
+  return {
+    async insert(o) {
+      await sql`
+        INSERT INTO orders (id, contract_id, reader_did, content_id, author_did, amount, currency, author_share, platform_fee)
+        VALUES (${o.id}, ${o.contract_id}, ${o.reader_did}, ${o.content_id}, ${o.author_did}, ${o.amount}, ${o.currency}, ${o.author_share}, ${o.platform_fee})`
+    },
+    async get(id) {
+      const [r] = await sql<OrderRow[]>`SELECT * FROM orders WHERE id = ${id}`
+      return r
+    },
+    async byContract(contractId) {
+      const [r] = await sql<OrderRow[]>`SELECT * FROM orders WHERE contract_id = ${contractId}`
+      return r
+    },
+    async settle(id, status) {
+      const rows = await sql`
+        UPDATE orders SET status = ${status}, paid_at = CASE WHEN ${status} = 'paid' THEN now() ELSE paid_at END
+        WHERE id = ${id} AND status = 'pending' RETURNING 1`
+      return rows.length > 0
+    },
+  }
+}
+
+export const PurchaseBody = z.object({
+  contentId: z.string().startsWith('pc_'),
+  /** локальный путь, куда вернуть читателя после оплаты */
+  returnTo: z.string().regex(/^\/(?![/\\])[^\s\\]*$/, 'только локальный путь').max(300).optional(),
+  paymentMethod: z.enum(['CARD', 'SBP']).optional(),
+  utm: z.object({ source: z.string().max(100), medium: z.string().max(100).optional(), campaign: z.string().max(100).optional() }).optional(),
+})
+
+/** Вебхук payment.* / subscription.*: плоский camelCase (PurchaseWebhookLog) */
+const PurchaseWebhook = z.looseObject({
+  eventType: z.string(),
+  contractId: z.string(),
+  amount: z.number().optional(),
+  currency: z.string().optional(),
+  status: z.string().optional(),
+})
+
+export interface LavaDeps {
+  users: UserRepo
+  pds: PdsClient
+  paid: PaidRepo
+  orders: OrderRepo
+  lava?: LavaClient
+  offerId?: string
+  webhookSecret?: string
+  publicUrl: string
+}
+
+const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409 | 503) => new PdsError(status, code, message)
+
+/** основные единицы для lava.top: 19900 копеек -> 199 */
+export const toMajor = (minor: number) => Math.round(minor) / 100
+
+export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context): string | undefined }) {
+  const session = async (c: Context): Promise<{ user: UserRow; email?: string }> => {
+    const token = h.bearer(c)
+    if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
+    const info = await d.pds.getSession(token)
+    const user = await d.users.findByDid(info.did)
+    if (!user) throw fail('NotFound', 'Пользователь не найден', 404)
+    return { user, email: info.email }
+  }
+
+  /** Читатель покупает статью: создаём счёт и отдаём ссылку на оплату */
+  app.post('/me/purchases', async (c) => {
+    if (!d.lava || !d.offerId) throw fail('PaymentsDisabled', 'Оплата пока не подключена', 503)
+    const { user, email } = await session(c)
+    const b = PurchaseBody.safeParse(await c.req.json().catch(() => null))
+    if (!b.success) throw fail('InvalidRequest', z.prettifyError(b.error), 400)
+    const content = await d.paid.get(b.data.contentId)
+    if (!content) throw fail('NotFound', 'Статья не найдена', 404)
+    if (content.access_type !== 'one-time' || content.price <= 0) throw fail('InvalidRequest', 'Эта статья доступна по подписке', 400)
+    if (content.author_did === user.did || (await d.paid.hasAccess(user.did, content))) throw fail('AlreadyPurchased', 'Доступ уже есть', 409)
+    if (!email) throw fail('EmailRequired', 'Для чека нужен email в аккаунте', 400)
+
+    const id = `ord_${randomBytes(9).toString('base64url')}`
+    const back = new URL(`/purchase/${id}`, d.publicUrl)
+    if (b.data.returnTo) back.searchParams.set('returnTo', b.data.returnTo)
+    // lava.top принимает только https return URL; на локальном стенде без них
+    const returns = back.protocol === 'https:'
+      ? { successful_return_url: back.toString(), failure_return_url: back.toString(), cancel_return_url: back.toString() }
+      : {}
+    const invoice = await d.lava.createInvoice({
+      email,
+      offerId: d.offerId,
+      currency: content.currency,
+      amount: toMajor(content.price),
+      ...(content.currency === 'RUB' && b.data.paymentMethod === 'SBP' ? { paymentProvider: 'PAY2ME', paymentMethod: 'SBP' } : {}),
+      buyerLanguage: content.currency === 'RUB' ? 'RU' : 'EN',
+      ...(b.data.utm ? { clientUtm: { utm_source: b.data.utm.source, utm_medium: b.data.utm.medium, utm_campaign: b.data.utm.campaign } } : {}),
+      ...returns,
+    })
+    const author = await d.users.findByDid(content.author_did)
+    const authorShare = Math.floor(content.price * (author?.tier === 'premium' ? PREMIUM_AUTHOR_SHARE : AUTHOR_SHARE))
+    await d.orders.insert({
+      id,
+      contract_id: invoice.id,
+      reader_did: user.did,
+      content_id: content.id,
+      author_did: content.author_did,
+      amount: content.price,
+      currency: content.currency,
+      author_share: authorShare,
+      platform_fee: content.price - authorShare,
+    })
+    return c.json({ orderId: id, paymentUrl: invoice.paymentUrl }, 201)
+  })
+
+  /** Статус заказа для страницы возврата (читатель ждёт подтверждения вебхука) */
+  app.get('/me/purchases/:id', async (c) => {
+    const { user } = await session(c)
+    const o = await d.orders.get(c.req.param('id'))
+    if (!o || o.reader_did !== user.did) throw fail('NotFound', 'Заказ не найден', 404)
+    return c.json({ orderId: o.id, status: o.status, contentId: o.content_id, amount: o.amount, currency: o.currency })
+  })
+
+  /**
+   * Вебхук lava.top. Отвечаем 2xx быстро и на неизвестные события — иначе 20 повторов.
+   * Авторизация — наш секрет в X-Api-Key (настраивается в кабинете).
+   */
+  app.post('/webhooks/payment', async (c) => {
+    const key = c.req.header('x-api-key') ?? ''
+    const ok = !!d.webhookSecret && key.length === d.webhookSecret.length && timingSafeEqual(Buffer.from(key), Buffer.from(d.webhookSecret))
+    if (!ok) return c.json({ error: 'Unauthorized' }, 401)
+    const raw = await c.req.json().catch(() => null)
+    const ev = PurchaseWebhook.safeParse(raw)
+    if (!ev.success) {
+      // refund.* / chargeback.* — другая обёртка; связи с контрактом в ней нет, разбираем вручную
+      if (raw && typeof raw === 'object' && 'event_type' in raw) console.warn('lava webhook needs manual review', JSON.stringify(raw))
+      return c.json({ ok: true })
+    }
+    const order = await d.orders.byContract(ev.data.contractId)
+    if (!order) return c.json({ ok: true, ignored: 'unknown contract' })
+
+    if (ev.data.eventType === 'payment.failed') {
+      await d.orders.settle(order.id, 'failed')
+      return c.json({ ok: true })
+    }
+    if (ev.data.eventType !== 'payment.success') return c.json({ ok: true })
+
+    // перепроверка у lava.top: статус и сумма
+    const inv = await d.lava!.getInvoice(order.contract_id!)
+    const paidAmount = inv.receipt?.amount
+    if (inv.status !== 'COMPLETED' || paidAmount === undefined || Math.round(paidAmount * 100) < order.amount || (inv.receipt?.currency && inv.receipt.currency !== order.currency)) {
+      console.warn('lava payment not confirmed', order.id, inv.status, paidAmount)
+      // 5xx — lava.top повторит позже, когда счёт дойдёт до COMPLETED
+      return c.json({ error: 'NotConfirmed' }, 503)
+    }
+    await d.paid.grant({ readerDid: order.reader_did, contentId: order.content_id, source: 'purchase', paymentRef: `lava:${order.contract_id}` })
+    await d.orders.settle(order.id, 'paid')
+    return c.json({ ok: true })
+  })
+}

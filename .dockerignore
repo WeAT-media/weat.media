@@ -1,0 +1,8 @@
+node_modules
+dist
+server
+services
+deploy
+!deploy/node/Caddyfile
+.env
+*.log

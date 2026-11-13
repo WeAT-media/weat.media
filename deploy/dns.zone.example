@@ -1,0 +1,48 @@
+; DNS-зона weat.media — шаблон (BIND). Значения <...> заменить.
+;
+; Один адрес для всех: A-записи weat.media отдаёт GeoDNS — РФ-резолверам IP Yandex,
+; остальным IP NL-1. Обычный BIND так не умеет: геозаписи настраиваются в панели
+; провайдера с GeoDNS (политика «по стране клиента»). TXT/CNAME ниже — общие для всех.
+
+$ORIGIN weat.media.
+$TTL 300
+
+; ── сайт ───────────────────────────────────────────────────────────────
+; GEO: RU -> <IP Yandex>, остальные -> <IP NL-1>; при переключении на резерв — IP резерва
+@               A       <GEO: IP узла контура>
+www             CNAME   weat.media.
+ru              A       <IP Yandex>          ; запасной вход в РФ-контур
+nl-1            A       <IP NL-1>            ; прямой адрес NL мимо GeoDNS
+
+; ── PDS (технические адреса, пользователь их не видит) ────────────────
+pds             A       <IP NL-1>
+pds-ru          A       <IP Yandex>
+
+; ── handle пользователей: alina.weat.media -> /.well-known/atproto-did ─
+; любой узел отвечает за любого пользователя (AppView спрашивает соседний контур)
+*               A       <GEO: IP узла контура>
+
+; ── TLS: DNS-01 через acme-dns. Запись одна -> учётка acme-dns общая для обоих контуров ─
+_acme-challenge CNAME   <subdomain>.auth.acme-dns.io.
+
+; ── подтверждение владения в поисковых кабинетах ─────────────────────
+; Google Search Console: «Домен» -> TXT (покрывает все поддомены и оба контура)
+@               TXT     "google-site-verification=<код Google>"
+; Яндекс.Вебмастер: способ «DNS-запись»
+@               TXT     "yandex-verification: <код Яндекса>"
+; Bing Webmaster: способ «CNAME»
+<код Bing>      CNAME   verify.bing.com.
+; GitHub (организация -> Verified domains): только DNS
+_github-challenge-<org>        TXT  "<код GitHub>"
+; GitHub Pages (если сайт документации на Pages)
+_github-pages-challenge-<org>  TXT  "<код GitHub Pages>"
+
+; Альтернатива DNS для Google/Яндекса/Bing — meta-теги в сборке edge:
+;   docker build -f deploy/node/Dockerfile.edge \
+;     --build-arg SITE_VERIFY_GOOGLE=<код> --build-arg SITE_VERIFY_YANDEX=<код> \
+;     --build-arg SITE_VERIFY_BING=<код> -t indie-edge .
+
+; ── почта (письма 2FA и сброса пароля) ───────────────────────────────
+@               MX      10 <mx провайдера почты>.
+@               TXT     "v=spf1 include:<spf провайдера> -all"
+_dmarc          TXT     "v=DMARC1; p=quarantine; rua=mailto:dmarc@weat.media"

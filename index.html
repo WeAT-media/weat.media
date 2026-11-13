@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>%VITE_SITE_NAME% — свобода как цель</title>
+    <meta name="description" content="Медиа на открытом протоколе AT: ваш аккаунт и тексты принадлежат вам, а не площадке. Суд присяжных вместо модераторов, 90% продаж — автору." />
+    <!-- превью ссылок: Facebook, VK, Telegram (Open Graph) и Twitter / X -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="%VITE_SITE_NAME%" />
+    <meta property="og:title" content="%VITE_SITE_NAME% — свобода как цель" />
+    <meta property="og:description" content="Медиа на открытом протоколе AT: ваш аккаунт и тексты принадлежат вам, а не площадке." />
+    <meta property="og:url" content="%VITE_SITE_URL%/" />
+    <meta property="og:image" content="%VITE_SITE_URL%/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="weAT.media — свобода как цель" />
+    <meta property="og:locale" content="ru_RU" />
+    <meta property="vk:image" content="%VITE_SITE_URL%/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="%VITE_SITE_NAME% — свобода как цель" />
+    <meta name="twitter:description" content="Медиа на открытом протоколе AT: ваш аккаунт и тексты принадлежат вам, а не площадке." />
+    <meta name="twitter:image" content="%VITE_SITE_URL%/og-image.png" />
+    <meta name="twitter:image:alt" content="weAT.media — свобода как цель" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:ital,wght@0,400;0,600;0,700;1,400&display=swap"
+      rel="stylesheet"
+    />
+    <!--
+      Speculation Rules: браузер заранее загружает страницы, на которые вот-вот перейдут (наведение, нажатие).
+      Для SPA это полные переходы (ссылки извне, новая вкладка не в счёт); переходы внутри сайта
+      ускоряет предзагрузка кода и данных при наведении (src/lib/prefetch.ts).
+      Служебные адреса не трогаем: вход, выход, оплата, API.
+    -->
+    <script type="speculationrules">
+      {
+        "prefetch": [
+          {
+            "where": {
+              "and": [
+                { "href_matches": "/*" },
+                { "not": { "href_matches": ["/api/*", "/auth/*", "/login*", "/purchase/*", "/admin/*", "/rss/*", "/crawler-api/*", "/analytics-api/*"] } },
+                { "not": { "selector_matches": "[rel~=nofollow], [target=_blank]" } }
+              ]
+            },
+            "eagerness": "moderate"
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

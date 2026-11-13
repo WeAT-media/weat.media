@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .bg { fill: #3b3835 }
+    .s { stroke: #faf6f1 }
+    @media (prefers-color-scheme: dark) { .bg { fill: #f3ece4 } .s { stroke: #2a2725 } }
+  </style>
+  <rect class="bg" width="64" height="64" rx="14"/>
+  <!-- колос пшеницы: weat — «we AT» -->
+  <path class="s" d="M32 55V19" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+  <g fill="#bc773f">
+    <ellipse cx="32" cy="12.5" rx="2.9" ry="5.6"/>
+    <ellipse cx="26.6" cy="22" rx="2.9" ry="5.6" transform="rotate(-38 26.6 22)"/>
+    <ellipse cx="37.4" cy="22" rx="2.9" ry="5.6" transform="rotate(38 37.4 22)"/>
+    <ellipse cx="26.6" cy="31" rx="2.9" ry="5.6" transform="rotate(-38 26.6 31)"/>
+    <ellipse cx="37.4" cy="31" rx="2.9" ry="5.6" transform="rotate(38 37.4 31)"/>
+    <ellipse cx="26.6" cy="40" rx="2.9" ry="5.6" transform="rotate(-38 26.6 40)"/>
+    <ellipse cx="37.4" cy="40" rx="2.9" ry="5.6" transform="rotate(38 37.4 40)"/>
+  </g>
+</svg>

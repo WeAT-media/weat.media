@@ -1,0 +1,187 @@
+# Один Caddyfile на все узлы; различия — только в переменных окружения (deploy/node/.env).
+#
+#   SITE_DOMAINS   — домены сайта на этом узле:
+#                    глобальный: "weat.media nl-1.weat.media"   РФ: "weat.media ru.weat.media"
+#   PDS_HOST       — адрес PDS контура (технический, пользователь его не видит):
+#                    глобальный: pds.weat.media      РФ: pds-ru.weat.media
+#
+#   ACME_DNS_*     — учётка acme-dns для DNS-01 (общая для обоих контуров: _acme-challenge один)
+#
+# Ресурс один: handle у всех вида alina.weat.media, на любом узле. Связь handle -> DID
+# публичная, общий справочник реплицируется между контурами; персональные данные — нет.
+{
+	email {$ACME_EMAIL}
+	servers {
+		# реальный IP клиента нужен GeoIP AppView; доверяем только локальной сети compose
+		trusted_proxies static private_ranges
+		# медленные клиенты (slowloris) не держат соединения бесконечно
+		timeouts {
+			read_header 10s
+			read_body 30s
+			write 60s
+			idle 2m
+		}
+		max_header_size 32KB
+	}
+	order rate_limit before basic_auth
+}
+
+# Частота запросов с одного IP. Вторая линия — лимитер AppView, третья — DDoS-защита провайдера.
+(edge_limits) {
+	rate_limit {
+		zone auth {
+			match {
+				method POST
+				path /api/auth/login /api/auth/register /api/auth/mfa /api/auth/handoff /api/auth/password/*
+			}
+			key {client_ip}
+			events 20
+			window 1m
+		}
+		zone beacon {
+			match {
+				path /analytics-api/collect
+			}
+			key {client_ip}
+			events 120
+			window 1m
+		}
+		zone api {
+			match {
+				path /api/* /analytics-api/*
+				not path /api/webhooks/payment
+			}
+			key {client_ip}
+			events 1200
+			window 1m
+		}
+	}
+	# тело запроса: платные статьи до 200 КБ текста, остальное меньше
+	request_body {
+		max_size 1MB
+	}
+}
+
+(tls_dns) {
+	tls {
+		dns acmedns {
+			username {$ACME_DNS_USERNAME}
+			password {$ACME_DNS_PASSWORD}
+			subdomain {$ACME_DNS_SUBDOMAIN}
+			server_url {$ACME_DNS_SERVER}
+		}
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy same-origin
+		-Server
+	}
+}
+
+# CSP только для SPA. style 'unsafe-inline' — BlockSuite и recharts задают стили атрибутами;
+# скрипты — только свои. Видео-встраивания (YouTube и др.) — через frame-src https:.
+(csp) {
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'inline-speculation-rules'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self' https://{$PDS_HOST}; frame-src 'self' https: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+}
+
+{$SITE_DOMAINS} {
+	import tls_dns
+	import security_headers
+	import csp
+	import edge_limits
+	encode zstd gzip
+
+	# какой контур ответил — для отладки GeoDNS и мониторинга
+	header X-Indie-Contour {$CONTOUR}
+
+	# /api/* — AppView; сама страница /api — SPA (документация)
+	@api path /api/*
+	handle @api {
+		reverse_proxy appview:8787
+	}
+
+	# админка краулера: краулер на отдельном VPS (CRAWLER_API_URL=https://crawler-api.weat.media)
+	@crawler path /crawler-api/*
+	handle @crawler {
+		reverse_proxy {$CRAWLER_API_URL:http://127.0.0.1:9} {
+			header_up Host {upstream_hostport}
+		}
+	}
+
+	# RSS (сервис ленты): /rss/author/<handle>, /rss/comments/<did>/<rkey>
+	@rss path /rss/*
+	handle @rss {
+		reverse_proxy feed:8790
+	}
+
+	# открытая аналитика (Rust): beacon и агрегаты
+	@analytics path /analytics-api/*
+	handle @analytics {
+		reverse_proxy analytics:8789
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+	}
+}
+
+# PDS этого контура (его адрес записан в DID-документах его пользователей)
+{$PDS_HOST} {
+	import tls_dns
+	import security_headers
+
+	# admin API PDS и выпуск инвайтов — только с адресов краулера/админов (ADMIN_ALLOW_IPS)
+	@admin {
+		path /xrpc/com.atproto.admin.* /xrpc/com.atproto.server.createInviteCode*
+		not remote_ip {$ADMIN_ALLOW_IPS:127.0.0.1/32}
+	}
+	respond @admin 404
+
+	# подбор паролей напрямую в PDS, минуя AppView
+	rate_limit {
+		zone pds_auth {
+			match {
+				path /xrpc/com.atproto.server.createSession /xrpc/com.atproto.server.createAccount /xrpc/com.atproto.server.requestPasswordReset /xrpc/com.atproto.server.resetPassword
+			}
+			key {client_ip}
+			events 20
+			window 1m
+		}
+		zone pds {
+			key {client_ip}
+			events 3000
+			window 1m
+		}
+	}
+	request_body {
+		# blob-загрузки (картинки) — до 50 МБ
+		max_size 50MB
+	}
+	reverse_proxy pds:2583
+}
+
+# handle любого пользователя: alina.<PDS_HANDLE_DOMAIN>/.well-known/atproto-did.
+# Отвечает AppView по общему справочнику — пользователь может жить в любом контуре.
+*.{$PDS_HANDLE_DOMAIN} {
+	import tls_dns
+	import security_headers
+	@did path /.well-known/atproto-did
+	handle @did {
+		rewrite * /api/handles/resolve
+		reverse_proxy appview:8787
+	}
+	handle {
+		redir https://{$PDS_HANDLE_DOMAIN}/profile/{host} 302
+	}
+}

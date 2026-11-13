@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Тестовая статья / Хабр</title>
+  <meta property="og:title" content="Тестовая статья про очереди">
+  <meta property="og:description" content="Разбираем, как устроены очереди задач и почему повторы нужны.">
+  <meta property="og:image" content="https://habrastorage.org/getpro/habr/cover.png">
+  <script>window.__INITIAL_STATE__ = { evil: true }</script>
+</head>
+<body>
+  <div class="tm-article-presenter">
+    <a class="tm-user-info__userpic" href="/ru/users/test_author/"></a>
+    <span class="tm-user-info"><a href="/ru/users/test_author/" class="tm-user-info__username"><!--[-->test_author<!--]--></a></span>
+    <span class="tm-article-datetime-published"><time datetime="2026-11-12T10:00:00.000Z" title="2026-11-12, 10:00">12 ноя</time></span>
+    <h1 class="tm-title tm-title_h1" lang="ru"><span>Тестовая статья про очереди</span></h1>
+    <div class="tm-publication-hubs">
+      <a class="tm-publication-hub__link" href="/ru/hubs/programming/"><span>Программирование</span><span>*</span></a>
+      <a class="tm-publication-hub__link" href="/ru/hubs/backend/"><span>Бэкенд</span></a>
+    </div>
+    <div class="article-formatted-body article-formatted-body_version-2">
+      <div xmlns="http://www.w3.org/1999/xhtml">
+        <p>Очереди задач позволяют отделить приём запроса от его обработки. Это первый абзац статьи, достаточно длинный для анонса.</p>
+        <h2>Повторы</h2>
+        <p>Если источник ответил ошибкой, задачу стоит <a href="/ru/articles/123/">повторить позже</a>, а не терять.</p>
+        <img src="/img/placeholder.gif" data-src="https://habrastorage.org/real.png" alt="схема">
+        <pre><code class="language-ts">const q = new Queue('crawl')
+await q.add('article', { url })</code></pre>
+        <script>alert('xss')</script>
+        <iframe src="https://evil.example/"></iframe>
+        <a href="javascript:alert(1)">опасная ссылка</a>
+        <ul><li>надёжность</li><li>масштабирование</li></ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,125 @@
+# Zitadel — сервис входа weat.media (OIDC): пользователи, 2FA и passkeys, роли, «Войти через weat.media».
+# По одному на контур: данные пользователей РФ-контура остаются в РФ.
+#
+#   cp .env.example .env   # и задать секреты
+#   docker compose up -d --wait
+#   консоль: ${ZITADEL_PUBLIC_URL}/ui/console  (zitadel-admin@zitadel.${ZITADEL_DOMAIN})
+#
+# Схема как у официального compose, но вместо Traefik — Caddy (без docker.sock).
+name: weat-auth
+
+services:
+  # том с PAT сервисных аккаунтов пишет Zitadel (uid 1000), читает Login UI — тем же uid
+  bootstrap-perms:
+    image: busybox:1.37
+    command: ["sh", "-c", "chown 1000:1000 /zitadel/bootstrap && chmod 700 /zitadel/bootstrap"]
+    volumes:
+      - bootstrap:/zitadel/bootstrap
+
+  zitadel-api:
+    image: ghcr.io/zitadel/zitadel:${ZITADEL_VERSION}
+    restart: unless-stopped
+    command: start-from-init --masterkeyFromEnv
+    environment:
+      ZITADEL_MASTERKEY: ${ZITADEL_MASTERKEY:?32 символа, openssl rand -hex 16}
+      ZITADEL_PORT: 8080
+      ZITADEL_EXTERNALDOMAIN: ${ZITADEL_DOMAIN}
+      ZITADEL_EXTERNALPORT: ${ZITADEL_EXTERNALPORT}
+      ZITADEL_EXTERNALSECURE: ${ZITADEL_EXTERNALSECURE}
+      ZITADEL_TLS_ENABLED: false
+      ZITADEL_DATABASE_POSTGRES_DSN: postgresql://zitadel:${POSTGRES_PASSWORD}@postgres:5432/zitadel?sslmode=disable
+
+      # первый админ (меняет пароль при первом входе на проде)
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: ${ZITADEL_ORG_NAME}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: zitadel-admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${ZITADEL_ADMIN_PASSWORD:?}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: ${ZITADEL_ADMIN_PASSWORD_CHANGE:-true}
+
+      # сервисный аккаунт Login UI
+      ZITADEL_FIRSTINSTANCE_LOGINCLIENTPATPATH: /zitadel/bootstrap/login-client.pat
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_USERNAME: login-client
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_MACHINE_NAME: Login UI
+      ZITADEL_FIRSTINSTANCE_ORG_LOGINCLIENT_PAT_EXPIRATIONDATE: ${PAT_EXPIRATION}
+
+      # сервисный аккаунт AppView: заводит пользователей, роли и OIDC-приложения через API
+      ZITADEL_FIRSTINSTANCE_PATPATH: /zitadel/bootstrap/appview.pat
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: appview
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: AppView
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: ${PAT_EXPIRATION}
+
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: true
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_BASEURI: ${ZITADEL_PUBLIC_URL}/ui/v2/login/
+      ZITADEL_OIDC_DEFAULTLOGINURLV2: ${ZITADEL_PUBLIC_URL}/ui/v2/login/login?authRequest=
+      ZITADEL_OIDC_DEFAULTLOGOUTURLV2: ${ZITADEL_PUBLIC_URL}/ui/v2/login/logout?post_logout_redirect=
+      ZITADEL_SAML_DEFAULTLOGINURLV2: ${ZITADEL_PUBLIC_URL}/ui/v2/login/login?samlRequest=
+      ZITADEL_LOGSTORE_ACCESS_STDOUT_ENABLED: false
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - bootstrap:/zitadel/bootstrap:rw
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bootstrap-perms:
+        condition: service_completed_successfully
+
+  zitadel-login:
+    image: ghcr.io/zitadel/zitadel-login:${ZITADEL_VERSION}
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      ZITADEL_API_URL: http://zitadel-api:8080
+      NEXT_PUBLIC_BASE_PATH: /ui/v2/login
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /zitadel/bootstrap/login-client.pat
+      ZITADEL_SESSION_COOKIE_SECRET: ${LOGIN_SESSION_COOKIE_SECRET:?не короче 32 символов}
+      CUSTOM_REQUEST_HEADERS: Host:${ZITADEL_DOMAIN},X-Forwarded-Proto:${ZITADEL_PUBLIC_SCHEME}
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "node /app/healthcheck.mjs http://localhost:3000/ui/v2/login/healthy"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - bootstrap:/zitadel/bootstrap:ro
+    depends_on:
+      zitadel-api:
+        condition: service_healthy
+
+  # своя БД: пользователи Zitadel не смешиваются с данными AppView
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zitadel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: zitadel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d zitadel -U zitadel"]
+      interval: 10s
+      timeout: 30s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # локально — http на ${PROXY_PORT}; на узлах этот маршрут живёт в общем Caddyfile (auth.weat.media)
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    ports: ["127.0.0.1:${PROXY_PORT}:80"]
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+    depends_on:
+      zitadel-api:
+        condition: service_healthy
+      zitadel-login:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  bootstrap:

@@ -1,0 +1,28 @@
+# Локальная разработка: свой PLC вместо публичного plc.directory,
+# чтобы тестовые DID не публиковались в сеть.
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  plc:
+    image: ghcr.io/bluesky-social/did-method-plc:plc-f2ab7516bac5bc0f3f86842fa94e996bd1b3815b
+    platform: linux/amd64
+    environment:
+      PORT: "2582"
+      DB_SCHEMA: plc
+      DB_CREDS_JSON: '{"username":"indie","password":"indie","host":"postgres","database":"indie"}'
+      DB_MIGRATE_CREDS_JSON: '{"username":"indie","password":"indie","host":"postgres","database":"indie"}'
+      DD_TRACE_ENABLED: "false"
+    ports: ["2582:2582"]
+    depends_on: [postgres]
+
+  # SMTP-ловушка: письма PDS (коды 2FA, сброс пароля) видны на http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports: ["8025:8025", "1025:1025"]
+
+  pds:
+    environment:
+      PDS_DID_PLC_URL: http://plc:2582
+      PDS_CRAWLERS: ""
+      PDS_EMAIL_SMTP_URL: smtp://mailpit:1025
+      PDS_EMAIL_FROM_ADDRESS: noreply@indie.media
+    depends_on: [plc, mailpit]

@@ -1,0 +1,78 @@
+# Краулер — вне контуров. Свои Redis (очереди BullMQ) и Postgres (задачи, источники,
+# аккаунты краулеров). Публикует в PDS глобального контура по публичному адресу;
+# Feed обоих контуров видит посты через поток событий PDS — ресурс один.
+#
+#   docker compose up -d
+#   docker compose up -d --scale crawler-worker=3     # больше воркеров
+#
+# Отдельный VPS: источники видят IP краулера, а не узлов weat.media — бан не заденет сайт.
+# API открыт только узлам сайта (EDGE_IPS) по TLS: админка → weat.media/crawler-api → сюда.
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD обязателен}"]
+    volumes: [redis-data:/data]
+    networks: [internal]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crawler
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD обязателен}
+      POSTGRES_DB: crawler
+    volumes: [pg-data:/var/lib/postgresql/data]
+    networks: [internal]
+
+  crawler-api:
+    image: ${CRAWLER_IMAGE:-indie-crawler:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ROLE: api
+      DATABASE_URL: postgres://crawler:${PG_PASSWORD}@postgres:5432/crawler
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD обязателен}@redis:6379
+    ports: ["${API_BIND:-127.0.0.1}:8788:8788"]
+    depends_on: [redis, postgres]
+    networks: [internal, egress]
+
+  # лёгкий воркер без HTTP: только очереди
+  crawler-worker:
+    image: ${CRAWLER_IMAGE:-indie-crawler:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ROLE: worker
+      DATABASE_URL: postgres://crawler:${PG_PASSWORD}@postgres:5432/crawler
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD обязателен}@redis:6379
+    depends_on: [redis, postgres, crawler-api]
+    networks: [internal, egress]
+
+  # TLS и допуск только с IP пограничных узлов сайта
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      CRAWLER_API_HOST: ${CRAWLER_API_HOST:?например crawler-api.weat.media}
+      EDGE_IPS: ${EDGE_IPS:?IP узлов сайта через пробел}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@weat.media}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [crawler-api]
+    networks: [internal, egress]
+
+# redis/postgres — только во внутренней сети без выхода наружу;
+# краулеру нужен egress к источникам и PDS
+networks:
+  internal:
+    internal: true
+  egress: {}
+
+volumes:
+  redis-data:
+  pg-data:
+  caddy-data:

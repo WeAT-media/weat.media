@@ -1,0 +1,173 @@
+import { randomBytes } from 'node:crypto'
+import type { CrawlerAccount, CrawlSource, Repo } from './db.js'
+import { ExtractError, extractArticle, rssLinks } from './extract.js'
+import { FetchError, canonicalUrl, type FetchPage } from './fetcher.js'
+import { PdsError, type Pds } from './pds.js'
+import { ARTICLE_COLLECTION, articleRecord } from './record.js'
+import type { SecretBox } from './secretbox.js'
+
+/** Очередь задач — интерфейс, чтобы логику можно было проверить без Redis */
+export interface JobQueue {
+  addArticle(itemId: string): Promise<void>
+  addSourcePoll(sourceId: string): Promise<void>
+  scheduleSource(source: CrawlSource): Promise<void>
+  unscheduleSource(sourceId: string): Promise<void>
+}
+
+/** ошибка, которую бессмысленно повторять: битая ссылка, внутренний адрес, не статья */
+export class PermanentError extends Error {}
+
+export interface CrawlerDeps {
+  repo: Repo
+  pds: Pds
+  fetchPage: FetchPage
+  secrets: SecretBox
+  queue: JobQueue
+  handleDomain: string
+}
+
+/** Упрощённый «сайт» (eTLD+1): последние две метки хоста без www */
+export function siteOf(host: string): string {
+  const h = host.toLowerCase().replace(/\.$/, '').replace(/^www\./, '')
+  return h.split('.').slice(-2).join('.')
+}
+
+/** Хост относится к тому же сайту, что и эталон (совпадает, поддомен или общий eTLD+1) */
+export function sameSite(host: string, ref: string): boolean {
+  const a = host.toLowerCase().replace(/^www\./, '')
+  const b = ref.toLowerCase().replace(/^www\./, '')
+  return a === b || a.endsWith(`.${b}`) || siteOf(a) === siteOf(b)
+}
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return null
+  }
+}
+
+const ACCOUNT_ID = /^[a-z0-9][a-z0-9-]{1,30}$/
+
+export function createCrawler(d: CrawlerDeps) {
+  const cred = (a: CrawlerAccount) => ({ handle: a.handle, password: d.secrets.open(a.password_enc) })
+
+  return {
+    /** Аккаунт краулера на нашем PDS: crawler-habr-1.indie.media */
+    async createAccount(input: { id: string; site: string; displayName: string }) {
+      if (!ACCOUNT_ID.test(input.id)) throw new PermanentError('id: латиница, цифры и дефис, 2–31 символ')
+      if (await d.repo.accounts.get(input.id)) throw new PermanentError('Краулер с таким id уже есть')
+      const handle = `crawler-${input.id}.${d.handleDomain}`
+      const password = randomBytes(24).toString('base64url')
+      const s = await d.pds.createAccount(handle, `crawler-${input.id}@crawler.${d.handleDomain}`, password)
+      const acc = await d.repo.accounts.insert({
+        id: input.id,
+        handle: s.handle,
+        did: s.did,
+        password_enc: d.secrets.seal(password),
+        display_name: input.displayName,
+        site: input.site,
+      })
+      await d.pds
+        .putProfile(cred(acc), input.displayName, `Краулер Indie.media: переносит статьи с ${input.site} с указанием источника.`)
+        .catch(() => {})
+      return acc
+    },
+
+    /** Поставить ссылку в очередь. Повторная ссылка не публикуется второй раз */
+    async enqueue(input: { url: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null }) {
+      const acc = await d.repo.accounts.get(input.crawlerId)
+      if (!acc) throw new PermanentError('Нет такого краулера')
+      if (!acc.enabled) throw new PermanentError('Краулер выключен')
+      let canonical: string
+      try {
+        canonical = canonicalUrl(input.url)
+        if (!/^https?:$/.test(new URL(canonical).protocol)) throw new Error()
+      } catch {
+        throw new PermanentError('Некорректная ссылка')
+      }
+      const item = await d.repo.items.create({ url: input.url, canonical, crawlerId: acc.id, origin: input.origin, requestedBy: input.requestedBy })
+      if (!item) return { duplicate: true as const, item: (await d.repo.items.byCanonical(canonical))! }
+      await d.queue.addArticle(item.id)
+      return { duplicate: false as const, item }
+    },
+
+    /** Шаг очереди crawl-article: загрузить, извлечь, опубликовать в репозиторий краулера */
+    async processArticle(itemId: string, attempt: number) {
+      const item = await d.repo.items.get(itemId)
+      if (!item) throw new PermanentError('Задача удалена')
+      if (item.status === 'published') return item.at_uri
+      const acc = await d.repo.accounts.get(item.crawler_id)
+      if (!acc) throw new PermanentError('Краулер удалён')
+      await d.repo.items.update(item.id, { status: 'running', attempts: attempt })
+      try {
+        const page = await d.fetchPage(item.url)
+        // редирект на чужой сайт — не публикуем чужое от имени источника
+        const finalHost = hostOf(page.url)
+        if (!finalHost || !sameSite(finalHost, new URL(item.url).hostname)) {
+          throw new ExtractError(`Редирект на другой сайт: ${finalHost ?? page.url}`)
+        }
+        // в записи — чистая ссылка на оригинал (без utm), извлекаем по фактическому адресу после редиректов
+        const article = { ...extractArticle(page.body, page.url), url: item.url_canonical }
+        const { uri } = await d.pds.createRecord(cred(acc), ARTICLE_COLLECTION, articleRecord(article))
+        await d.repo.items.update(item.id, { status: 'published', title: article.title, atUri: uri, attempts: attempt })
+        return uri
+      } catch (err) {
+        const permanent =
+          err instanceof ExtractError ||
+          (err instanceof FetchError && ['BadUrl', 'Blocked', 'BadType', 'TooLarge'].includes(err.code)) ||
+          (err instanceof FetchError && err.code === 'BadStatus' && /ответ 4\d\d/.test(err.message) && !/ответ 429/.test(err.message)) ||
+          (err instanceof PdsError && err.status === 400)
+        const message = err instanceof Error ? err.message : String(err)
+        // статус failed — только для окончательной ошибки; повтор оставляет queued
+        await d.repo.items.update(item.id, { status: permanent ? 'failed' : 'queued', error: message, attempts: attempt })
+        throw permanent ? new PermanentError(message) : err
+      }
+    },
+
+    /** Финал после исчерпания повторов */
+    async markFailed(itemId: string, error: string) {
+      await d.repo.items.update(itemId, { status: 'failed', error })
+    },
+
+    /** Шаг очереди crawl-source: новые ссылки из RSS -> в очередь статей */
+    async pollSource(sourceId: string) {
+      const src = await d.repo.sources.get(sourceId)
+      if (!src || !src.enabled) return { added: 0, seen: 0 }
+      try {
+        const page = await d.fetchPage(src.url)
+        const links = rssLinks(page.body).slice(0, 30)
+        // только ссылки того же сайта, что RSS или сайт аккаунта: лента не может подсунуть чужие страницы
+        const acc = await d.repo.accounts.get(src.crawler_id)
+        const refs = [new URL(src.url).hostname, acc?.site ? (hostOf(acc.site) ?? acc.site) : null].filter((x): x is string => !!x)
+        let added = 0
+        for (const l of links) {
+          const h = hostOf(l.url)
+          if (!h || !refs.some((r) => sameSite(h, r))) continue
+          const r = await this.enqueue({ url: l.url, crawlerId: src.crawler_id, origin: 'source', requestedBy: `source:${src.id}` }).catch(() => null)
+          if (r && !r.duplicate) added++
+        }
+        await d.repo.sources.polled(src.id, null)
+        return { added, seen: links.length }
+      } catch (err) {
+        await d.repo.sources.polled(src.id, err instanceof Error ? err.message : String(err))
+        throw err
+      }
+    },
+
+    async addSource(input: { crawlerId: string; url: string; intervalMin: number }) {
+      if (!(await d.repo.accounts.get(input.crawlerId))) throw new PermanentError('Нет такого краулера')
+      try {
+        if (!/^https?:$/.test(new URL(input.url).protocol)) throw new Error()
+      } catch {
+        throw new PermanentError('Некорректная ссылка на RSS')
+      }
+      const src = await d.repo.sources.insert(input)
+      await d.queue.scheduleSource(src)
+      await d.queue.addSourcePoll(src.id)
+      return src
+    },
+  }
+}
+
+export type Crawler = ReturnType<typeof createCrawler>

@@ -1,0 +1,41 @@
+# Пограничный узел контура: Caddy (TLS, маршрутизация) + собранный SPA.
+# Сборка из корня репозитория:
+#   docker build -f deploy/node/Dockerfile.edge -t indie-edge .
+#
+# Сертификат на общий weat.media выпускается DNS-проверкой (acme-dns): HTTP-проверка
+# Let's Encrypt не дойдёт до РФ-узла — GeoDNS отправит проверяющие серверы в NL.
+
+FROM node:24-alpine AS web
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY index.html vite.config.ts vite.siteVerification.ts tsconfig*.json postcss.config.js tailwind.config.js components.json ./
+COPY public ./public
+COPY src ./src
+# бренд инсталляции (src/config/site.ts) — форк задаёт свой
+ARG VITE_SITE_NAME="weAT.media"
+ARG VITE_HANDLE_DOMAIN=
+ARG VITE_PDS_URL=
+ARG VITE_SITE_URL=
+ARG VITE_SOURCE_URL=
+ENV VITE_SITE_NAME=$VITE_SITE_NAME VITE_HANDLE_DOMAIN=$VITE_HANDLE_DOMAIN VITE_PDS_URL=$VITE_PDS_URL VITE_SITE_URL=$VITE_SITE_URL VITE_SOURCE_URL=$VITE_SOURCE_URL
+# коды подтверждения поисковых кабинетов (meta-теги); пустые — тегов нет
+ARG SITE_VERIFY_GOOGLE=
+ARG SITE_VERIFY_YANDEX=
+ARG SITE_VERIFY_BING=
+RUN SITE_VERIFY_GOOGLE="$SITE_VERIFY_GOOGLE" SITE_VERIFY_YANDEX="$SITE_VERIFY_YANDEX" SITE_VERIFY_BING="$SITE_VERIFY_BING" pnpm exec vite build
+
+FROM caddy:2-builder AS caddy
+# caddy-ratelimit: ограничение частоты на входе (первая линия перед AppView)
+RUN xcaddy build --with github.com/caddy-dns/acmedns --with github.com/mholt/caddy-ratelimit
+
+FROM caddy:2-alpine
+COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
+# не root: порты 80/443 через capability, данные и конфиг — свои
+RUN apk add --no-cache libcap && setcap cap_net_bind_service=+ep /usr/bin/caddy \
+  && addgroup -S -g 1000 caddy && adduser -S -u 1000 -G caddy caddy \
+  && mkdir -p /data /config && chown -R caddy:caddy /data /config
+USER caddy
+COPY --from=web /app/dist /srv
+COPY deploy/node/Caddyfile /etc/caddy/Caddyfile

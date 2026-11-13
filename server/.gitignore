@@ -1,0 +1,34 @@
+# зависимости и сборка
+node_modules
+dist
+dist-ssr
+*.tsbuildinfo
+
+# секреты и локальные настройки — НИКОГДА не коммитить
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+*.pem
+*.key
+
+# данные локального стенда
+server/data
+*.mmdb
+*.sqlite
+*.sqlite-*
+
+# демо-ролик неизвестного происхождения — заменить на свободный (CC0) перед публикацией
+public/demo-video.mp4
+
+# логи и мусор
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.sw?

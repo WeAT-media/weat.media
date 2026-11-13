@@ -1,0 +1,163 @@
+{
+  "lexicon": 1,
+  "id": "media.weat.article",
+  "description": "Статья Indie.media. Хранится в репозитории автора (или краулера, если перенесена из внешнего источника).",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": [
+          "title",
+          "text",
+          "createdAt"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 3000,
+            "maxGraphemes": 300
+          },
+          "subtitle": {
+            "type": "string",
+            "maxLength": 3000,
+            "maxGraphemes": 300
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 200000,
+            "description": "Markdown. У платной статьи — только бесплатный тизер; полный текст по privateContent после проверки доступа"
+          },
+          "excerpt": {
+            "type": "string",
+            "maxLength": 3000,
+            "maxGraphemes": 500
+          },
+          "tags": {
+            "type": "array",
+            "maxLength": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 640,
+              "maxGraphemes": 64
+            }
+          },
+          "langs": {
+            "type": "array",
+            "maxLength": 3,
+            "items": {
+              "type": "string",
+              "format": "language"
+            }
+          },
+          "cover": {
+            "type": "string",
+            "format": "uri"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "source": {
+            "type": "ref",
+            "ref": "#source"
+          },
+          "paywall": {
+            "type": "ref",
+            "ref": "#paywall"
+          },
+          "privateContent": {
+            "type": "ref",
+            "ref": "#privateContent"
+          }
+        }
+      },
+      "description": "Статья. В репозиторий (он публичен) попадает только публичная часть: у платной статьи text — тизер, полный текст лежит в закрытом хранилище площадки (privateContent)."
+    },
+    "source": {
+      "type": "object",
+      "description": "Откуда перенесена статья: оригинал, его автор и время публикации там",
+      "required": [
+        "url",
+        "site"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "site": {
+          "type": "string",
+          "maxLength": 253
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "authorUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "crawledAt": {
+          "type": "string",
+          "format": "datetime"
+        }
+      }
+    },
+    "paywall": {
+      "type": "object",
+      "description": "Условия доступа к полному тексту",
+      "required": [
+        "accessType"
+      ],
+      "properties": {
+        "accessType": {
+          "type": "string",
+          "knownValues": [
+            "one-time",
+            "subscription"
+          ]
+        },
+        "price": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "В минимальных единицах валюты (копейки, центы)"
+        },
+        "currency": {
+          "type": "string",
+          "maxLength": 3,
+          "description": "ISO 4217: RUB, USD, EUR"
+        },
+        "tierId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Тариф подписки автора для accessType=subscription"
+        }
+      }
+    },
+    "privateContent": {
+      "type": "object",
+      "description": "Где лежит закрытая часть: сервис площадки и идентификатор. Сам текст в репозиторий не попадает.",
+      "required": [
+        "service",
+        "id"
+      ],
+      "properties": {
+        "service": {
+          "type": "string",
+          "format": "uri",
+          "description": "Базовый адрес AppView, который выдаёт текст после проверки доступа"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    }
+  }
+}

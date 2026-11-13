@@ -1,0 +1,97 @@
+services:
+  # Локальный стенд физической streaming replication PostgreSQL 16.
+  # Топология повторяет production: RU-1 primary, RU-2 sync standby, NL async standby.
+  # Наружу публикуется только primary и только на loopback (миграции/psql с хоста);
+  # standby доступны исключительно внутри docker-сети repl-net.
+
+  pg-ru1-primary:
+    image: postgres:16-alpine
+    container_name: indie-pg-ru1
+    environment:
+      POSTGRES_USER: ${PG_APP_USER:-indie}
+      POSTGRES_PASSWORD: ${PG_APP_PASSWORD:-indie-local-demo}
+      POSTGRES_DB: ${PG_DB:-indie}
+      REPL_USER: ${REPL_USER:-repl}
+      REPL_PASSWORD: ${REPL_PASSWORD:?задайте REPL_PASSWORD в .env.replication}
+    # wal_level/replication без synchronous_standby_names в command: иначе CREATE DATABASE
+    # при инициализации зависает, ожидая ещё не подключённый sync-standby (deadlock bootstrap'а).
+    # sync-режим включается через ALTER SYSTEM в primary-init (см. ниже).
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - wal_keep_size=256MB
+      - -c
+      - hot_standby=on
+    volumes:
+      - pg-ru1-data:/var/lib/postgresql/data
+      - ./replication/primary-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - 127.0.0.1:5434:5432
+    networks: [repl-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  pg-ru2-standby:
+    image: postgres:16-alpine
+    container_name: indie-pg-ru2
+    environment:
+      PRIMARY_HOST: pg-ru1-primary
+      REPL_USER: ${REPL_USER:-repl}
+      REPL_PASSWORD: ${REPL_PASSWORD:?задайте REPL_PASSWORD в .env.replication}
+      APP_NAME: ru2
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - pg-ru2-data:/var/lib/postgresql/data
+      - ./replication/standby-entrypoint.sh:/standby-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/standby-entrypoint.sh"]
+    depends_on:
+      pg-ru1-primary:
+        condition: service_healthy
+    networks: [repl-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  pg-nl-standby:
+    image: postgres:16-alpine
+    container_name: indie-pg-nl
+    environment:
+      PRIMARY_HOST: pg-ru1-primary
+      REPL_USER: ${REPL_USER:-repl}
+      REPL_PASSWORD: ${REPL_PASSWORD:?задайте REPL_PASSWORD в .env.replication}
+      APP_NAME: nl
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - pg-nl-data:/var/lib/postgresql/data
+      - ./replication/standby-entrypoint.sh:/standby-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/standby-entrypoint.sh"]
+    depends_on:
+      pg-ru1-primary:
+        condition: service_healthy
+    networks: [repl-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+volumes:
+  pg-ru1-data:
+  pg-ru2-data:
+  pg-nl-data:
+
+networks:
+  repl-net:
+    driver: bridge
+    internal: false # standby должны тянуться к primary; хосту контейнеры не видны без ports

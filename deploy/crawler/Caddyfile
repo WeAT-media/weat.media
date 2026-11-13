@@ -1,0 +1,12 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# API краулера: только узлы сайта (их Caddy проксирует /crawler-api/* из админки)
+{$CRAWLER_API_HOST} {
+	@edge remote_ip {$EDGE_IPS}
+	handle @edge {
+		reverse_proxy crawler-api:8788
+	}
+	respond 404
+}

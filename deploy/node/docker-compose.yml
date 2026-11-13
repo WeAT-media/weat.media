@@ -1,0 +1,127 @@
+# Узел контура Indie.media. Четыре узла, один файл — различия только в .env:
+#
+#   контур      узел        NODE_ROLE  база
+#   global      NL-1        primary    свой Postgres (профиль selfhosted-db)
+#   global      Supabase    standby    Supabase (managed), подписка на NL-1
+#   ru          Yandex      primary    Yandex Managed PostgreSQL
+#   ru          RU VPS      standby    свой Postgres, подписка на Yandex
+#
+#   NL-1 / RU VPS:  docker compose --profile selfhosted-db up -d
+#   остальные:      docker compose up -d
+#
+# Краулеры — отдельно (deploy/crawler), вне контуров.
+
+services:
+  edge:
+    image: ${EDGE_IMAGE:-indie-edge:latest}
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    # только то, что нужно Caddy: публичный процесс не должен видеть ключи БД и шифрования
+    environment:
+      CONTOUR: ${CONTOUR}
+      SITE_DOMAINS: ${SITE_DOMAINS}
+      PDS_HOST: ${PDS_HOST}
+      PDS_HANDLE_DOMAIN: ${PDS_HANDLE_DOMAIN}
+      ADMIN_ALLOW_IPS: ${ADMIN_ALLOW_IPS:-127.0.0.1/32}
+      CRAWLER_API_URL: ${CRAWLER_API_URL:-}
+      ACME_EMAIL: ${ACME_EMAIL}
+      ACME_DNS_SERVER: ${ACME_DNS_SERVER}
+      ACME_DNS_USERNAME: ${ACME_DNS_USERNAME}
+      ACME_DNS_PASSWORD: ${ACME_DNS_PASSWORD}
+      ACME_DNS_SUBDOMAIN: ${ACME_DNS_SUBDOMAIN}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [appview, pds]
+
+  appview:
+    image: ${APPVIEW_IMAGE:-indie-appview:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "8787"
+      PDS_URL: http://pds:2583
+      FEED_URL: http://feed:8790
+      # Caddy перед AppView — X-Forwarded-For доверенный
+      TRUST_PROXY: "true"
+    volumes:
+      - ./geoip:/geoip:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8787/api/health"]
+      interval: 15s
+      retries: 5
+
+  # лента (Rust): индекс статей по потоку событий PDS; AppView отдаёт её через /api/feed
+  feed:
+    image: ${FEED_IMAGE:-weat-feed:latest}
+    restart: unless-stopped
+    environment:
+      PORT: "8790"
+      DATABASE_URL: ${FEED_DATABASE_URL}
+      PDS_URL: http://pds:2583
+      # вся сеть ATmosphere: wss://bsky.network (по умолчанию — свой PDS)
+      FIREHOSE_URL: ${FEED_FIREHOSE_URL:-ws://pds:2583}
+    depends_on: [pds]
+
+  # открытая аналитика: дневные агрегаты без IP и cookie; своя БД ANALYTICS_DATABASE_URL
+  analytics:
+    image: ${ANALYTICS_IMAGE:-weat-analytics:latest}
+    restart: unless-stopped
+    environment:
+      PORT: "8789"
+      DATABASE_URL: ${ANALYTICS_DATABASE_URL}
+      VISITOR_SECRET: ${ANALYTICS_VISITOR_SECRET}
+      OWN_HOSTS: ${PDS_HANDLE_DOMAIN}
+      CORS_ORIGIN: https://${PDS_HANDLE_DOMAIN}
+      TRUST_PROXY: "true"
+
+  pds:
+    image: ghcr.io/bluesky-social/pds:0.4
+    restart: unless-stopped
+    env_file: .env.pds
+    environment:
+      PDS_PORT: "2583"
+      PDS_DATA_DIRECTORY: /pds
+      PDS_BLOBSTORE_DISK_LOCATION: /pds/blocks
+      PDS_INVITE_REQUIRED: "true"
+    volumes:
+      - pds-data:/pds
+
+  # Резервная копия PDS (SQLite на пользователя): каждые BACKUP_INTERVAL_SEC
+  # согласованный .backup всех баз + restic в S3 своего контура. На standby — выключен.
+  pds-backup:
+    build: ../pds-backup
+    restart: unless-stopped
+    environment:
+      PDS_DIR: /pds
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      BACKUP_INTERVAL_SEC: ${BACKUP_INTERVAL_SEC:-3600}
+    volumes:
+      # rw: на standby та же служба делает restore (docker compose run --rm pds-backup restore)
+      - pds-data:/pds
+      - pds-backup-cache:/cache
+    profiles: ["primary"]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-indie}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD обязателен}
+      POSTGRES_DB: ${PG_DB:-indie}
+    # логическая репликация между узлами контура
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
+    ports: ["${PG_BIND:-127.0.0.1}:5432:5432"]
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    profiles: ["selfhosted-db"]
+
+volumes:
+  caddy-data:
+  caddy-config:
+  pds-data:
+  pds-backup-cache:
+  pg-data:
