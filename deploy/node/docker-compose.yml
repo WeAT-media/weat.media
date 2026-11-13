@@ -96,10 +96,10 @@ services:
     restart: unless-stopped
     environment:
       PDS_DIR: /pds
-      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY}
-      RESTIC_PASSWORD: ${RESTIC_PASSWORD}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       BACKUP_INTERVAL_SEC: ${BACKUP_INTERVAL_SEC:-3600}
     volumes:
       # rw: на standby та же служба делает restore (docker compose run --rm pds-backup restore)
