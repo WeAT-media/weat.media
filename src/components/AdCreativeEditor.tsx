@@ -11,6 +11,7 @@ import {
   BASE_CPM,
   HIDE_FROM_BOARD_MARKUP,
   PIN_MULTIPLIER,
+  PIN_APPROVAL_LABEL,
   adPrice,
   loadAds,
   needsErid,
@@ -199,9 +200,12 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm font-semibold">Статус
               <select className={inputCls} value={draft.status} onChange={(e) => set({ status: e.target.value as AdStatus })}>
-                {(Object.keys(AD_STATUS_LABEL) as AdStatus[]).map((s) => (
-                  <option key={s} value={s}>{AD_STATUS_LABEL[s]}</option>
-                ))}
+                {/* «Закреплён» ставит только согласие автора поста — вручную не выбрать */}
+                {(Object.keys(AD_STATUS_LABEL) as AdStatus[])
+                  .filter((s) => s !== 'pinned' || draft.status === 'pinned')
+                  .map((s) => (
+                    <option key={s} value={s} disabled={s === 'pinned'}>{AD_STATUS_LABEL[s]}</option>
+                  ))}
               </select>
             </label>
             <label className="flex items-end gap-2 pb-2 text-sm">
@@ -220,7 +224,11 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
               value={draft.pinnedTo?.uri ?? ''}
               onChange={(e) => {
                 const a = pinnable.find((x) => x.atUri === e.target.value)
-                set({ pinnedTo: a ? { uri: a.atUri!, title: a.title } : undefined })
+                // новый пост — новый запрос: согласие автора нужно заново, «Закреплён» снимается до него
+                set({
+                  pinnedTo: a ? { uri: a.atUri!, title: a.title, author: a.author.handle, approval: 'pending' } : undefined,
+                  ...(draft.status === 'pinned' ? { status: 'running' as const } : {}),
+                })
               }}
             >
               <option value="">Не закреплять — показ по гео в любых статьях</option>
@@ -231,8 +239,14 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
             <p className="meta !normal-case tracking-normal">
               Почему ×{PIN_MULTIPLIER}: закрепление пишется в саму запись поста в репозитории автора (PDS). Запись публична,
               её копии расходятся по ретрансляторам и индексам сети — отозвать полностью нельзя. Это бессрочное размещение,
-              а не показ на время. Автор поста подтверждает закрепление.
+              а не показ на время. Поэтому нужно согласие автора: до него креатив в посте не показывается и не
+              оплачивается.
             </p>
+            {draft.pinnedTo && (
+              <p className={`meta !normal-case tracking-normal ${draft.pinnedTo.approval === 'approved' ? 'text-accent' : draft.pinnedTo.approval === 'rejected' ? 'text-destructive' : ''}`}>
+                @{draft.pinnedTo.author}: {PIN_APPROVAL_LABEL[draft.pinnedTo.approval]}
+              </p>
+            )}
           </fieldset>
 
           <div className="rounded-md bg-secondary/60 p-3 text-sm">
@@ -243,6 +257,8 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
             {price.pin !== null && (
               <p className="mt-1">
                 Закрепление за постом: <b>{price.pin.toLocaleString('ru-RU')} ₽</b> разово ({BASE_CPM} ₽ × {PIN_MULTIPLIER})
+                {draft.pinnedTo?.approval !== 'approved' && <span className="text-muted-foreground"> — после согласия автора</span>}
+                <span className="block text-muted-foreground">автору поста — 90% (Premium-автору — 99%), площадке — остальное</span>
               </p>
             )}
             <p className="meta mt-1 !normal-case tracking-normal">демо-кабинет: списаний нет</p>

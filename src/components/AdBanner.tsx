@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Megaphone, Pause, Pin, Play } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { api } from '@/lib/api'
-import { isLive, loadAds, matchesGeo, safeAdImageSrc, type AdCreative } from '@/lib/ads'
+import { isLive, loadAds, matchesGeo, pinLive, safeAdImageSrc, type AdCreative } from '@/lib/ads'
 import { safeHref } from '@/lib/safeUrl'
 
 /** страна гостя по IP — одна на вкладку (у гостя нет страны регистрации) */
@@ -27,7 +27,8 @@ export default function AdBanner({ articleUri }: { articleUri?: string }) {
   const viewer = user ? { residence: user.residenceCountry ?? user.signupCountry, registration: user.signupCountry } : { residence: guestCountry }
   const ad = useMemo(() => {
     const live = loadAds().filter(isLive)
-    const pinned = articleUri ? live.find((a) => a.pinnedTo?.uri === articleUri) : undefined
+    // закреплённый — только с согласия автора; ждущий согласия не показывается нигде
+    const pinned = articleUri ? live.find((a) => pinLive(a) && a.pinnedTo!.uri === articleUri) : undefined
     return pinned ?? live.find((a) => !a.pinnedTo && matchesGeo(a.geo, viewer))
     // viewer — из стора и ответа geo: пересчёт по их значениям
     // eslint-disable-next-line react-hooks/exhaustive-deps

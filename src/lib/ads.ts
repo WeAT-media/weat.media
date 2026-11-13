@@ -11,13 +11,14 @@ export interface AdImage {
   animated: boolean
 }
 
-/** история креатива: идёт, на паузе, продлена (новый срок после окончания), завершена */
-export type AdStatus = 'running' | 'paused' | 'prolonged' | 'finished'
+/** история креатива: идёт, на паузе, продлена (новый срок после окончания), закреплён за постом, завершена */
+export type AdStatus = 'running' | 'paused' | 'prolonged' | 'pinned' | 'finished'
 
 export const AD_STATUS_LABEL: Record<AdStatus, string> = {
   running: 'Идёт',
   paused: 'Пауза',
   prolonged: 'Продлена',
+  pinned: 'Закреплён',
   finished: 'Завершена',
 }
 
@@ -45,10 +46,40 @@ export interface AdCreative {
   geo: AdGeo
   /** скрыть с публичной доски креативов (за доплату HIDE_FROM_BOARD_MARKUP) */
   hiddenFromBoard: boolean
-  /** закреплён за постом: показывается только в нём (PIN_MULTIPLIER × базовой ставки) */
-  pinnedTo?: { uri: string; title: string }
+  /**
+   * Закреплён за постом: показывается только в нём (PIN_MULTIPLIER × базовой ставки). Закрепление пишется
+   * в запись поста в PDS автора и бессрочно — поэтому нужно согласие автора: до него креатив в посте не показан
+   * и не оплачивается.
+   */
+  pinnedTo?: PinRequest
   createdAt: string
 }
+
+/**
+ * Доля автора поста с закрепления — как с продаж (server/src/lava.ts): 90%, у Premium-автора 99%.
+ * Пост — его, и бессрочное место в нём — тоже.
+ */
+export const pinAuthorShare = (premium: boolean) => (premium ? 0.99 : 0.9)
+
+export type PinApproval = 'pending' | 'approved' | 'rejected'
+
+export const PIN_APPROVAL_LABEL: Record<PinApproval, string> = {
+  pending: 'ждёт согласия автора',
+  approved: 'автор согласился',
+  rejected: 'автор отказал',
+}
+
+export interface PinRequest {
+  uri: string
+  title: string
+  /** handle автора поста — он решает */
+  author: string
+  approval: PinApproval
+  decidedAt?: string
+}
+
+/** закреплённый креатив показывается только после согласия автора */
+export const pinLive = (a: AdCreative) => !!a.pinnedTo && a.pinnedTo.approval === 'approved'
 
 /** базовая ставка демо-кабинета, ₽ за 1000 показов */
 export const BASE_CPM = 300
@@ -77,11 +108,31 @@ export function matchesGeo(geo: AdGeo, viewer: { residence?: string; registratio
 export function adPrice(ad: Pick<AdCreative, 'hiddenFromBoard' | 'pinnedTo'>): { cpm: number; pin: number | null } {
   return {
     cpm: Math.round(BASE_CPM * (1 + (ad.hiddenFromBoard ? HIDE_FROM_BOARD_MARKUP : 0))),
-    pin: ad.pinnedTo ? BASE_CPM * PIN_MULTIPLIER : null,
+    // без согласия автора не списываем
+    pin: ad.pinnedTo && ad.pinnedTo.approval !== 'rejected' ? BASE_CPM * PIN_MULTIPLIER : null,
   }
 }
 
-export const isLive = (a: AdCreative) => a.status === 'running' || a.status === 'prolonged'
+export const isLive = (a: AdCreative) => a.status === 'running' || a.status === 'prolonged' || a.status === 'pinned'
+
+/** порядок статусов в фильтрах */
+export const AD_STATUSES: AdStatus[] = ['running', 'paused', 'prolonged', 'pinned', 'finished']
+
+/**
+ * Решение автора поста. Согласие — креатив «Закреплён» и показывается в посте; отказ — закрепление снимается,
+ * креатив возвращается к обычным показам по гео.
+ */
+export function decidePin(list: AdCreative[], id: string, approve: boolean, now = new Date()): AdCreative[] {
+  return list.map((a) =>
+    a.id === id && a.pinnedTo
+      ? {
+          ...a,
+          status: approve ? 'pinned' : a.status === 'pinned' ? 'running' : a.status,
+          pinnedTo: { ...a.pinnedTo, approval: approve ? 'approved' : 'rejected', decidedAt: now.toISOString() },
+        }
+      : a,
+  )
+}
 
 /** старый формат (active: boolean, erid обязателен) → новый */
 function normalize(a: AdCreative & { active?: boolean }): AdCreative {
@@ -91,6 +142,8 @@ function normalize(a: AdCreative & { active?: boolean }): AdCreative {
     geo: a.geo ?? { residence: [], registration: [] },
     hiddenFromBoard: a.hiddenFromBoard ?? false,
     createdAt: a.createdAt ?? new Date(0).toISOString(),
+    // закрепления до введения согласия — без автора: считаем, что согласия ещё нет
+    ...(a.pinnedTo ? { pinnedTo: { ...a.pinnedTo, author: a.pinnedTo.author ?? '', approval: a.pinnedTo.approval ?? 'pending' } } : {}),
   }
 }
 

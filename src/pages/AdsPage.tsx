@@ -16,7 +16,7 @@ import Reveal from '@/components/Reveal'
 import AdCreativeEditor from '@/components/AdCreativeEditor'
 import { AdView } from '@/components/AdBanner'
 import { countryLabel } from '@/lib/api'
-import { AD_STATUS_LABEL, loadAds, matchesGeo, needsErid, type AdCreative, type AdStatus } from '@/lib/ads'
+import { AD_STATUSES, AD_STATUS_LABEL, PIN_APPROVAL_LABEL, loadAds, matchesGeo, needsErid, type AdCreative, type AdStatus } from '@/lib/ads'
 import CountrySelect from '@/components/CountrySelect'
 
 const ctrSeries = [
@@ -61,6 +61,7 @@ export default function AdsPage() {
   const history = [...ads].filter((a) => filter === 'all' || a.status === filter).sort((x, y) => y.createdAt.localeCompare(x.createdAt))
   // доска видна всем: креативы, кроме скрытых за доплату. Фильтр — «что увидит читатель из этих стран»:
   // сначала нацеленные именно на них, потом показы на все страны
+  const [boardStatus, setBoardStatus] = useState<AdStatus | 'all'>('all')
   const [boardResidence, setBoardResidence] = useState<string[]>([])
   const [boardRegistration, setBoardRegistration] = useState<string[]>([])
   const viewer = { residence: boardResidence[0], registration: boardRegistration[0] }
@@ -68,6 +69,7 @@ export default function AdsPage() {
     (!!viewer.residence && a.geo.residence.includes(viewer.residence)) || (!!viewer.registration && a.geo.registration.includes(viewer.registration))
   const board = ads
     .filter((a) => !a.hiddenFromBoard)
+    .filter((a) => boardStatus === 'all' || a.status === boardStatus)
     .filter((a) => (!viewer.residence && !viewer.registration) || matchesGeo(a.geo, viewer))
     .sort((x, y) => Number(targeted(y)) - Number(targeted(x)))
 
@@ -193,7 +195,7 @@ export default function AdsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-extrabold tracking-tight">История креативов</h2>
           <div role="group" aria-label="Статус" className="flex flex-wrap rounded-full border border-border bg-secondary/60 p-0.5">
-            {(['all', 'running', 'paused', 'prolonged', 'finished'] as const).map((s) => (
+            {(['all', ...AD_STATUSES] as const).map((s) => (
               <button
                 key={s}
                 type="button"
@@ -218,7 +220,7 @@ export default function AdsPage() {
                   <span className="font-semibold">{a.title || 'без названия'}</span>
                   <span className="meta ml-2 !normal-case tracking-normal">
                     {a.advertiser} · {geoSummary(a)}
-                    {a.pinnedTo && <> · <Pin size={10} className="inline" aria-hidden="true" /> {a.pinnedTo.title}</>}
+                    {a.pinnedTo && <> · <Pin size={10} className="inline" aria-hidden="true" /> {a.pinnedTo.title} ({PIN_APPROVAL_LABEL[a.pinnedTo.approval]})</>}
                     {a.hiddenFromBoard && <> · <EyeOff size={10} className="inline" aria-hidden="true" /> скрыт с доски</>}
                   </span>
                 </span>
@@ -239,6 +241,21 @@ export default function AdsPage() {
           Видна всем: кто и что рекламирует на площадке. Креатив можно скрыть с доски за доплату — в статьях он
           показывается как обычно.
         </p>
+        <div role="group" aria-label="Статус на доске" className="mt-4 flex w-fit flex-wrap rounded-full border border-border bg-secondary/60 p-0.5">
+          {(['all', ...AD_STATUSES] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={boardStatus === s}
+              onClick={() => setBoardStatus(s)}
+              className={`cursor-pointer rounded-full px-3 py-1 font-mono text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                boardStatus === s ? 'bg-primary text-primary-foreground' : 'text-foreground hover:text-accent'
+              }`}
+            >
+              {s === 'all' ? 'Все' : AD_STATUS_LABEL[s]}
+            </button>
+          ))}
+        </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="grid gap-1 text-sm">
             Читатель живёт в
