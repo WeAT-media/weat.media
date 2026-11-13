@@ -28,6 +28,7 @@ import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
 import { ImportDraftDto, ImportStatusBody } from './imports.js'
 import { MailMessageDto, MailSummaryDto, SendMailBody } from './mailbox.js'
+import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutRequestBody, SaleDto } from './payouts.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
 import { DirectMessageBody, MessageBody, TicketBody, TicketDto, TicketPatch } from './tickets.js'
@@ -268,6 +269,8 @@ const ops: Op[] = [
     query: { status: { description: 'pending | approved | rejected | transferred' } },
     ok: { status: 200, description: 'Заявки с заявителем' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden — нужна роль support']],
   },
+  { method: 'get', path: '/admin/payouts', tag: 'admin', summary: 'Заявки на выплату', auth: 'staff', query: { status: { description: 'requested | paid | rejected' } }, ok: { status: 200, schema: z.array(AdminPayoutDto), description: 'Старые сверху' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden']] },
+  { method: 'patch', path: '/admin/payouts/{id}', tag: 'admin', summary: 'Отметить выплату или отклонить', auth: 'staff', description: 'Отказ — с причиной (note), её видит автор; сумма снова доступна.', body: PayoutDecisionBody, ok: { status: 200, schema: AdminPayoutDto, description: 'Решение' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']] },
   // ── почта площадки: support@ — support и admin; legal@, noreply@ — admin
   { method: 'get', path: '/admin/mail/boxes', tag: 'admin', summary: 'Доступные сотруднику ящики', auth: 'staff', ok: { status: 200, schema: z.object({ boxes: z.array(z.enum(['support', 'legal', 'noreply'])) }), description: 'Ящики по ролям' }, errors: [[401, 'AuthenticationRequired']] },
   {
@@ -463,6 +466,19 @@ const ops: Op[] = [
   {
     method: 'post', path: '/me/tickets/{id}/messages', tag: 'profile', summary: 'Ответить в обращение', auth: 'bearer',
     description: 'Возвращает обращение в работу.', body: MessageBody, ok: { status: 201, description: 'Обращение с перепиской' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
+  },
+  // ── выплаты автору (продажи lava.top)
+  {
+    method: 'get', path: '/me/earnings', tag: 'paid', summary: 'Баланс, продажи и заявки на выплату', auth: 'bearer',
+    description: 'Суммы — в минимальных единицах валюты. Оплаченное за последние holdDays дней ещё не доступно к выводу.',
+    ok: { status: 200, schema: z.object({ holdDays: z.number().int(), balances: z.array(BalanceDto), sales: z.array(SaleDto), payouts: z.array(PayoutDto) }), description: 'По валютам' },
+    errors: [[401, 'AuthenticationRequired']],
+  },
+  {
+    method: 'post', path: '/me/payouts', tag: 'paid', summary: 'Заявка на выплату всей доступной суммы', auth: 'bearer',
+    description: 'Реквизиты хранятся зашифрованными; в ответах — только последние 4 символа.',
+    body: PayoutRequestBody, ok: { status: 201, schema: PayoutDto, description: 'Заявка создана, сумма зарезервирована' },
+    errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [409, 'BelowMinimum | BalanceChanged']],
   },
   // ── импорт из AT-аккаунта
   {

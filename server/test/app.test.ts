@@ -18,6 +18,7 @@ import type { MessageRow, TicketRepo, TicketRow } from '../src/tickets.ts'
 import type { AtprotoAuth } from '../src/atprotoOAuth.ts'
 import type { ImportDraftRow, ImportRepo, PostSource } from '../src/imports.ts'
 import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
+import type { PayoutRepo, PayoutRow } from '../src/payouts.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
@@ -128,6 +129,46 @@ function memMail(): MailboxClient {
     async send(box, m) {
       mailSent.push({ box, to: m.to, subject: m.subject, inReplyTo: m.inReplyTo })
       return { messageId: '<sent@weat.media>' }
+    },
+  }
+}
+
+/** оплаченные продажи для выплат: тест кладёт их сюда напрямую */
+let paidSales: { author: string; share: number; currency: string; paidAt: Date; title: string }[] = []
+function memPayouts(): PayoutRepo {
+  const rows: PayoutRow[] = []
+  const balances: PayoutRepo['balances'] = async (did, holdDays) => {
+    const cur = new Set([...paidSales.filter((x) => x.author === did).map((x) => x.currency), ...rows.filter((x) => x.author_did === did).map((x) => x.currency)])
+    const since = Date.now() - holdDays * 86_400_000
+    return [...cur].sort().map((currency) => {
+      const mine = paidSales.filter((x) => x.author === did && x.currency === currency)
+      const earned = mine.reduce((a, x) => a + x.share, 0)
+      const pending = mine.filter((x) => +x.paidAt > since).reduce((a, x) => a + x.share, 0)
+      const po = rows.filter((x) => x.author_did === did && x.currency === currency)
+      const reserved = po.filter((x) => x.status === 'requested').reduce((a, x) => a + x.amount, 0)
+      const paidOut = po.filter((x) => x.status === 'paid').reduce((a, x) => a + x.amount, 0)
+      return { currency, earned, pending, reserved, paidOut, available: Math.max(0, earned - pending - reserved - paidOut) }
+    })
+  }
+  return {
+    balances,
+    async sales(did) {
+      return paidSales.filter((x) => x.author === did).map((x, i) => ({ orderId: `ord_${i}`, title: x.title, amount: x.share * 2, authorShare: x.share, currency: x.currency, paidAt: x.paidAt }))
+    },
+    async list(did) { return rows.filter((x) => x.author_did === did) },
+    async request(p, holdDays) {
+      const b = (await balances(p.author_did, holdDays)).find((x) => x.currency === p.currency)
+      if (!b || b.available < p.amount) return null
+      const row: PayoutRow = { ...p, status: 'requested', staff_note: null, decided_by: null, created_at: new Date(), decided_at: null }
+      rows.push(row)
+      return row
+    },
+    async queue(status) { return rows.filter((x) => !status || x.status === status) },
+    async get(id) { return rows.find((x) => x.id === id) },
+    async decide(id, status, by, note) {
+      const r = rows.find((x) => x.id === id && x.status === 'requested')
+      if (r) Object.assign(r, { status, decided_by: by, staff_note: note, decided_at: new Date() })
+      return r
     },
   }
 }
@@ -617,6 +658,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     sessions: memSessions(),
     imports: memImports(),
     mail: memMail(),
+    payouts: memPayouts(),
     postSource: fakePostSource,
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
@@ -906,6 +948,47 @@ test('admin mail: support sees support@ only, admin sees all; read/reply audited
   assert.equal((await app.request('/api/admin/mail/noreply/send', { method: 'POST', headers: admin, body: JSON.stringify({ to: 'a@b.co', subject: 'x', text: 'y' }) })).status, 400)
   const actions = auditLog.map((e) => e.action)
   assert.ok(actions.includes('mail.read') && actions.includes('mail.reply') && actions.includes('mail.attachment'))
+})
+
+test('payouts: balance from paid sales with hold, request reserves all available, admin decides', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'writer', email: 'writer@example.com' }, '5.1.1.1'))).json()
+  const auth = { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }
+  const old = new Date(Date.now() - 30 * 86_400_000)
+  paidSales = [
+    { author: u.user.did, share: 90_000, currency: 'RUB', paidAt: old, title: 'Старая' },
+    { author: u.user.did, share: 45_000, currency: 'RUB', paidAt: new Date(), title: 'Свежая' },
+    { author: 'did:plc:other', share: 999_999, currency: 'RUB', paidAt: old, title: 'Чужая' },
+  ]
+  assert.equal((await app.request('/api/me/earnings')).status, 401)
+  const e = await (await app.request('/api/me/earnings', { headers: auth })).json()
+  assert.deepEqual(e.balances, [{ currency: 'RUB', earned: 135_000, pending: 45_000, reserved: 0, paidOut: 0, available: 90_000, minPayout: 100_000 }])
+  assert.equal(e.sales.length, 2)
+
+  const ask = (b: unknown) => app.request('/api/me/payouts', { method: 'POST', headers: auth, body: JSON.stringify(b) })
+  assert.equal((await ask({ currency: 'RUB', method: 'fiat', destination: '4242 4242 4242 4242' })).status, 409, 'меньше минимума 1000 ₽')
+  paidSales.push({ author: u.user.did, share: 20_000, currency: 'RUB', paidAt: old, title: 'Ещё' })
+  assert.equal((await ask({ currency: 'RUB', method: 'fiat', destination: 'short' })).status, 400)
+  const po = await (await ask({ currency: 'RUB', method: 'fiat', destination: '4242 4242 4242 4242' })).json()
+  assert.equal(po.amount, 110_000)
+  assert.equal(po.destinationHint, '•••• 4242')
+  assert.equal(po.destination, undefined, 'автору реквизиты целиком не возвращаем')
+  const after = await (await app.request('/api/me/earnings', { headers: auth })).json()
+  assert.equal(after.balances[0].available, 0)
+  assert.equal(after.balances[0].reserved, 110_000)
+
+  const support = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }
+  assert.equal((await app.request('/api/admin/payouts', { headers: support })).status, 403)
+  const q = await (await app.request('/api/admin/payouts?status=requested', { headers: admin })).json()
+  assert.equal(q[0].destination, '4242 4242 4242 4242')
+  const decide = (b: unknown) => app.request(`/api/admin/payouts/${po.id}`, { method: 'PATCH', headers: admin, body: JSON.stringify(b) })
+  assert.equal((await decide({ status: 'rejected' })).status, 400, 'отказ — с причиной')
+  assert.equal((await (await decide({ status: 'rejected', note: 'Неверная карта' })).json()).status, 'rejected')
+  assert.equal((await decide({ status: 'paid' })).status, 404, 'рассмотренную не меняем')
+  const back = await (await app.request('/api/me/earnings', { headers: auth })).json()
+  assert.equal(back.balances[0].available, 110_000, 'отклонённая сумма снова доступна')
+  assert.equal(back.payouts[0].staffNote, 'Неверная карта')
 })
 
 test('atproto: ru contour never registers', async () => {

@@ -121,6 +121,7 @@ export default function AdminUsersPage() {
         <div className="flex gap-2">
           <Link to="/admin/tickets" className="btn-ghost !px-3 !py-2 !text-[11px]">Обращения</Link>
           <Link to="/admin/email" className="btn-ghost !px-3 !py-2 !text-[11px]">Почта</Link>
+          <Link to="/admin/payouts" className="btn-ghost !px-3 !py-2 !text-[11px]">Выплаты</Link>
           <Link to="/admin/claims" className="btn-ghost !px-3 !py-2 !text-[11px]">Заявки на авторство</Link>
         </div>
       </div>

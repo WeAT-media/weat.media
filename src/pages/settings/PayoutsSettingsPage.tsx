@@ -1,9 +1,10 @@
 import FeeNote from '@/components/FeeNote'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Archive, ArchiveRestore, ArrowLeft, BadgeCheck, Clock3, Landmark, Pencil, Plus, Trash2, TrendingUp, Unplug, Wallet } from 'lucide-react'
 import { useStore } from '@/lib/store'
-import { formatMoney } from '@/lib/money'
+import { formatMoney, type Currency } from '@/lib/money'
+import { payouts as payoutsApi, type Earnings } from '@/lib/api'
 import Reveal from '@/components/Reveal'
 import {
   Dialog,
@@ -17,25 +18,10 @@ import type { SubscriptionTier } from '@/types/types'
 const tierField =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
-const fmtRub = (n: number) => `${n.toLocaleString('ru-RU')} ₽`
-
-/** Демо-баланс автора: фиксированные суммы, никакого реального биллинга */
-const DEMO_BALANCE = {
-  available: 12_340,
-  pending: 2_180,
-  total: 47_915,
-}
-
-/** Демо-операции: источник и доля автора (90% разовые продажи, 99% Premium-подписка) */
-const DEMO_OPERATIONS: { label: string; detail: string; gross: number; net: number; at: string }[] = [
-  { label: 'Продажа статьи «Firehose без магии»', detail: 'разовая покупка · автору 90%', gross: 490, net: 441, at: '2026-11-11' },
-  { label: 'Подписка «Подписчик» · @alina-v.bsky.social', detail: 'premium-подписка · автору 99%', gross: 299, net: 296, at: '2026-11-10' },
-  { label: 'Продажа видео «AppView, который не падает»', detail: 'разовая покупка · автору 90%', gross: 990, net: 891, at: '2026-11-08' },
-  { label: 'Подписка «Патрон» · @loschin.io', detail: 'premium-подписка · автору 99%', gross: 999, net: 989, at: '2026-11-05' },
-]
-
-/** Демо-оценка эквивалента (₽ за единицу актива): не курс и не обещание обмена */
-const DEMO_RATES: Record<string, number> = { USDT: 92, TON: 540, BTC: 9_100_000, ETH: 310_000 }
+/** суммы с сервера — в минимальных единицах валюты */
+const money = (minor: number, currency: Currency) => formatMoney(minor / 100, currency)
+const when = (iso: string) => new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+const PAYOUT_STATUS: Record<Earnings['payouts'][number]['status'], string> = { requested: 'на рассмотрении', paid: 'выплачено', rejected: 'отклонено' }
 
 const PAYOUT_COUNTRIES: { code: string; label: string }[] = [
   { code: 'RU', label: 'Россия' },
@@ -61,7 +47,7 @@ const ADDRESS_HINTS: Record<string, string> = {
   Bitcoin: '26–62 символа, начинается с 1/3/bc1',
 }
 
-/** Базовая демо-валидация публичного адреса по сети (без контрольных сумм) */
+/** Базовая проверка публичного адреса по сети (без контрольных сумм) */
 function validateCryptoAddress(network: string, address: string): boolean {
   const a = address.trim()
   switch (network) {
@@ -79,8 +65,8 @@ function validateCryptoAddress(network: string, address: string): boolean {
 }
 
 /**
- * Подключение выплат — локальный демо-мок: реквизиты «сохраняются» в localStorage-флаг,
- * никаких платёжных провайдеров и списаний.
+ * Выплаты автору: баланс и продажи — с сервера (заказы lava.top), вывод — заявка, которую
+ * проводит площадка. Реквизиты для заявки хранятся на сервере зашифрованными.
  */
 export default function PayoutsSettingsPage() {
   const {
@@ -90,8 +76,17 @@ export default function PayoutsSettingsPage() {
   const [searchParams] = useSearchParams()
   const rawReturnTo = searchParams.get('returnTo')
   const returnTo = rawReturnTo && rawReturnTo.startsWith('/') ? rawReturnTo : null
-  const [provider, setProvider] = useState('demo-bank')
   const [account, setAccount] = useState('')
+  const [earnings, setEarnings] = useState<Earnings | null>(null)
+  const [earningsError, setEarningsError] = useState('')
+  const [withdraw, setWithdraw] = useState<{ currency: Currency; destination: string } | null>(null)
+  const [withdrawError, setWithdrawError] = useState('')
+  const [withdrawBusy, setWithdrawBusy] = useState(false)
+  const loadEarnings = () =>
+    payoutsApi.earnings().then(setEarnings, (e: Error) => setEarningsError(e.message))
+  useEffect(() => {
+    void loadEarnings()
+  }, [])
   const [error, setError] = useState('')
   const [networkConfirmed, setNetworkConfirmed] = useState(false)
   const isRu = payoutCountry === 'RU'
@@ -121,7 +116,7 @@ export default function PayoutsSettingsPage() {
     e.preventDefault()
     if (effectiveMethod === 'fiat') {
       if (account.trim().length < 8) {
-        setError('Укажите реквизиты — минимум 8 символов (в демо проверка формальная).')
+        setError('Укажите реквизиты — минимум 8 символов.')
         return
       }
     } else {
@@ -146,7 +141,6 @@ export default function PayoutsSettingsPage() {
   const [tierPrice, setTierPrice] = useState('')
   const [tierDesc, setTierDesc] = useState('')
   const [tierError, setTierError] = useState('')
-  const [withdrawOpen, setWithdrawOpen] = useState(false)
 
   const submitTier = (e: FormEvent) => {
     e.preventDefault()
@@ -187,7 +181,7 @@ export default function PayoutsSettingsPage() {
         <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Выплаты</h2>
         <p className="mt-3 max-w-[58ch] text-sm leading-relaxed text-muted-foreground">
           Платные публикации доступны автору только после подключения выплат: 90%* каждой продажи (у Premium-автора —
-          99%*) уходит на эти реквизиты. Демо-прототип: подключение — это локальная отметка, платежей и провайдеров нет.
+          99%*) уходит на эти реквизиты. Читатели платят через lava.top, выплаты по заявке проводит площадка.
         </p>
         <FeeNote className="mt-1" />
 
@@ -198,7 +192,7 @@ export default function PayoutsSettingsPage() {
               Выплаты подключены
               {effectiveMethod === 'crypto'
                 ? ` · крипта: ${payoutAsset} (${payoutNetwork}), ${cryptoAddress.slice(0, 6)}…`
-                : ` · фиат${account ? `, ${provider}, ${account.slice(0, 4)}…` : ''}`}
+                : ` · фиат${account ? `, •••• ${account.replace(/\s+/g, '').slice(-4)}` : ''}`}
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               {returnTo && (
@@ -297,7 +291,7 @@ export default function PayoutsSettingsPage() {
               ) : (
                 effectiveMethod === 'crypto' && (
                   <p className="meta mt-2 !normal-case tracking-normal text-muted-foreground">
-                    демо: мы никогда не просим seed-фразу или приватные ключи — нужен только публичный адрес.
+                    мы никогда не просим seed-фразу или приватные ключи — нужен только публичный адрес.
                     Никогда не вводите их ни на этой, ни на любой другой странице
                   </p>
                 )
@@ -307,19 +301,6 @@ export default function PayoutsSettingsPage() {
             {effectiveMethod === 'fiat' ? (
               <>
                 <div>
-                  <label htmlFor="payout-provider" className="meta">Провайдер (демо)</label>
-                  <select
-                    id="payout-provider"
-                    value={provider}
-                    onChange={(e) => setProvider(e.target.value)}
-                    className="mt-2 w-full cursor-pointer rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="demo-bank">Демо-банк</option>
-                    <option value="yookassa-demo">ЮKassa (демо)</option>
-                    <option value="sbp-demo">СБП (демо)</option>
-                  </select>
-                </div>
-                <div>
                   <label htmlFor="payout-account" className="meta">Реквизиты</label>
                   <input
                     id="payout-account"
@@ -328,7 +309,7 @@ export default function PayoutsSettingsPage() {
                       setAccount(e.target.value)
                       if (error) setError('')
                     }}
-                    placeholder="Карта или счёт — никуда не отправляется"
+                    placeholder="Номер карты, счёт или IBAN"
                     className="mt-2 w-full rounded-md border border-input bg-background px-4 py-2.5 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                 </div>
@@ -411,97 +392,142 @@ export default function PayoutsSettingsPage() {
         )}
       </section>
 
-      {/* Баланс автора — демо-суммы, виден и при отключённом провайдере;
-          вывод средств недоступен до подключения выплат и не имитирует транзакцию */}
+      {/* Баланс автора — по реальным продажам; вывод — заявка на всю доступную сумму валюты */}
       <section aria-label="Баланс автора" className="rule mt-10 pt-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Баланс</h2>
-          <p className="meta">
-            обновлено {new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · демо, не банк
-          </p>
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {(
-            [
-              { label: 'Доступно к выводу', value: DEMO_BALANCE.available, icon: Wallet },
-              { label: 'Ожидает зачисления', value: DEMO_BALANCE.pending, icon: Clock3 },
-              { label: 'Всего заработано', value: DEMO_BALANCE.total, icon: TrendingUp },
-            ] as const
-          ).map((s) => (
-            <div key={s.label} className="border border-border bg-secondary/40 p-4">
-              <p className="flex items-center gap-2.5 text-xl font-extrabold tracking-tight">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent" aria-hidden="true">
-                  <s.icon size={14} />
-                </span>
-                {fmtRub(s.value)}
-              </p>
-              <p className="meta mt-1.5">{s.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {!isRu && payoutMethod === 'crypto' && (
-          <p className="meta mt-3 !normal-case tracking-normal text-muted-foreground">
-            демо-эквивалент доступного: ≈{' '}
-            {(DEMO_BALANCE.available / (DEMO_RATES[payoutAsset] ?? 1)).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}{' '}
-            {payoutAsset} — ориентировочная оценка без точного курса; это не предложение обмена и не котировка
-          </p>
+        <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Баланс</h2>
+        {earningsError && <p role="alert" className="mt-4 text-sm text-destructive">{earningsError}</p>}
+        {!earnings && !earningsError && <p className="mt-4 text-sm text-muted-foreground">Загружаем…</p>}
+        {earnings && earnings.balances.length === 0 && (
+          <p className="mt-4 text-sm text-muted-foreground">Продаж пока нет. Здесь появятся деньги за платные статьи.</p>
         )}
+        {earnings?.balances.map((b) => (
+          <div key={b.currency} className="mt-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {(
+                [
+                  { label: 'Доступно к выводу', value: b.available, icon: Wallet },
+                  { label: `Ожидает · ${earnings.holdDays} дней после оплаты`, value: b.pending + b.reserved, icon: Clock3 },
+                  { label: 'Всего заработано', value: b.earned, icon: TrendingUp },
+                ] as const
+              ).map((s) => (
+                <div key={s.label} className="border border-border bg-secondary/40 p-4">
+                  <p className="flex items-center gap-2.5 text-xl font-extrabold tracking-tight">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent" aria-hidden="true">
+                      <s.icon size={14} />
+                    </span>
+                    {money(s.value, b.currency)}
+                  </p>
+                  <p className="meta mt-1.5">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4">
+              <button
+                type="button"
+                disabled={!payoutConnected || b.available < b.minPayout}
+                onClick={() => {
+                  setWithdrawError('')
+                  setWithdraw({ currency: b.currency, destination: effectiveMethod === 'crypto' ? `${payoutAsset} ${payoutNetwork} ${cryptoAddress}` : account })
+                }}
+                className="btn-primary !px-4 !py-2 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Wallet size={13} aria-hidden="true" /> Вывести {money(b.available, b.currency)}
+              </button>
+              <p className="meta mt-2 !normal-case tracking-normal text-muted-foreground">
+                {!payoutConnected
+                  ? 'вывод недоступен: подключите выплаты выше — баланс при этом сохраняется'
+                  : b.available < b.minPayout
+                    ? `минимальная выплата — ${money(b.minPayout, b.currency)}`
+                    : 'заявку проверит и проведёт площадка; сумма резервируется сразу'}
+              </p>
+            </div>
+          </div>
+        ))}
 
-        <div className="mt-4">
-          <button
-            type="button"
-            disabled={!payoutConnected}
-            onClick={() => setWithdrawOpen(true)}
-            className="btn-primary !px-4 !py-2 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Wallet size={13} aria-hidden="true" /> Вывести {fmtRub(DEMO_BALANCE.available)}
-          </button>
-          {!payoutConnected && (
-            <p className="meta mt-2 !normal-case tracking-normal text-muted-foreground">
-              вывод недоступен: провайдер выплат отключён — подключите выплаты выше, баланс при этом сохраняется
-            </p>
-          )}
-        </div>
-
-        <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+        <Dialog open={!!withdraw} onOpenChange={(o) => !o && setWithdraw(null)}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Вывод средств (демо)</DialogTitle>
+              <DialogTitle>Заявка на выплату</DialogTitle>
               <DialogDescription>
-                Это прототип: реальной транзакции не происходит, деньги никуда не уходят. В боевой версии здесь
-                был бы вывод {fmtRub(DEMO_BALANCE.available)} на подключённые реквизиты.
+                Выплатим всю доступную сумму на эти реквизиты. Проверьте их: перевод на неверные реквизиты не вернуть.
               </DialogDescription>
             </DialogHeader>
-            <button type="button" onClick={() => setWithdrawOpen(false)} className="btn-primary !px-4 !py-2">
-              Понятно
-            </button>
+            {withdraw && (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  setWithdrawBusy(true)
+                  setWithdrawError('')
+                  try {
+                    await payoutsApi.request({ currency: withdraw.currency, method: effectiveMethod, destination: withdraw.destination })
+                    setWithdraw(null)
+                    await loadEarnings()
+                  } catch (err) {
+                    setWithdrawError(err instanceof Error ? err.message : 'Не удалось создать заявку')
+                  } finally {
+                    setWithdrawBusy(false)
+                  }
+                }}
+                className="space-y-3"
+              >
+                <label htmlFor="withdraw-dest" className="meta">{effectiveMethod === 'crypto' ? 'Актив, сеть и адрес' : 'Карта, счёт или IBAN'}</label>
+                <input
+                  id="withdraw-dest"
+                  required
+                  minLength={8}
+                  value={withdraw.destination}
+                  onChange={(e) => setWithdraw({ ...withdraw, destination: e.target.value })}
+                  className={tierField}
+                />
+                {withdrawError && <p className="text-sm text-destructive">{withdrawError}</p>}
+                <button type="submit" disabled={withdrawBusy} className="btn-primary !px-4 !py-2">
+                  {withdrawBusy ? 'Отправляем…' : 'Отправить заявку'}
+                </button>
+              </form>
+            )}
           </DialogContent>
         </Dialog>
 
-        <div className="mt-6">
-          <p className="meta mb-2">Последние начисления</p>
-          <ul className="space-y-2">
-            {DEMO_OPERATIONS.map((op) => (
-              <li
-                key={`${op.label}-${op.at}`}
-                className="flex flex-wrap items-center justify-between gap-2 border border-border bg-background px-4 py-2.5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{op.label}</p>
-                  <p className="meta !normal-case tracking-normal text-muted-foreground">
-                    {op.at} · {op.detail}
+        {earnings && earnings.payouts.length > 0 && (
+          <div className="mt-6">
+            <p className="meta mb-2">Заявки на выплату</p>
+            <ul className="space-y-2">
+              {earnings.payouts.map((p) => (
+                <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 border border-border bg-background px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      {money(p.amount, p.currency)} · {p.destinationHint}
+                    </p>
+                    <p className="meta !normal-case tracking-normal text-muted-foreground">
+                      {when(p.createdAt)} · {PAYOUT_STATUS[p.status]}
+                      {p.staffNote && ` — ${p.staffNote}`}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {earnings && earnings.sales.length > 0 && (
+          <div className="mt-6">
+            <p className="meta mb-2">Последние продажи</p>
+            <ul className="space-y-2">
+              {earnings.sales.map((op) => (
+                <li key={op.orderId} className="flex flex-wrap items-center justify-between gap-2 border border-border bg-background px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{op.title}</p>
+                    <p className="meta !normal-case tracking-normal text-muted-foreground">{when(op.paidAt)} · покупка статьи</p>
+                  </div>
+                  <p className="font-mono text-sm font-semibold">
+                    +{money(op.authorShare, op.currency)}* <span className="meta text-muted-foreground">из {money(op.amount, op.currency)}</span>
                   </p>
-                </div>
-                <p className="font-mono text-sm font-semibold">
-                  +{fmtRub(op.net)}* <span className="meta text-muted-foreground">из {fmtRub(op.gross)}</span>
-                </p>
-              </li>
-            ))}
-          </ul>
-          <FeeNote className="mt-2" />
-        </div>
+                </li>
+              ))}
+            </ul>
+            <FeeNote className="mt-2" />
+          </div>
+        )}
       </section>
 
       {/* Тарифные уровни месячной подписки — локальный демо-CRUD */}

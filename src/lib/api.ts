@@ -344,6 +344,19 @@ export interface ImportDraft {
   articleUri: string | null
 }
 
+/** Выплаты автору: суммы — в минимальных единицах валюты (копейки, центы) */
+export interface Earnings {
+  holdDays: number
+  balances: { currency: 'RUB' | 'USD' | 'EUR'; earned: number; pending: number; reserved: number; paidOut: number; available: number; minPayout: number }[]
+  sales: { orderId: string; title: string; amount: number; authorShare: number; currency: 'RUB' | 'USD' | 'EUR'; paidAt: string }[]
+  payouts: { id: string; amount: number; currency: 'RUB' | 'USD' | 'EUR'; method: 'fiat' | 'crypto'; destinationHint: string; status: 'requested' | 'paid' | 'rejected'; staffNote: string | null; createdAt: string; decidedAt: string | null }[]
+}
+
+export const payouts = {
+  earnings: () => authed<Earnings>('/me/earnings'),
+  request: (b: { currency: 'RUB' | 'USD' | 'EUR'; method: 'fiat' | 'crypto'; destination: string }) => authed<Earnings['payouts'][number]>('/me/payouts', post(b)),
+}
+
 export const imports = {
   fromAtproto: () => authed<{ added: number; seen: number; complete: boolean }>('/me/imports/atproto', post({})),
   list: (status?: ImportDraft['status']) => authed<{ drafts: ImportDraft[] }>(`/me/imports${status ? `?status=${status}` : ''}`),

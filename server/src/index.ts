@@ -20,6 +20,7 @@ import { ticketRepo } from './tickets.js'
 import { sessionRepo } from './sessions.js'
 import { importRepo } from './imports.js'
 import { createMailboxClient } from './mailbox.js'
+import { payoutRepo } from './payouts.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
@@ -38,6 +39,7 @@ const app = createApp({
   tickets: ticketRepo(sql),
   sessions: sessionRepo(sql),
   imports: importRepo(sql),
+  payouts: payoutRepo(sql),
   mail: createMailboxClient({
     domain: config.MAIL_DOMAIN,
     imapHost: config.MAIL_HOST,

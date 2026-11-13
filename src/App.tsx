@@ -35,6 +35,7 @@ const AdminCrawlerPage = lazy(() => import('@/pages/admin/AdminCrawlerPage'))
 const AdminClaimsPage = lazy(() => import('@/pages/admin/AdminClaimsPage'))
 const AdminTicketsPage = lazy(() => import('@/pages/admin/AdminTicketsPage'))
 const AdminEmailPage = lazy(() => import('@/pages/admin/AdminEmailPage'))
+const AdminPayoutsPage = lazy(() => import('@/pages/admin/AdminPayoutsPage'))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage'))
 const AtmospherePage = lazy(() => import('@/pages/AtmospherePage'))
 const PremiumPage = lazy(() => import('@/pages/PremiumPage'))
@@ -130,6 +131,7 @@ export default function App() {
             <Route path="/admin/claims" element={<AdminClaimsPage />} />
             <Route path="/admin/tickets" element={<AdminTicketsPage />} />
             <Route path="/admin/email" element={<AdminEmailPage />} />
+            <Route path="/admin/payouts" element={<AdminPayoutsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/support" element={<SupportPage />} />
             <Route path="/support/contact" element={<SupportContactPage />} />
