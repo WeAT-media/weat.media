@@ -62,7 +62,9 @@ const Env = z.object({
 export type Config = z.infer<typeof Env>
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = Env.safeParse(env)
+  // «KEY=» в .env — то же, что не задано: иначе необязательный адрес падал бы на проверке URL
+  const set = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== ''))
+  const parsed = Env.safeParse(set)
   if (!parsed.success) {
     throw new Error(`Invalid env:\n${z.prettifyError(parsed.error)}`)
   }
