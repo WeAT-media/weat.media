@@ -47,7 +47,7 @@ export interface AdCreative {
   /** скрыть с публичной доски креативов (за доплату HIDE_FROM_BOARD_MARKUP) */
   hiddenFromBoard: boolean
   /**
-   * Закреплён за постом: показывается только в нём (PIN_MULTIPLIER × базовой ставки). Закрепление пишется
+   * Закреплён за постом: показывается только в нём (цена — предложение рекламодателя, от MIN_PIN_OFFER). Закрепление пишется
    * в запись поста в PDS автора и бессрочно — поэтому нужно согласие автора: до него креатив в посте не показан
    * и не оплачивается.
    */
@@ -61,10 +61,12 @@ export interface AdCreative {
  */
 export const pinAuthorShare = (premium: boolean) => (premium ? 0.99 : 0.9)
 
-export type PinApproval = 'pending' | 'approved' | 'rejected'
+/** pending — ждёт автора; countered — автор предложил свою цену, ждёт рекламодателя */
+export type PinApproval = 'pending' | 'countered' | 'approved' | 'rejected'
 
 export const PIN_APPROVAL_LABEL: Record<PinApproval, string> = {
   pending: 'ждёт согласия автора',
+  countered: 'автор предложил свою цену',
   approved: 'автор согласился',
   rejected: 'автор отказал',
 }
@@ -74,8 +76,25 @@ export interface PinRequest {
   title: string
   /** handle автора поста — он решает */
   author: string
+  /** предложение автору, ₽ — разово, от MIN_PIN_OFFER */
+  offer: number
+  /** встречная цена автора, ₽ — при approval = countered */
+  counter?: number
   approval: PinApproval
   decidedAt?: string
+}
+
+/** автор называет свою цену: рекламодатель примет её или изменит своё предложение */
+export function counterPin(list: AdCreative[], id: string, price: number, now = new Date()): AdCreative[] {
+  return list.map((a) =>
+    a.id === id && a.pinnedTo ? { ...a, pinnedTo: { ...a.pinnedTo, counter: price, approval: 'countered', decidedAt: now.toISOString() } } : a,
+  )
+}
+
+/** рекламодатель принял цену автора — это и есть согласие обеих сторон: креатив «Закреплён» */
+export function acceptCounter(a: AdCreative, now = new Date()): AdCreative {
+  if (!a.pinnedTo || a.pinnedTo.approval !== 'countered' || !a.pinnedTo.counter) return a
+  return { ...a, status: 'pinned', pinnedTo: { ...a.pinnedTo, offer: a.pinnedTo.counter, counter: undefined, approval: 'approved', decidedAt: now.toISOString() } }
 }
 
 /** закреплённый креатив показывается только после согласия автора */
@@ -86,11 +105,12 @@ export const BASE_CPM = 300
 /** скрыть креатив с публичной доски — +25% к ставке */
 export const HIDE_FROM_BOARD_MARKUP = 0.25
 /**
- * Закрепить за постом — ×200. Закрепление пишется в запись поста в репозитории автора (PDS): запись публична,
- * её копии уходят ретрансляторам и индексам сети, полностью отозвать её нельзя. Это бессрочное размещение,
- * а не показ на время, — отсюда цена.
+ * Закрепить за постом — цену предлагает рекламодатель, от MIN_PIN_OFFER и без потолка: у известного автора
+ * место стоит дороже, а решает всё равно автор — согласен на сумму или нет. Закрепление пишется в запись поста
+ * в PDS автора: она публична, копии уходят ретрансляторам и индексам сети, полностью отозвать нельзя —
+ * это бессрочное размещение, отсюда высокий минимум.
  */
-export const PIN_MULTIPLIER = 200
+export const MIN_PIN_OFFER = 50_000
 
 /** Креатив может попасть в РФ: RU в любом из списков или гео не задано (показ везде) — нужна маркировка */
 export function needsErid(geo: AdGeo): boolean {
@@ -109,7 +129,7 @@ export function adPrice(ad: Pick<AdCreative, 'hiddenFromBoard' | 'pinnedTo'>): {
   return {
     cpm: Math.round(BASE_CPM * (1 + (ad.hiddenFromBoard ? HIDE_FROM_BOARD_MARKUP : 0))),
     // без согласия автора не списываем
-    pin: ad.pinnedTo && ad.pinnedTo.approval !== 'rejected' ? BASE_CPM * PIN_MULTIPLIER : null,
+    pin: ad.pinnedTo && ad.pinnedTo.approval !== 'rejected' ? ad.pinnedTo.offer : null,
   }
 }
 
@@ -143,7 +163,9 @@ function normalize(a: AdCreative & { active?: boolean }): AdCreative {
     hiddenFromBoard: a.hiddenFromBoard ?? false,
     createdAt: a.createdAt ?? new Date(0).toISOString(),
     // закрепления до введения согласия — без автора: считаем, что согласия ещё нет
-    ...(a.pinnedTo ? { pinnedTo: { ...a.pinnedTo, author: a.pinnedTo.author ?? '', approval: a.pinnedTo.approval ?? 'pending' } } : {}),
+    ...(a.pinnedTo
+      ? { pinnedTo: { ...a.pinnedTo, author: a.pinnedTo.author ?? '', offer: a.pinnedTo.offer ?? MIN_PIN_OFFER, approval: a.pinnedTo.approval ?? 'pending' } }
+      : {}),
   }
 }
 

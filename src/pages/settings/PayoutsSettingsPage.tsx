@@ -1,3 +1,4 @@
+import FeeNote from '@/components/FeeNote'
 import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Archive, ArchiveRestore, ArrowLeft, BadgeCheck, Clock3, Landmark, Pencil, Plus, Trash2, TrendingUp, Unplug, Wallet } from 'lucide-react'
@@ -185,9 +186,10 @@ export default function PayoutsSettingsPage() {
       <section aria-label="Выплаты автору">
         <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Выплаты</h2>
         <p className="mt-3 max-w-[58ch] text-sm leading-relaxed text-muted-foreground">
-          Платные публикации доступны автору только после подключения выплат: 90% каждой продажи уходит
-          на эти реквизиты. Демо-прототип: подключение — это локальная отметка, платежей и провайдеров нет.
+          Платные публикации доступны автору только после подключения выплат: 90%* каждой продажи (у Premium-автора —
+          99%*) уходит на эти реквизиты. Демо-прототип: подключение — это локальная отметка, платежей и провайдеров нет.
         </p>
+        <FeeNote className="mt-1" />
 
         {payoutConnected ? (
           <div className="mt-6">
@@ -493,11 +495,12 @@ export default function PayoutsSettingsPage() {
                   </p>
                 </div>
                 <p className="font-mono text-sm font-semibold">
-                  +{fmtRub(op.net)} <span className="meta text-muted-foreground">из {fmtRub(op.gross)}</span>
+                  +{fmtRub(op.net)}* <span className="meta text-muted-foreground">из {fmtRub(op.gross)}</span>
                 </p>
               </li>
             ))}
           </ul>
+          <FeeNote className="mt-2" />
         </div>
       </section>
 

@@ -6,6 +6,7 @@ import type { Article } from '@/types/types'
 import { useStore } from '@/lib/store'
 import { SITE_NAME } from '@/config/site'
 import { formatMoney } from '@/lib/money'
+import FeeNote from '@/components/FeeNote'
 
 /**
  * Пейволл платной статьи. Доля автора — как считает сервер (server/src/lava.ts): 90% обычно,
@@ -82,11 +83,13 @@ export default function Paywall({ article, unlocked, onUnlock }: { article: Arti
         </div>
         <div className="mt-2 flex flex-wrap justify-between gap-x-6 gap-y-1">
           <span className="meta">
-            {share}% — автору{authorPremium && ' · Premium-автор'}
+            {share}%* — автору{authorPremium && ' · Premium-автор'}
           </span>
           <span className="meta">{100 - share}% — инфраструктура {SITE_NAME}</span>
         </div>
       </div>
+
+      <FeeNote className="mt-1" />
 
       <p className="mt-5 max-w-[60ch] text-sm leading-relaxed text-muted-foreground">
         {isSubscription

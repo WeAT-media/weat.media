@@ -1,3 +1,4 @@
+import { FEE_NOTE } from '@/components/FeeNote'
 import { customFenceBlock, isCustomFence } from '@/lib/customFences'
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
@@ -421,7 +422,8 @@ export default function ComposePage() {
         <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">Написать</h1>
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
           Запись уйдёт в ваш репозиторий — её нельзя отредактировать задним числом без следа и нельзя удалить
-          «сверху». Монетизация честная: 90% с каждой продажи — вам, 10% — на инфраструктуру площадки.
+          «сверху». Монетизация честная: 90%* с каждой продажи — вам (с Premium — 99%*), остальное — на инфраструктуру
+          площадки. <span className="text-[12px]">{FEE_NOTE}</span>
         </p>
       </div>
 
@@ -759,8 +761,8 @@ export default function ComposePage() {
                 <DialogHeader>
                   <DialogTitle>Выплаты не настроены</DialogTitle>
                   <DialogDescription>
-                    Платные посты доступны авторам только после подключения реквизитов выплат — 90% каждой
-                    продажи уходит на них. Это локальный демо-мок: платежей и реальных провайдеров нет.
+                    Платные посты доступны авторам только после подключения реквизитов выплат — 90%* каждой
+                    продажи (с Premium — 99%*) уходит на них. {FEE_NOTE}. Это локальный демо-мок: платежей и реальных провайдеров нет.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-wrap gap-3">
@@ -877,7 +879,7 @@ export default function ComposePage() {
                         ))}
                       </select>
                     )}
-                    <p className="meta mt-2">подписчик тира получает доступ ко всем записям уровня; 90% — вам</p>
+                    <p className="meta mt-2">подписчик тира получает доступ ко всем записям уровня; 90%* — вам (с Premium — 99%*)</p>
                     {!payoutConnected && (
                       <p className="meta mt-2 !normal-case tracking-normal text-muted-foreground">
                         провайдер выплат отключён — тарифы сохранены, но неактивны; выбрать или создать тариф

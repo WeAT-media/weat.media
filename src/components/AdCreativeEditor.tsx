@@ -3,6 +3,7 @@ import { ImagePlus, Pin, Trash2 } from 'lucide-react'
 import { Link } from 'react-router'
 import { AdView } from '@/components/AdBanner'
 import CountrySelect from '@/components/CountrySelect'
+import FeeNote from '@/components/FeeNote'
 import { useStore } from '@/lib/store'
 import { countryLabel } from '@/lib/api'
 import {
@@ -10,7 +11,8 @@ import {
   AD_STATUS_LABEL,
   BASE_CPM,
   HIDE_FROM_BOARD_MARKUP,
-  PIN_MULTIPLIER,
+  MIN_PIN_OFFER,
+  acceptCounter,
   PIN_APPROVAL_LABEL,
   adPrice,
   loadAds,
@@ -90,6 +92,7 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
     if (!safeHref(draft.url) || !/^https?:/.test(draft.url)) return setError('Ссылка объявления — https://…')
     if (draft.image && !draft.image.alt.trim()) return setError('Опишите картинку (альтернативный текст)')
     if (!draft.advertiser.trim()) return setError('Укажите рекламодателя')
+    if (draft.pinnedTo && draft.pinnedTo.offer < MIN_PIN_OFFER) return setError(`Закрепление — от ${MIN_PIN_OFFER.toLocaleString('ru-RU')} ₽`)
     if (marked && !draft.erid?.trim()) return setError('Показ в РФ: нужен erid (маркировка по 38-ФЗ). Получите его в ОРД или уберите РФ из гео')
     setError('')
     const next: AdCreative = { ...draft, geo, ...(marked ? {} : { erid: undefined }) }
@@ -214,10 +217,10 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
             </label>
           </div>
 
-          {/* закрепление: запись в PDS поста — поэтому ×200 */}
+          {/* закрепление: запись в PDS поста — бессрочно; цену предлагает рекламодатель, решает автор */}
           <fieldset className="grid gap-2 rounded-md border border-border p-3">
             <legend className="inline-flex items-center gap-1 px-1 text-sm font-semibold">
-              <Pin size={12} aria-hidden="true" /> Закрепить за постом · ×{PIN_MULTIPLIER}
+              <Pin size={12} aria-hidden="true" /> Закрепить за постом · от {MIN_PIN_OFFER.toLocaleString('ru-RU')} ₽
             </legend>
             <select
               className={inputCls}
@@ -226,7 +229,9 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
                 const a = pinnable.find((x) => x.atUri === e.target.value)
                 // новый пост — новый запрос: согласие автора нужно заново, «Закреплён» снимается до него
                 set({
-                  pinnedTo: a ? { uri: a.atUri!, title: a.title, author: a.author.handle, approval: 'pending' } : undefined,
+                  pinnedTo: a
+                    ? { uri: a.atUri!, title: a.title, author: a.author.handle, offer: draft.pinnedTo?.offer ?? MIN_PIN_OFFER, approval: 'pending' }
+                    : undefined,
                   ...(draft.status === 'pinned' ? { status: 'running' as const } : {}),
                 })
               }}
@@ -237,11 +242,41 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
               ))}
             </select>
             <p className="meta !normal-case tracking-normal">
-              Почему ×{PIN_MULTIPLIER}: закрепление пишется в саму запись поста в репозитории автора (PDS). Запись публична,
-              её копии расходятся по ретрансляторам и индексам сети — отозвать полностью нельзя. Это бессрочное размещение,
-              а не показ на время. Поэтому нужно согласие автора: до него креатив в посте не показывается и не
-              оплачивается.
+              Почему от {MIN_PIN_OFFER.toLocaleString('ru-RU')} ₽: закрепление пишется в саму запись поста в репозитории автора
+              (PDS). Запись публична, её копии расходятся по ретрансляторам и индексам сети — отозвать полностью нельзя. Это
+              бессрочное размещение, а не показ на время. Сумму предлагаете вы, потолка нет: у известного автора место стоит
+              дороже, а решает автор — согласиться, отказать или назвать свою цену. До согласия креатив в посте не
+              показывается и не оплачивается.
             </p>
+            {draft.pinnedTo && (
+              <label className="grid gap-1 text-sm font-semibold">Ваше предложение автору, ₽
+                <input
+                  className={inputCls}
+                  type="number"
+                  min={MIN_PIN_OFFER}
+                  step={1000}
+                  value={draft.pinnedTo.offer}
+                  onChange={(e) =>
+                    // новая сумма — новый запрос автору: прежний ответ был на другую цену
+                    set({
+                      pinnedTo: { ...draft.pinnedTo!, offer: Math.floor(Number(e.target.value) || 0), counter: undefined, approval: 'pending' },
+                      ...(draft.status === 'pinned' ? { status: 'running' as const } : {}),
+                    })
+                  }
+                />
+              </label>
+            )}
+            {draft.pinnedTo?.approval === 'countered' && draft.pinnedTo.counter && (
+              <div className="flex flex-wrap items-center gap-3 rounded-md border border-accent/50 p-3 text-sm">
+                <span>
+                  @{draft.pinnedTo.author} готов закрепить за <b>{draft.pinnedTo.counter.toLocaleString('ru-RU')} ₽</b>
+                </span>
+                <button type="button" onClick={() => set(acceptCounter(draft))} className="btn-primary !px-3 !py-1.5 !text-[11px]">
+                  Принять цену автора
+                </button>
+                <span className="meta !normal-case tracking-normal">или измените своё предложение выше</span>
+              </div>
+            )}
             {draft.pinnedTo && (
               <p className={`meta !normal-case tracking-normal ${draft.pinnedTo.approval === 'approved' ? 'text-accent' : draft.pinnedTo.approval === 'rejected' ? 'text-destructive' : ''}`}>
                 @{draft.pinnedTo.author}: {PIN_APPROVAL_LABEL[draft.pinnedTo.approval]}
@@ -256,11 +291,12 @@ export default function AdCreativeEditor({ onChange }: { onChange?: (ads: AdCrea
             </p>
             {price.pin !== null && (
               <p className="mt-1">
-                Закрепление за постом: <b>{price.pin.toLocaleString('ru-RU')} ₽</b> разово ({BASE_CPM} ₽ × {PIN_MULTIPLIER})
+                Закрепление за постом: <b>{price.pin.toLocaleString('ru-RU')} ₽</b> разово
                 {draft.pinnedTo?.approval !== 'approved' && <span className="text-muted-foreground"> — после согласия автора</span>}
-                <span className="block text-muted-foreground">автору поста — 90% (Premium-автору — 99%), площадке — остальное</span>
+                <span className="block text-muted-foreground">автору поста — 90%*, Premium-автору — 99%*, площадке — остальное</span>
               </p>
             )}
+            {price.pin !== null && <FeeNote className="mt-1" />}
             <p className="meta mt-1 !normal-case tracking-normal">демо-кабинет: списаний нет</p>
           </div>
 
