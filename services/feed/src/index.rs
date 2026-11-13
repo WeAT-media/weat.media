@@ -116,18 +116,25 @@ pub struct CommentRow {
     pub did: String,
     pub handle: Option<String>,
     pub text: String,
+    #[serde(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
+    /// ответ на комментарий: uri родителя
+    pub parent: Option<String>,
 }
 
+/// newest — последние сверху (RSS); иначе тред в хронологическом порядке (страница статьи)
 pub async fn comments_of(
     pool: &PgPool,
     subject: &str,
     limit: i64,
+    newest: bool,
 ) -> sqlx::Result<Vec<CommentRow>> {
-    sqlx::query_as(
-        "SELECT c.uri, c.did, h.handle, c.text, c.created_at FROM comments c LEFT JOIN handles h ON h.did = c.did
-         WHERE c.subject_uri = $1 ORDER BY c.created_at DESC LIMIT $2",
-    )
+    let order = if newest { "DESC" } else { "ASC" };
+    sqlx::query_as(&format!(
+        "SELECT c.uri, c.did, h.handle, c.text, c.created_at, c.parent_uri AS parent
+         FROM comments c LEFT JOIN handles h ON h.did = c.did
+         WHERE c.subject_uri = $1 ORDER BY c.created_at {order} LIMIT $2"
+    ))
     .bind(subject)
     .bind(limit)
     .fetch_all(pool)

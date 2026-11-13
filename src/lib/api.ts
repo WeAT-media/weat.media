@@ -302,6 +302,23 @@ export const likes = {
   unlike: (subject: string) => authed<{ ok: true; removed: number }>(`/me/likes?${new URLSearchParams({ subject })}`, { method: 'DELETE' }),
 }
 
+export interface ThreadComment {
+  uri: string
+  did: string
+  handle: string | null
+  text: string
+  createdAt: string
+  /** uri комментария, на который это ответ */
+  parent: string | null
+}
+
+/** Комментарии статей из индекса: запись media.weat.comment в репозитории читателя */
+export const comments = {
+  thread: (subject: string) => call<{ comments: ThreadComment[] }>(`/feed/comments?${new URLSearchParams({ subject })}`),
+  create: (b: { subject: string; parent?: string; text: string }) => authed<ThreadComment>('/me/comments', post(b)),
+  remove: (rkey: string) => authed<{ ok: true }>(`/me/comments/${encodeURIComponent(rkey)}`, { method: 'DELETE' }),
+}
+
 export interface Purchase {
   orderId: string
   status: 'pending' | 'paid' | 'failed' | 'refunded'

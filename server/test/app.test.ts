@@ -1219,6 +1219,36 @@ test('likes: create in reader repo, idempotent, listed, removed (no feed index �
   assert.deepEqual((await (await app.request(`/api/me/likes?subjects=${encodeURIComponent(subject)}`, { headers: auth })).json()).likes, [])
 })
 
+test('comments from site session: written to reader repo, reply keeps parent, own delete', async () => {
+  const app = makeApp()
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'commenter', email: 'commenter@example.com' }, '1.1.1.1'))).json()
+  const auth = { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }
+  const subject = 'at://did:plc:author/media.weat.article/3k1'
+  const post = (b: unknown, h: Record<string, string> = auth) => app.request('/api/me/comments', { method: 'POST', headers: h, body: JSON.stringify(b) })
+
+  assert.equal((await post({ subject, text: 'x' }, { 'content-type': 'application/json' })).status, 401)
+  assert.equal((await post({ subject, text: '   ' })).status, 400)
+  assert.equal((await post({ subject, text: 'x', parent: 'https://evil' })).status, 400)
+
+  const root = await post({ subject, text: ' Отличная статья ' })
+  assert.equal(root.status, 201)
+  const r = await root.json()
+  assert.equal(r.text, 'Отличная статья')
+  assert.equal(r.handle, u.user.handle)
+  assert.equal(r.parent, null)
+
+  const reply = await (await post({ subject, text: 'Согласен', parent: r.uri })).json()
+  assert.equal(reply.parent, r.uri)
+  const rec = published.at(-1)!
+  assert.equal(rec.collection, 'media.weat.comment')
+  assert.deepEqual(rec.record.reply, { parent: { uri: r.uri } })
+
+  const del = await app.request(`/api/me/comments/${reply.uri.split('/').pop()}`, { method: 'DELETE', headers: auth })
+  assert.equal(del.status, 200)
+  assert.equal((await app.request('/api/feed/comments?subject=https://x')).status, 400)
+  assert.equal((await app.request(`/api/feed/comments?subject=${encodeURIComponent(subject)}`)).status, 503, 'без индекса ленты треда нет')
+})
+
 test('lava.top: invoice, forged webhook refused, access only after API confirms, idempotent', async () => {
   const app = makeApp()
   const author = await (await app.request('/api/auth/register', json({ ...reg, username: 'lavaauthor', email: 'la@example.com' }, '1.1.1.1'))).json()

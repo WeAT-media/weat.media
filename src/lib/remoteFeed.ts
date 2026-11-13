@@ -1,4 +1,5 @@
-import type { Article, ArticleBlock } from '@/types/types'
+import type { Article, ArticleBlock, Comment } from '@/types/types'
+import { comments, type ThreadComment } from '@/lib/api'
 
 /** Записи media.weat.article из /api/feed → статьи ленты */
 
@@ -123,6 +124,22 @@ export function toArticle(i: FeedItem): Article | null {
         }
       : {}),
   }
+}
+
+/** комментарий треда → комментарий страницы статьи: id — AT URI, ответы ссылаются на uri родителя */
+export function toComment(c: ThreadComment): Comment {
+  return {
+    id: c.uri,
+    author: c.handle ?? c.did,
+    text: c.text,
+    at: c.createdAt.slice(0, 16).replace('T', ' '),
+    ...(c.parent ? { parentId: c.parent } : {}),
+  }
+}
+
+/** тред статьи из индекса; недоступен — пусто (страница покажет локальные) */
+export function fetchComments(subject: string): Promise<Comment[]> {
+  return comments.thread(subject).then((r) => r.comments.map(toComment), () => [])
 }
 
 /** текст одной статьи — для страницы статьи (лента приходит без текстов) */

@@ -19,7 +19,7 @@ import UpvoteButton from '@/components/UpvoteButton'
 import BookmarkButton from '@/components/BookmarkButton'
 import { buildCommentsFeed } from '@/lib/rss'
 import { useArticleTracking } from '@/lib/tracking'
-import { fetchArticleBody } from '@/lib/remoteFeed'
+import { fetchArticleBody, fetchComments } from '@/lib/remoteFeed'
 import { safeHref, safeImageSrc } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
 import InteractiveVideo from '@/components/InteractiveVideo'
@@ -47,11 +47,12 @@ function CommentComposer({
   onCancel,
 }: {
   label: string
-  onSubmit: (markdown: string) => void
+  onSubmit: (markdown: string) => void | Promise<void>
   onCancel?: () => void
 }) {
   const [md, setMd] = useState('')
   const [error, setError] = useState('')
+  const [sending, setSending] = useState(false)
   return (
     <div>
       <p className="meta mb-2">{label}</p>
@@ -60,16 +61,26 @@ function CommentComposer({
       <div className="mt-3 flex gap-2">
         <button
           type="button"
-          onClick={() => {
+          disabled={sending}
+          onClick={async () => {
             if (md.trim().length < 3) {
               setError('Слишком коротко — минимум 3 символа.')
               return
             }
-            onSubmit(md.trim())
+            setSending(true)
+            setError('')
+            try {
+              await onSubmit(md.trim())
+            } catch (e) {
+              // текст остаётся в редакторе — можно отправить ещё раз
+              setError(e instanceof Error ? e.message : 'Не удалось отправить комментарий.')
+            } finally {
+              setSending(false)
+            }
           }}
           className="btn-primary !px-4 !py-2"
         >
-          Отправить
+          {sending ? 'Отправка…' : 'Отправить'}
         </button>
         {onCancel && (
           <button type="button" onClick={onCancel} className="btn-ghost !px-4 !py-2">
@@ -86,7 +97,7 @@ import Poll from '@/components/Poll'
 import MdxBlock from '@/components/MdxBlock'
 import Recommendations from '@/components/Recommendations'
 import { SITE_NAME } from '@/config/site'
-import type { ArticleBlock, LabelAction } from '@/types/types'
+import type { ArticleBlock, Comment, LabelAction } from '@/types/types'
 
 // локальный демо-ролик (H.264/AAC, 45 c): внешний GCS-бакет BigBuckBunny отдаёт 403
 const DEMO_VIDEO = '/demo-video.mp4'
@@ -197,6 +208,17 @@ export default function ArticlePage() {
   }, [pendingUri, card])
   const article = full && full.id === card?.id ? full.article : card
   const bodyLoading = !!article?.bodyPending
+  // тред статьи из индекса: комментарии всех читателей, не только свои
+  const [thread, setThread] = useState<{ uri: string; comments: Comment[] } | null>(null)
+  const threadUri = article?.fromIndex ? article.atUri : undefined
+  useEffect(() => {
+    if (!threadUri) return
+    let alive = true
+    fetchComments(threadUri).then((c) => alive && setThread({ uri: threadUri, comments: c }))
+    return () => {
+      alive = false
+    }
+  }, [threadUri])
   const [showHidden, setShowHidden] = useState(false)
   const [previewEnded, setPreviewEnded] = useState(false)
   const [replyTarget, setReplyTarget] = useState<string | null>(null)
@@ -281,7 +303,14 @@ export default function ArticlePage() {
     }
   }
 
-  const allComments = [...(extraComments[article.id] ?? []), ...article.comments]
+  // свой только что отправленный комментарий уже есть в треде индекса — не дублируем
+  const threadComments = thread && thread.uri === article.atUri ? thread.comments : []
+  const threadIds = new Set(threadComments.map((c) => c.id))
+  const allComments = [
+    ...(extraComments[article.id] ?? []).filter((c) => !threadIds.has(c.id)),
+    ...threadComments,
+    ...article.comments,
+  ]
   const commentIds = new Set(allComments.map((c) => c.id))
   const rootComments = allComments.filter((c) => !c.parentId || !commentIds.has(c.parentId))
   const repliesByParent = new Map<string, typeof allComments>()
@@ -336,8 +365,8 @@ export default function ArticlePage() {
             <CommentComposer
               key={c.id}
               label={`Ваш ответ @${c.author} · markdown`}
-              onSubmit={(md) => {
-                addComment(article.id, md, c.id)
+              onSubmit={async (md) => {
+                await addComment(article.id, md, c.id)
                 setReplyTarget(null)
               }}
               onCancel={() => setReplyTarget(null)}
@@ -910,8 +939,8 @@ export default function ArticlePage() {
               <CommentComposer
                 key={composerKey}
                 label="Ваш комментарий"
-                onSubmit={(md) => {
-                  addComment(article.id, md)
+                onSubmit={async (md) => {
+                  await addComment(article.id, md)
                   setComposerKey((k) => k + 1)
                 }}
               />

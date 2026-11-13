@@ -25,7 +25,7 @@ import {
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, clearSession, hasSession, likes, type ServerSettings } from '@/lib/api'
+import { api, clearSession, comments, hasSession, likes, type ServerSettings } from '@/lib/api'
 
 type SettingsSection = keyof ServerSettings
 
@@ -38,7 +38,7 @@ import { setEditorCaps } from '@/lib/editorCaps'
 import { setEditorPeople } from '@/lib/editorPeople'
 import { profileMetaSeed } from '@/data/profiles'
 import { PDS_URL } from '@/config/site'
-import { fetchRemoteFeed } from '@/lib/remoteFeed'
+import { fetchRemoteFeed, toComment } from '@/lib/remoteFeed'
 
 const STORAGE_KEY = 'indie-media:v1'
 
@@ -134,7 +134,8 @@ interface StoreValue extends Persisted {
   setEditorPrefs: (patch: Partial<EditorPreferences>) => void
   setBlockDefs: (defs: BlockDef[]) => void
   publishArticle: (article: Article) => void
-  addComment: (articleId: string, text: string, parentId?: string) => void
+  /** у статьи из индекса — запись в репозиторий читателя; ошибка API пробрасывается (ApiError) */
+  addComment: (articleId: string, text: string, parentId?: string) => Promise<void>
   toggleAuthorSubscription: (handle: string) => void
   toggleWatchArticle: (articleId: string) => void
   unlock: (articleId: string) => void
@@ -628,24 +629,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...persisted.extraArticles,
           ],
         }),
-      addComment: (articleId, text, parentId) => {
-        const comment: Comment = {
-          id: `u-${Date.now()}`,
-          author: user?.handle ?? 'anon',
-          text,
-          at: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          ...(parentId ? { parentId } : {}),
-        }
-        patch({
-          extraComments: {
-            ...persisted.extraComments,
-            [articleId]: [...(persisted.extraComments[articleId] ?? []), comment],
-          },
+      addComment: async (articleId, text, parentId) => {
+        const a = articles.find((x) => x.id === articleId)
+        const comment: Comment =
+          a?.fromIndex && a.atUri && hasSession()
+            ? // ответ на демо-комментарий (не AT URI) уходит как комментарий к статье
+              toComment(await comments.create({ subject: a.atUri, text, ...(parentId?.startsWith('at://') ? { parent: parentId } : {}) }))
+            : {
+                id: `u-${Date.now()}`,
+                author: user?.handle ?? 'anon',
+                text,
+                at: new Date().toISOString().slice(0, 16).replace('T', ' '),
+                ...(parentId ? { parentId } : {}),
+              }
+        // после await состояние могло поменяться — обновляем от актуального
+        setPersisted((prev) => ({
+          ...prev,
+          extraComments: { ...prev.extraComments, [articleId]: [...(prev.extraComments[articleId] ?? []), comment] },
           // автор комментария автоматически следит за ответами в треде
-          watchedArticles: persisted.watchedArticles.includes(articleId)
-            ? persisted.watchedArticles
-            : [...persisted.watchedArticles, articleId],
-        })
+          watchedArticles: prev.watchedArticles.includes(articleId) ? prev.watchedArticles : [...prev.watchedArticles, articleId],
+        }))
       },
       toggleAuthorSubscription: (handle) =>
         patch({

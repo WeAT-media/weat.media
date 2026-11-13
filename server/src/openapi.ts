@@ -25,6 +25,7 @@ import { GrantBody, PublishPaidBody } from './paidContent.js'
 import { PurchaseBody } from './lava.js'
 import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
+import { CommentBody, CommentDto } from './comments.js'
 import { ApiArticleBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
 
 const TAGS = {
@@ -356,6 +357,22 @@ const ops: Op[] = [
     method: 'get', path: '/feed/article', tag: 'profile', summary: 'Статья целиком',
     query: { uri: { description: 'at://did/media.weat.article/rkey', required: true } },
     ok: { status: 200, description: '{ uri, cid, did, handle, createdAt, record, textLength }' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
+  },
+  // ── комментарии
+  {
+    method: 'get', path: '/feed/comments', tag: 'profile', summary: 'Тред статьи',
+    query: { subject: { description: 'at://did/media.weat.article/rkey', required: true } },
+    ok: { status: 200, schema: z.object({ comments: z.array(CommentDto) }), description: 'По возрастанию времени; ответы — с parent' },
+    errors: [[400, 'InvalidRequest'], [503, 'FeedUnavailable — индекс ленты недоступен']],
+  },
+  {
+    method: 'post', path: '/me/comments', tag: 'profile', summary: 'Оставить комментарий', auth: 'bearer',
+    description: 'Запись media.weat.comment в репозитории читателя; parent — ответ на комментарий.',
+    body: CommentBody, ok: { status: 201, schema: CommentDto, description: 'Комментарий в форме треда' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
+  },
+  {
+    method: 'delete', path: '/me/comments/{rkey}', tag: 'profile', summary: 'Удалить свой комментарий', auth: 'bearer',
+    ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },
   // ── лайки
   {

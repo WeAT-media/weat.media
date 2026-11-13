@@ -178,7 +178,7 @@ pub async fn comments(
     let Ok(Some(article)) = index::article(&s.pool, &uri).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let Ok(rows) = index::comments_of(&s.pool, &uri, 100).await else {
+    let Ok(rows) = index::comments_of(&s.pool, &uri, 100, true).await else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let title = article
