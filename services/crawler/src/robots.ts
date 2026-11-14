@@ -1,10 +1,10 @@
 /**
  * robots.txt источника (RFC 9309): краулер не загружает то, что сайт запретил.
- * Группа — по нашему токену (WeatMediaCrawler) или «*»; внутри — Allow/Disallow, побеждает самое длинное
+ * Группа — по нашему токену (WEATCrawlerBot) или «*»; внутри — Allow/Disallow, побеждает самое длинное
  * совпадение (при равенстве — Allow), «*» и «$» в шаблонах — как у Google. Нет файла (4xx) — можно всё.
  */
 
-export const BOT_TOKEN = 'weatmediacrawler'
+export const BOT_TOKEN = 'weatcrawlerbot'
 
 interface Rule {
   allow: boolean

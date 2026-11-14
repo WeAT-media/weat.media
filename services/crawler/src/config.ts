@@ -17,7 +17,7 @@ const Env = z.object({
   ZITADEL_ISSUER: z.string().url().optional(),
   ZITADEL_PROJECT_ID: z.string().optional(),
   ZITADEL_JWKS_URL: z.string().url().optional(),
-  USER_AGENT: z.string().default('WeatMediaCrawler/0.1 (+https://weat.media/crawler)'),
+  USER_AGENT: z.string().default('WEATCrawlerBot/1.0 (+https://weat.media/crawler)'),
   /** параллельных загрузок; лимит запросов к источникам — ниже */
   CONCURRENCY: z.coerce.number().int().min(1).max(16).default(2),
   /** не чаще одного запроса к источникам за столько мс */

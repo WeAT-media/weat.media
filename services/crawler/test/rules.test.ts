@@ -59,7 +59,7 @@ test('extractArticle uses site rules first, built-in otherwise', () => {
 
 test('robots.txt: own group over *, longest match wins, Allow on tie, $ and * patterns', async () => {
   const { parseRobots, allowedByRobots } = await import('../src/robots.ts')
-  const txt = `User-agent: *\nDisallow: /\n\nUser-agent: WeatMediaCrawler\nDisallow: /private\nAllow: /private/public\nDisallow: /*.pdf$\n`
+  const txt = `User-agent: *\nDisallow: /\n\nUser-agent: WEATCrawlerBot\nDisallow: /private\nAllow: /private/public\nDisallow: /*.pdf$\n`
   const r = parseRobots(txt)
   assert.equal(allowedByRobots(r, '/blog/1'), true, 'своя группа важнее «*»')
   assert.equal(allowedByRobots(r, '/private/x'), false)
