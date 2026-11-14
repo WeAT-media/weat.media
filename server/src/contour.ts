@@ -9,11 +9,30 @@ import type { UserRepo } from './db.js'
 export interface PeerContour {
   /** DID пользователя соседнего контура или null; бросает, если сосед недоступен */
   resolve(handle: string): Promise<string | null>
+  /**
+   * публичный профиль из соседнего контура (по handle или DID) или null — для страницы профиля.
+   * Через границу — только то, что пользователь сам опубликовал (handle, DID, имя, дата, служебная ли учётка):
+   * без email, стран и тарифа (152-ФЗ). Ответ не сохраняется — только показывается.
+   */
+  profile(id: string): Promise<PeerProfile | null>
   /** публичный адрес соседнего контура для переадресации пользователя */
   publicUrl: string
 }
 
 export const PEER_HOP_HEADER = 'x-indie-peer-hop'
+
+export interface PeerProfile {
+  did: string
+  handle: string
+  displayName: string | null
+  createdAt: string
+  service: string | null
+}
+
+/** что отдаём соседнему контуру о своём пользователе: только опубликованное им самим */
+export function peerProfile(u: { did: string; handle: string; display_name: string | null; created_at: Date; service?: string | null }): PeerProfile {
+  return { did: u.did, handle: u.handle, displayName: u.display_name, createdAt: u.created_at.toISOString(), service: u.service ?? null }
+}
 
 export function createPeer(url: string, timeoutMs = 3000): PeerContour {
   return {
@@ -34,6 +53,15 @@ export function createPeer(url: string, timeoutMs = 3000): PeerContour {
         clearTimeout(t)
       }
     },
+    async profile(id) {
+      const res = await fetch(`${url.replace(/\/$/, '')}/api/peer/users/${encodeURIComponent(id)}`, {
+        headers: { [PEER_HOP_HEADER]: '1' },
+        signal: AbortSignal.timeout(timeoutMs),
+      }).catch(() => null)
+      if (!res?.ok) return null
+      const p = (await res.json().catch(() => null)) as PeerProfile | null
+      return p && /^did:[a-z]+:/.test(p.did) && HANDLE.test(p.handle) ? p : null
+    },
   }
 }
 
@@ -52,6 +80,15 @@ export function mountContourRoutes(app: Hono, d: { users: UserRepo; peer?: PeerC
    * alina.indie.media/.well-known/atproto-did -> DID (Caddy переписывает путь сюда).
    * Handle берём из ?handle= (запрос соседа) или из Host.
    */
+  /** соседнему контуру — публичный профиль своего пользователя (без персональных полей) */
+  app.get('/peer/users/:id', async (c) => {
+    if (!c.req.header(PEER_HOP_HEADER)) return c.json({ error: 'NotFound' }, 404)
+    const u = await d.users.findByHandleOrDid(c.req.param('id').toLowerCase())
+    if (!u) return c.json({ error: 'NotFound' }, 404)
+    c.header('cache-control', 'public, max-age=300')
+    return c.json(peerProfile(u))
+  })
+
   app.get('/handles/resolve', async (c: Context) => {
     const raw = (c.req.query('handle') ?? c.req.header('x-forwarded-host') ?? c.req.header('host') ?? '').toLowerCase()
     const handle = raw.split(':')[0]!

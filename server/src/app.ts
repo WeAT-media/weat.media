@@ -7,7 +7,7 @@ import type { Config } from './config.js'
 import type { IdentityRepo, MfaRepo, Tier, UserRepo, UserRow } from './db.js'
 import type { SecretBox } from './secretbox.js'
 import type { AtprotoAuth } from './atprotoOAuth.js'
-import { mountContourRoutes, type PeerContour } from './contour.js'
+import { mountContourRoutes, PEER_HOP_HEADER, type PeerContour } from './contour.js'
 import { mountPaidRoutes, type PaidRepo } from './paidContent.js'
 import { mountIdentityRoutes } from './identityRoutes.js'
 import { mountDeveloperRoutes, type DeveloperRepo } from './developer.js'
@@ -461,7 +461,15 @@ export function createApp(deps: Deps) {
 
   app.get('/users/:id', async (c) => {
     const user = await d.users.findByHandleOrDid(c.req.param('id'))
-    if (!user) return c.json({ error: 'NotFound', message: 'Пользователь не найден' }, 404)
+    if (!user) {
+      // аккаунт другого контура: только публичный профиль, запрос на лету (в свою базу не пишем)
+      const peer = d.peer && !c.req.header(PEER_HOP_HEADER) ? await d.peer.profile(c.req.param('id')) : null
+      if (peer) {
+        c.header('cache-control', 'public, max-age=300')
+        return c.json({ ...peer, tier: 'free', premiumSince: null, paidSubscribers: 0, contour: 'peer' })
+      }
+      return c.json({ error: 'NotFound', message: 'Пользователь не найден' }, 404)
+    }
     // число платных подписчиков публично, кто именно подписан — нет
     return c.json({ ...toPublic(user), paidSubscribers: await d.paid.countSubscribers(user.did) })
   })

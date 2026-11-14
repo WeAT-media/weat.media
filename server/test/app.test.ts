@@ -1511,6 +1511,22 @@ const fakePeer = (known: Record<string, string>, down = false) => ({
     if (down) throw new Error('peer down')
     return known[handle] ?? null
   },
+  async profile(id: string) {
+    const did = known[id]
+    return did ? { did, handle: id, displayName: 'Сосед', createdAt: '2026-01-01T00:00:00.000Z', service: id.startsWith('news.') ? 'system' : null } : null
+  },
+})
+
+test('contours: profile of a peer-contour account is shown live; only public fields cross; peer endpoint needs hop header', async () => {
+  const app = makeApp({ peer: fakePeer({ 'news.indie.media': 'did:plc:news' }), ipCountry: { '5.1.1.1': 'DE' } })
+  const p = await (await app.request('/api/users/news.indie.media')).json()
+  assert.equal(p.did, 'did:plc:news')
+  assert.equal(p.contour, 'peer')
+  assert.equal(p.service, 'system')
+  const local = await (await app.request('/api/auth/register', json({ ...reg, username: 'local', email: 'local@example.com' }, '5.1.1.1'))).json()
+  assert.equal((await app.request(`/api/peer/users/${local.user.handle}`)).status, 404, 'без hop-заголовка — не отдаём')
+  const out = await (await app.request(`/api/peer/users/${local.user.handle}`, { headers: { 'x-indie-peer-hop': '1' } })).json()
+  assert.deepEqual(Object.keys(out).sort(), ['createdAt', 'did', 'displayName', 'handle', 'service'], 'через границу — без email, стран, тарифа')
 })
 
 test('contours: one handle namespace — resolve local, then peer; no peer ping-pong', async () => {
