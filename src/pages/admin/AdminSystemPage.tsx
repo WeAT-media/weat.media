@@ -13,7 +13,7 @@ import { staffAuthConfigured, staffLogin, staffToken } from '@/lib/staffAuth'
 interface Account { did: string; handle: string; displayName: string | null; service: string; canLogin: boolean; createdAt: string }
 
 const field = 'rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-const KIND: Record<string, string> = { system: 'системная', labeler: 'коллегия' }
+const KIND: Record<string, string> = { system: 'системная', labeler: 'коллегия', crawler: 'краулер' }
 
 export default function AdminSystemPage() {
   const token = staffToken()

@@ -173,7 +173,7 @@ export default function AdminUsersPage() {
               <button type="button" onClick={() => void open(u.did)} className={`w-full cursor-pointer p-3 text-left text-sm hover:bg-secondary/60 ${card?.did === u.did ? 'bg-secondary/60' : ''}`}>
                 <span className="font-semibold">@{u.handle}</span>
                 {u.tier === 'premium' && <span className="meta ml-2 text-accent">premium</span>}
-                {u.service && <span className="meta ml-2">служебная · {u.service === 'labeler' ? 'коллегия' : u.service}</span>}
+                {u.service && <span className="meta ml-2">служебная · {({ labeler: 'коллегия', crawler: 'краулер', system: 'системная' } as Record<string, string>)[u.service] ?? u.service}</span>}
                 <span className="meta block !normal-case tracking-normal">{countryLabel(u.residenceCountry)} · с {when(u.createdAt)}</span>
               </button>
             </li>
