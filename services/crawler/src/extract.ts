@@ -184,7 +184,25 @@ function extractGeneric($: cheerio.CheerioAPI, url: string): Extracted {
   }
 }
 
-export function extractArticle(html: string, url: string): Extracted {
+/** фрагмент HTML (body из правил сайта) → markdown: та же очистка и абсолютные ссылки, что у встроенных разборщиков */
+export function htmlToMarkdown(fragment: string, base: string): string {
+  const $ = cheerio.load(`<div id="weat-root">${fragment}</div>`)
+  const root = $('#weat-root') as cheerio.Cheerio<AnyNode>
+  sanitize(root)
+  absolutize($, root, base)
+  return toMarkdown(root.html() ?? '')
+}
+
+/**
+ * rules — правила разбора этого сайта (rules.ts, как Instant View); подошли — по ним,
+ * иначе встроенный разборщик (habr, opennet) или общий
+ */
+export function extractArticle(html: string, url: string, rules?: (html: string, url: string) => Extracted | null): Extracted {
+  const byRules = rules?.(html, url)
+  if (byRules) {
+    if (byRules.markdown.length < 100) throw new ExtractError('Правила сайта: текст статьи слишком короткий')
+    return { ...byRules, markdown: byRules.markdown.slice(0, 200_000) }
+  }
   const $ = cheerio.load(html)
   const host = new URL(url).hostname.replace(/^www\./, '')
   const out = host === 'habr.com' ? extractHabr($, url) : host === 'opennet.ru' ? extractOpennet($, url) : extractGeneric($, url)

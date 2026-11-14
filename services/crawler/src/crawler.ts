@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { CrawlerAccount, CrawlSource, Repo } from './db.js'
+import { extractByRules, RulesError } from './rules.js'
 import { ExtractError, extractArticle, rssLinks } from './extract.js'
 import { FetchError, canonicalUrl, type FetchPage } from './fetcher.js'
 import { PdsError, type Pds } from './pds.js'
@@ -92,6 +93,28 @@ export function createCrawler(d: CrawlerDeps) {
       return { duplicate: false as const, item }
     },
 
+    /**
+     * Проверка правил разбора на живой странице (редактор в админке, как у Instant View): ничего не публикует.
+     * rules не задан — сохранённые правила хоста; ответ — что извлеклось или ошибка с номером строки.
+     */
+    async previewRules(url: string, rules?: string) {
+      let page: Awaited<ReturnType<FetchPage>>
+      try {
+        page = await d.fetchPage(url)
+      } catch (err) {
+        return { host: hostOf(url) ?? '', matched: false, error: `Страница не загрузилась: ${err instanceof Error ? err.message : String(err)}`, article: null }
+      }
+      const host = (hostOf(page.url) ?? '').replace(/^www\./, '')
+      const src = rules ?? (await d.repo.rules.get(host))?.rules
+      if (!src) return { host, matched: false, error: 'Для этого сайта правил нет — сработает встроенный разбор', article: null }
+      try {
+        const article = extractByRules(src, page.body, page.url)
+        return { host, matched: !!article, error: article ? null : 'Условия правил (?path, ?domain…) к этой странице не подходят', article }
+      } catch (err) {
+        return { host, matched: true, error: err instanceof Error ? err.message : String(err), article: null }
+      }
+    },
+
     /** Шаг очереди crawl-article: загрузить, извлечь, опубликовать в репозиторий краулера */
     async processArticle(itemId: string, attempt: number) {
       const item = await d.repo.items.get(itemId)
@@ -108,13 +131,17 @@ export function createCrawler(d: CrawlerDeps) {
           throw new ExtractError(`Редирект на другой сайт: ${finalHost ?? page.url}`)
         }
         // в записи — чистая ссылка на оригинал (без utm), извлекаем по фактическому адресу после редиректов
-        const article = { ...extractArticle(page.body, page.url), url: item.url_canonical }
+        // правила разбора сайта (как Instant View) — по хосту без www
+        const siteRules = await d.repo.rules.get(finalHost.replace(/^www\./, ''))
+        const byRules = siteRules ? (h: string, u: string) => extractByRules(siteRules.rules, h, u) : undefined
+        const article = { ...extractArticle(page.body, page.url, byRules), url: item.url_canonical }
         const { uri } = await d.pds.createRecord(cred(acc), ARTICLE_COLLECTION, articleRecord(article))
         await d.repo.items.update(item.id, { status: 'published', title: article.title, atUri: uri, attempts: attempt })
         return uri
       } catch (err) {
         const permanent =
           err instanceof ExtractError ||
+          err instanceof RulesError ||
           (err instanceof FetchError && ['BadUrl', 'Blocked', 'BadType', 'TooLarge'].includes(err.code)) ||
           (err instanceof FetchError && err.code === 'BadStatus' && /ответ 4\d\d/.test(err.message) && !/ответ 429/.test(err.message)) ||
           (err instanceof PdsError && err.status === 400)

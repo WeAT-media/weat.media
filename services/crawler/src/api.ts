@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { PermanentError, type Crawler, type JobQueue } from './crawler.js'
 import type { Repo } from './db.js'
 import { PdsError } from './pds.js'
+import { parseRules } from './rules.js'
 
 const CrawlBody = z.object({ url: z.string().trim().url().max(2000), crawler: z.string().min(1) })
 const AccountBody = z.object({
@@ -153,6 +154,37 @@ export function createApi(d: {
     await d.queue.unscheduleSource(c.req.param('id'))
     await d.repo.sources.remove(c.req.param('id'))
     return c.json({ ok: true })
+  })
+
+  // ── правила разбора сайтов (как Telegram Instant View): по хосту без www
+  const RulesBody = z.object({ rules: z.string().min(1).max(12_000) })
+  const PreviewBody = z.object({ url: z.string().url().max(2000), rules: z.string().max(12_000).optional() })
+  const hostParam = (c: Context) => {
+    const h = c.req.param('host')!.toLowerCase().replace(/^www\./, '')
+    if (!/^[a-z0-9.-]{3,253}$/.test(h)) throw new PermanentError('Неверный хост')
+    return h
+  }
+  app.get('/rules', async (c) => c.json(await d.repo.rules.list()))
+  app.get('/rules/:host', async (c) => {
+    const r = await d.repo.rules.get(hostParam(c))
+    return r ? c.json(r) : c.json({ error: 'NotFound', message: 'Правил для сайта нет' }, 404)
+  })
+  app.put('/rules/:host', async (c) => {
+    const { rules } = await body(c, RulesBody)
+    try {
+      parseRules(rules)
+    } catch (err) {
+      return c.json({ error: 'InvalidRules', message: err instanceof Error ? err.message : String(err) }, 400)
+    }
+    return c.json(await d.repo.rules.put(hostParam(c), rules, null))
+  })
+  app.delete('/rules/:host', async (c) => {
+    await d.repo.rules.remove(hostParam(c))
+    return c.json({ ok: true })
+  })
+  app.post('/rules/preview', async (c) => {
+    const b = await body(c, PreviewBody)
+    return c.json(await d.crawler.previewRules(b.url, b.rules))
   })
 
   app.get('/queues', async (c) => c.json(await d.counts()))

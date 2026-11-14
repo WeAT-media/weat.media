@@ -44,6 +44,14 @@ export interface CrawlSource {
   last_error: string | null
 }
 
+/** правила разбора сайта (rules.ts) */
+export interface SiteRules {
+  host: string
+  rules: string
+  updated_by: string | null
+  updated_at: Date
+}
+
 export function createDb(url: string): Sql {
   return postgres(url, { max: 5, onnotice: () => {} })
 }
@@ -100,6 +108,20 @@ export function repo(sql: Sql) {
             attempts = COALESCE(${p.attempts ?? null}, attempts),
             updated_at = now()
           WHERE id = ${id}`,
+    },
+    rules: {
+      list: () => sql<SiteRules[]>`SELECT * FROM site_rules ORDER BY host`,
+      get: async (host: string) => (await sql<SiteRules[]>`SELECT * FROM site_rules WHERE host = ${host}`)[0],
+      put: async (host: string, rules: string, by: string | null) =>
+        (
+          await sql<SiteRules[]>`
+            INSERT INTO site_rules (host, rules, updated_by) VALUES (${host}, ${rules}, ${by})
+            ON CONFLICT (host) DO UPDATE SET rules = EXCLUDED.rules, updated_by = EXCLUDED.updated_by, updated_at = now()
+            RETURNING *`
+        )[0]!,
+      remove: async (host: string) => {
+        await sql`DELETE FROM site_rules WHERE host = ${host}`
+      },
     },
     sources: {
       list: () => sql<CrawlSource[]>`SELECT * FROM crawler_sources ORDER BY id`,

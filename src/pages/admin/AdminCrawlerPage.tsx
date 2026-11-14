@@ -4,6 +4,7 @@ import { Bot, ExternalLink, FileText, KeyRound, LogOut, Pause, Play, RefreshCw, 
 import { remoteId } from '@/lib/remoteFeed'
 import { HANDLE_DOMAIN, SITE_NAME } from '@/config/site'
 import { staffAuthConfigured, staffLogin, staffLogout, staffToken } from '@/lib/staffAuth'
+import SiteRulesEditor from '@/components/SiteRulesEditor'
 
 /** Админка краулера (services/crawler). Вход сотрудника через Zitadel (роль admin); ADMIN_TOKEN — только аварийно */
 
@@ -229,6 +230,8 @@ export default function AdminCrawlerPage() {
       </section>
 
       {/* Задачи */}
+      <SiteRulesEditor call={call} />
+
       <section aria-label="Задачи" className="mt-8">
         <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Задачи · {items.length}</h2>
         <ul className="mt-3 divide-y divide-border border-y border-border">

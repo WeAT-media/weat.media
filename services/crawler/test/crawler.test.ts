@@ -11,6 +11,9 @@ import type { Pds } from '../src/pds.ts'
 import { articleRecord } from '../src/record.ts'
 import { createSecretBox } from '../src/secretbox.ts'
 
+/** правила разбора сайтов в памяти (repo.rules) */
+const siteRules = new Map<string, { host: string; rules: string; updated_by: string | null; updated_at: Date }>()
+
 const HABR = readFileSync(new URL('./fixtures/habr-article.html', import.meta.url), 'utf8')
 
 test('habr extractor: metadata, markdown, sanitizing', () => {
@@ -117,6 +120,16 @@ function memRepo() {
         const it = items.get(id)!
         Object.assign(it, { status: p.status, title: p.title ?? it.title, at_uri: p.atUri ?? it.at_uri, error: p.error ?? null, attempts: p.attempts ?? it.attempts })
       },
+    },
+    rules: {
+      list: async () => [...siteRules.values()],
+      get: async (host: string) => siteRules.get(host),
+      put: async (host: string, rules: string, by: string | null) => {
+        const r = { host, rules, updated_by: by, updated_at: new Date() }
+        siteRules.set(host, r)
+        return r
+      },
+      remove: async (host: string) => void siteRules.delete(host),
     },
     sources: {
       list: async () => [...sources.values()],
