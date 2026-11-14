@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
+import { lazyPage as lazy } from '@/lib/chunkReload'
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import Header from '@/components/Header'
