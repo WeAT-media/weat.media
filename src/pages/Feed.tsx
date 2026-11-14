@@ -1,3 +1,4 @@
+import { plainExcerpt } from '@/lib/plainText'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ArrowUpRight, Clapperboard, Gavel, Lock, LockOpen, Plus, Sparkles, X } from 'lucide-react'
@@ -36,7 +37,7 @@ function ArticleRow({ article, unlocked }: { article: Article; unlocked: boolean
           </Link>
         </h2>
         {article.subtitle && <p className="mt-1.5 text-[15px] text-muted-foreground">{article.subtitle}</p>}
-        <p className="mt-3 max-w-[70ch] text-[15px] leading-relaxed">{article.excerpt}</p>
+        <p className="mt-3 max-w-[70ch] text-[15px] leading-relaxed">{plainExcerpt(article.excerpt)}</p>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
           <UpvoteButton articleId={article.id} />
           <BookmarkButton articleId={article.id} />

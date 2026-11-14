@@ -388,14 +388,14 @@ export interface LinkPreview { url: string; title: string | null; description: s
 export const linkPreview = (url: string, signal?: AbortSignal) => authed<LinkPreview>('/link-preview', { ...post({ url }), signal })
 
 /** Черновики статей: личные, на сервере (не в публичном репозитории); text — markdown редактора */
-export interface Draft { id: string; title: string; text: string; createdAt: string; updatedAt: string }
+export interface Draft { id: string; title: string; text: string; meta?: Record<string, unknown>; createdAt: string; updatedAt: string }
 export interface DraftSummary { id: string; title: string; excerpt: string; updatedAt: string }
 
 export const drafts = {
   list: () => authed<{ drafts: DraftSummary[] }>('/me/drafts'),
   get: (id: string) => authed<Draft>(`/me/drafts/${encodeURIComponent(id)}`),
-  create: (b: { title: string; text: string }) => authed<Draft>('/me/drafts', post(b)),
-  save: (id: string, b: { title: string; text: string }) => authed<Draft>(`/me/drafts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
+  create: (b: { title: string; text: string; meta?: Record<string, unknown> }) => authed<Draft>('/me/drafts', post(b)),
+  save: (id: string, b: { title: string; text: string; meta?: Record<string, unknown> }) => authed<Draft>(`/me/drafts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
   remove: (id: string) => authed<{ ok: true }>(`/me/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 }
 

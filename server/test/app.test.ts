@@ -203,10 +203,10 @@ function memDrafts(): DraftRepo {
   return {
     async list(did) { return [...rows.values()].filter((r) => r.did === did).sort((a, b) => +b.updated_at - +a.updated_at) },
     async get(did, id) { const r = rows.get(id); return r?.did === did ? r : undefined },
-    async save(did, id, title, text) {
+    async save(did, id, title, text, meta) {
       const cur = rows.get(id)
       if (cur && cur.did !== did) throw new Error('foreign')
-      const row = { id, did, title, text, created_at: cur?.created_at ?? new Date(), updated_at: new Date() }
+      const row = { id, did, title, text, meta: meta ?? cur?.meta ?? {}, created_at: cur?.created_at ?? new Date(), updated_at: new Date() }
       rows.set(id, row)
       return row
     },
@@ -1273,6 +1273,10 @@ test('drafts: create, autosave, list, others cannot read; mention search finds u
   const list = await (await app.request('/api/me/drafts', { headers: A })).json()
   assert.deepEqual(list.drafts.map((x: { title: string; excerpt: string }) => [x.title, x.excerpt]), [['Черновик 2', 'обновлён']])
   assert.equal((await app.request(`/api/me/drafts/${created.id}`, { headers: { authorization: `Bearer ${b.accessJwt}` } })).status, 404, 'чужой не видно')
+  // настройки шага 2 сохраняются вместе с черновиком; сохранение без meta их не стирает
+  await app.request(`/api/me/drafts/${created.id}`, { method: 'PUT', headers: A, body: JSON.stringify({ title: 'Черновик 2', text: 'обновлён', meta: { subtitle: 'Подзаголовок', tags: ['ai'] } }) })
+  await app.request(`/api/me/drafts/${created.id}`, { method: 'PUT', headers: A, body: JSON.stringify({ title: 'Черновик 2', text: 'ещё' }) })
+  assert.deepEqual((await (await app.request(`/api/me/drafts/${created.id}`, { headers: A })).json()).meta, { subtitle: 'Подзаголовок', tags: ['ai'] })
   assert.equal((await app.request(`/api/me/drafts/${created.id}`, { method: 'DELETE', headers: A })).status, 200)
   const found = await (await app.request('/api/users/search?q=draf')).json()
   assert.deepEqual(found.users.map((u: { handle: string }) => u.handle), ['drafter.indie.media'])

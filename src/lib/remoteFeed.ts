@@ -1,3 +1,4 @@
+import { plainExcerpt } from '@/lib/plainText'
 import type { Article, ArticleBlock, Comment, VideoItem } from '@/types/types'
 import { comments, type ThreadComment } from '@/lib/api'
 import { customFenceBlock, isCustomFence } from '@/lib/customFences'
@@ -151,7 +152,7 @@ export function toArticle(i: FeedItem): Article | null {
     tags: r.tags ?? [],
     readingTime: Math.max(1, Math.round(words / 200)),
     verdict: 'clear',
-    excerpt: r.excerpt ?? blocks.find((b) => b.type === 'p')?.text.slice(0, 300) ?? '',
+    excerpt: plainExcerpt(r.excerpt ?? blocks.find((b) => b.type === 'p')?.text ?? ''),
     blocks,
     comments: [],
     atUri: i.uri,

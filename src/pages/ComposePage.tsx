@@ -1,6 +1,6 @@
 import { FEE_NOTE } from '@/components/FeeNote'
 import { markdownToBlocks } from '@/lib/remoteFeed'
-import { useEffect, useMemo, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import {
   ArrowLeft,
@@ -21,6 +21,7 @@ import { LANGUAGES } from '@/data/languages'
 import Reveal from '@/components/Reveal'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
+import { plainExcerpt } from '@/lib/plainText'
 import { drafts as draftsApi, hasSession, imports, shared as sharedApi, type SharedPerson } from '@/lib/api'
 import PeopleAutocomplete, { type PersonCandidate } from '@/components/PeopleAutocomplete'
 import ArticleToc from '@/components/ArticleToc'
@@ -136,6 +137,8 @@ export default function ComposePage() {
   const [draftId, setDraftId] = useState<string | null>(draftParam)
   const [draftSaved, setDraftSaved] = useState<string>('')
   const [importReady, setImportReady] = useState(!importId && !draftParam)
+  // настройки шага 2 из черновика — применяются, когда объявлены их состояния (эффект ниже)
+  const [loadedMeta, setLoadedMeta] = useState<Record<string, unknown> | null>(null)
   useEffect(() => {
     if (!draftParam) return
     draftsApi
@@ -143,6 +146,7 @@ export default function ComposePage() {
       .then((d) => {
         setTitle(d.title)
         setBodyText(d.text)
+        if (d.meta) setLoadedMeta(d.meta)
         setDraftSaved(new Date(d.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
       })
       .catch(() => setDraftId(null))
@@ -161,31 +165,6 @@ export default function ComposePage() {
       .catch(() => {})
       .finally(() => setImportReady(true))
   }, [importId])
-  // автосохранение черновика: через 2 с после правки, пока пишете; только с аккаунтом и если есть текст
-  useEffect(() => {
-    if (!importReady || !hasSession() || (!title.trim() && !bodyText.trim())) return
-    const t = window.setTimeout(async () => {
-      try {
-        const body = { title: title.trim(), text: bodyText }
-        const d = draftId ? await draftsApi.save(draftId, body) : await draftsApi.create(body)
-        if (!draftId) {
-          setDraftId(d.id)
-          // ссылка на черновик — в адресе: перезагрузка и другое устройство откроют его же
-          setSearchParams((p) => {
-            const n = new URLSearchParams(p)
-            n.set('draft', d.id)
-            return n
-          }, { replace: true })
-        }
-        setDraftSaved(new Date(d.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
-      } catch {
-        setDraftSaved('')
-      }
-    }, 2000)
-    return () => window.clearTimeout(t)
-    // draftId/setSearchParams в зависимостях перезапускали бы сохранение после создания
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, bodyText, importReady])
   const [subtitle, setSubtitle] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
@@ -294,6 +273,74 @@ export default function ComposePage() {
   const [sharedToken, setSharedToken] = useState<string | null>(null)
   const [reviewers, setReviewers] = useState<SharedPerson[]>([])
   const [shareError, setShareError] = useState('')
+
+  // Черновик = текст (шаг 1) + настройки публикации (шаг 2). Видео-файл не сохраняется — только ссылка.
+  const draftMeta = useMemo(
+    () => ({ step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput }),
+    [step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput],
+  )
+  useEffect(() => {
+    if (!loadedMeta) return
+    const m = loadedMeta as Partial<typeof draftMeta>
+    const str = (v: unknown, set: (x: string) => void) => typeof v === 'string' && set(v)
+    const bool = (v: unknown, set: (x: boolean) => void) => typeof v === 'boolean' && set(v)
+    const list = (v: unknown, set: (x: string[]) => void) => Array.isArray(v) && set(v.filter((x): x is string => typeof x === 'string'))
+    str(m.subtitle, setSubtitle)
+    list(m.tags, setTags)
+    if (m.language) setLanguage(m.language)
+    if (m.kind === 'text' || m.kind === 'video') setKind(m.kind)
+    if (m.videoMode === 'link') setVideoMode('link')
+    str(m.videoUrl, setVideoUrl)
+    str(m.videoDesc, setVideoDesc)
+    bool(m.isPaid, setIsPaid)
+    if (m.accessType === 'one-time' || m.accessType === 'subscription') setAccessType(m.accessType)
+    str(m.tierId, setTierId)
+    str(m.price, setPrice)
+    if (m.currency) setCurrency(m.currency)
+    if (m.period) setPeriod(m.period)
+    str(m.teaser, setTeaser)
+    list(m.coAuthors, setCoAuthors)
+    list(m.editors, setEditors)
+    str(m.previewStart, setPreviewStart)
+    str(m.previewEnd, setPreviewEnd)
+    str(m.collectionId, setCollectionId)
+    bool(m.noindex, setNoindex)
+    if (m.scheduleMode === 'now' || m.scheduleMode === 'later') setScheduleMode(m.scheduleMode)
+    str(m.publishAtInput, setPublishAtInput)
+    if (m.step === 1 || m.step === 2) setStep(m.step)
+    setLoadedMeta(null)
+  }, [loadedMeta])
+
+  const draftIdRef = useRef<string | null>(draftId)
+  useEffect(() => {
+    draftIdRef.current = draftId
+  }, [draftId])
+  const saveDraftNow = useCallback(async () => {
+    if (!hasSession() || (!title.trim() && !bodyText.trim())) return
+    try {
+      const body = { title: title.trim(), text: bodyText, meta: draftMeta }
+      const d = draftIdRef.current ? await draftsApi.save(draftIdRef.current, body) : await draftsApi.create(body)
+      if (!draftIdRef.current) {
+        draftIdRef.current = d.id
+        setDraftId(d.id)
+        // ссылка на черновик — в адресе: перезагрузка и другое устройство откроют его же
+        setSearchParams((p) => {
+          const n = new URLSearchParams(p)
+          n.set('draft', d.id)
+          return n
+        }, { replace: true })
+      }
+      setDraftSaved(new Date(d.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+    } catch {
+      setDraftSaved('')
+    }
+  }, [title, bodyText, draftMeta, setSearchParams])
+  // автосохранение: через 2 с после правки текста или настроек; пока грузится черновик — не пишем
+  useEffect(() => {
+    if (!importReady || loadedMeta) return
+    const t = window.setTimeout(() => void saveDraftNow(), 2000)
+    return () => window.clearTimeout(t)
+  }, [saveDraftNow, importReady, loadedMeta])
   useEffect(() => {
     if (!draftId || !hasSession()) return
     const load = () =>
@@ -337,7 +384,7 @@ export default function ComposePage() {
       tags,
       readingTime: Math.max(1, Math.round(fullText.split(/\s+/).filter(Boolean).length / 180)),
       verdict: 'clear',
-      excerpt: fullText.replace(/^#\s+.*(?:\n+|$)/, '').split(/\n{2,}/)[0]?.slice(0, 180) ?? '',
+      excerpt: plainExcerpt(fullText.replace(/^#\s+.*(?:\n+|$)/, ''), 180),
       blocks: parseBlocks(fullText),
       comments: [],
       kind,
@@ -520,6 +567,16 @@ export default function ComposePage() {
             )
           })}
         </ol>
+        {hasSession() && (
+          <p className="mt-3 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={() => void saveDraftNow()} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
+              Сохранить черновик
+            </button>
+            <span className="meta">
+              {draftSaved ? `сохранён в ${draftSaved} · текст и настройки публикации` : 'сохраняется сам через 2 с после правки'}
+            </span>
+          </p>
+        )}
 
         {step === 1 ? (
           <Reveal key="article-step" className="mt-8 space-y-6">

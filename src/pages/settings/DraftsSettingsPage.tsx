@@ -1,3 +1,4 @@
+import { plainExcerpt } from '@/lib/plainText'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { PenLine, Plus, Trash2 } from 'lucide-react'
@@ -57,7 +58,7 @@ export default function DraftsSettingsPage() {
                   <Link to={`/compose?draft=${encodeURIComponent(d.id)}`} className="font-semibold decoration-accent underline-offset-4 hover:text-accent hover:underline">
                     {d.title || 'Без заголовка'}
                   </Link>
-                  {d.excerpt && <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{d.excerpt}</p>}
+                  {d.excerpt && <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">{plainExcerpt(d.excerpt)}</p>}
                   <p className="meta mt-1">{new Date(d.updatedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
                 <div className="flex shrink-0 gap-2">

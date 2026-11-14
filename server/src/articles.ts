@@ -2,6 +2,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { PdsError, type PdsClient } from './pds.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
+import { plainExcerpt } from './share.js'
 import type { UserRepo } from './db.js'
 import type { SharedRepo } from './shared.js'
 import type { DraftRepo } from './drafts.js'
@@ -59,7 +60,7 @@ export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new D
     title: b.title,
     ...(b.subtitle ? { subtitle: b.subtitle } : {}),
     text: b.text,
-    excerpt: b.excerpt ?? b.text.slice(0, 500),
+    excerpt: b.excerpt ?? plainExcerpt(b.text, 500),
     tags: b.tags,
     ...(b.langs.length ? { langs: b.langs } : {}),
     ...(b.kind === 'video' ? { kind: 'video', videos: b.videos } : {}),
