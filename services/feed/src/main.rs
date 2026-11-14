@@ -66,7 +66,27 @@ async fn main() {
             }
         });
     }
-    tokio::spawn(firehose::run(pool.clone(), pds, firehose_url));
+    tokio::spawn(firehose::run(pool.clone(), pds.clone(), firehose_url));
+    // PDS соседнего контура (PEER_PDS_URLS, через запятую): общая лента — статьи NL видны в RU и наоборот.
+    // Свой backfill и своя позиция потока у каждого; закрытое в контуре отсекает AppView (restricted).
+    for base in env("PEER_PDS_URLS", "")
+        .split(',')
+        .map(|u| u.trim().trim_end_matches('/'))
+        .filter(|u| u.starts_with("https://"))
+    {
+        let peer = backfill::Pds { base: base.to_string(), http: pds.http.clone() };
+        let ws = base.replacen("https", "wss", 1);
+        {
+            let (pool, peer) = (pool.clone(), peer.clone());
+            tokio::spawn(async move {
+                match backfill::run(&pool, &peer).await {
+                    Ok(n) => tracing::info!(records = n, pds = %peer.base, "peer backfill done"),
+                    Err(err) => tracing::error!(%err, pds = %peer.base, "peer backfill"),
+                }
+            });
+        }
+        tokio::spawn(firehose::run(pool.clone(), peer, ws));
+    }
     // досмотры видео для ранжирования; без ANALYTICS_URL видео ранжируются по лайкам и комментариям
     if let Ok(url) = std::env::var("ANALYTICS_URL") {
         tokio::spawn(completions::run(
