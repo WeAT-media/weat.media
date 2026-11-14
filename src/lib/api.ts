@@ -523,6 +523,8 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   user: (handleOrDid: string) => call<ApiUser>(`/users/${encodeURIComponent(handleOrDid)}`),
+  /** свой профиль с сервера: тариф и имя могли смениться (Premium из админки, правка профиля) */
+  me: () => authed<ApiUser>('/me'),
   async register(body: { username: string; email: string; password: string; displayName?: string }) {
     const s = await call<SessionResponse>('/auth/register', { method: 'POST', body: JSON.stringify({ ...body, consent: { personalData: true, terms: true }, utm: firstTouchUtm() }) })
     saveSession(s)

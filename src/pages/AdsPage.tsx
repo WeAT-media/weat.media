@@ -39,10 +39,8 @@ interface Campaign {
   erid?: string
 }
 
-const seedCampaigns: Campaign[] = [
-  { id: 'ad1', name: 'Трекер задач для инженеров', spent: 12400, clicks: 3120, ctr: '2.4%', erid: '2VtzqW7EKb6' },
-  { id: 'ad2', name: 'Облачный CI для студий', spent: 8300, clicks: 1490, ctr: '1.8%', erid: '2VtzxP4MNd2' },
-]
+/** демо-кампаний нет: в кабинете — только свои */
+const seedCampaigns: Campaign[] = []
 
 const geoSummary = (a: AdCreative) => {
   const parts = [

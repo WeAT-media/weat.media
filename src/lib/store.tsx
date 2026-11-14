@@ -22,7 +22,7 @@ import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, articles as articlesApi, clearSession, comments, hasSession, likes, support as supportApi, type ServerSettings } from '@/lib/api'
+import { api, toUser, articles as articlesApi, clearSession, comments, hasSession, likes, support as supportApi, type ServerSettings } from '@/lib/api'
 import { videoFromLink, type RecordVideo } from '@/lib/videoLink'
 
 type SettingsSection = keyof ServerSettings
@@ -340,6 +340,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ── синхронизация настроек с AppView ──────────────────────────────────
   const lastSent = useRef<Record<string, string>>({})
   const syncDid = persisted.user?.did && hasSession() ? persisted.user.did : undefined
+
+  // свой профиль — с сервера при открытии и при возврате на вкладку: Premium, выданный в админке,
+  // и новое имя видны без повторного входа (иначе — данные, запомненные при входе)
+  useEffect(() => {
+    if (!syncDid) return
+    const refresh = () =>
+      void api.me().then(
+        (u) => setPersisted((prev) => (prev.user?.did === u.did ? { ...prev, user: { ...prev.user, ...toUser(u) } } : prev)),
+        () => {},
+      )
+    refresh()
+    const onVisible = () => document.visibilityState === 'visible' && refresh()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [syncDid])
   // статус привязан к DID: после смены аккаунта до ответа сервера — 'syncing'
   const [remote, setRemote] = useState<{ did: string; status: Exclude<SettingsSyncState, 'local'> } | null>(null)
   const settingsSync: SettingsSyncState = !syncDid ? 'local' : remote?.did === syncDid ? remote.status : 'syncing'

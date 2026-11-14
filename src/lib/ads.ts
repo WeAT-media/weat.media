@@ -231,58 +231,15 @@ export const AD_IMAGE_MAX_BYTES = 1024 * 1024
 
 const KEY = 'weat-ads'
 
-export const DEFAULT_AD: AdCreative = {
-  id: 'ad1',
-  erid: '2VtzqW7EKb6',
-  advertiser: 'ООО «Пример»',
-  title: 'Горячие клавиши для вашего терминала не настроены?',
-  text: 'Карманный трекер задач для инженеров — офлайн, без подписок, экспорт в markdown.',
-  url: 'https://example.com/ad',
-  cta: 'Перейти',
-  status: 'running',
-  geo: { residence: [], registration: [] },
-  hiddenFromBoard: false,
-  audience: 'all',
-  createdAt: '2026-11-01T00:00:00.000Z',
-}
-
-/** демо-набор: разные статусы и гео — чтобы история и доска не были пустыми */
-export const DEFAULT_ADS: AdCreative[] = [
-  DEFAULT_AD,
-  {
-    id: 'ad2',
-    advertiser: 'TOO «Демо», БИН 000000000000',
-    title: 'Облачный CI для студий Алматы и Тбилиси',
-    text: 'Сборки за минуты, оплата в тенге и лари.',
-    url: 'https://example.com/ci',
-    cta: 'Попробовать',
-    status: 'paused',
-    geo: { residence: ['KZ', 'GE'], registration: [] },
-    hiddenFromBoard: false,
-    audience: 'all',
-    createdAt: '2026-11-05T00:00:00.000Z',
-  },
-  {
-    id: 'ad3',
-    erid: '2VtzxP4MNd2',
-    advertiser: 'ООО «Курсы»',
-    title: 'Курс по миграции на AT Protocol',
-    text: 'Шесть недель, практика на своём PDS.',
-    url: 'https://example.com/course',
-    cta: 'Записаться',
-    status: 'finished',
-    geo: { residence: ['RU'], registration: ['RU'] },
-    hiddenFromBoard: false,
-    audience: 'all',
-    createdAt: '2026-10-01T00:00:00.000Z',
-  },
-]
+/** демо-креативов в проде нет: баннеры — только созданные рекламодателями */
+export const DEFAULT_ADS: AdCreative[] = []
 
 export function loadAds(): AdCreative[] {
   try {
     const raw = localStorage.getItem(KEY)
     const list = raw ? (JSON.parse(raw) as AdCreative[]) : null
-    return Array.isArray(list) && list.length ? list.map(normalize) : DEFAULT_ADS
+    // старые демо-креативы из браузера (ad1, ad2…) — не показываем
+    return Array.isArray(list) ? list.map(normalize).filter((a) => !/^ad\d+$/.test(a.id)) : DEFAULT_ADS
   } catch {
     return DEFAULT_ADS
   }
