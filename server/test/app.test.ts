@@ -19,6 +19,7 @@ import type { AtprotoAuth } from '../src/atprotoOAuth.ts'
 import type { ImportDraftRow, ImportRepo, PostSource } from '../src/imports.ts'
 import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
 import type { AdjustmentRow, PayoutRepo, PayoutRow } from '../src/payouts.ts'
+import type { SystemAccountRepo } from '../src/systemAccounts.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
@@ -187,6 +188,11 @@ function memPayouts(): PayoutRepo {
     },
     async recentOrders() { return [] },
   }
+}
+
+function memSystem(): SystemAccountRepo {
+  const rows = new Map<string, string>()
+  return { async insert(did, enc) { rows.set(did, enc) }, async password(did) { return rows.get(did) } }
 }
 
 function memTickets(): TicketRepo {
@@ -705,6 +711,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     imports: memImports(),
     mail: memMail(),
     payouts: memPayouts(),
+    system: memSystem(),
     postSource: fakePostSource,
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
@@ -1135,6 +1142,30 @@ test('pds gate: external createSession — TOTP account with main password refus
   } finally {
     globalThis.fetch = realFetch
   }
+})
+
+test('system accounts: admin creates news (reserved handle via admin API), logs in via handoff; people cannot be impersonated', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }
+  const support = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  const create = (b: unknown, h = admin) => app.request('/api/admin/system-accounts', { method: 'POST', headers: h, body: JSON.stringify(b) })
+  assert.equal((await create({ username: 'news', displayName: 'Новости' }, support)).status, 403)
+  assert.equal((await create({ username: 'N!', displayName: 'x' })).status, 400)
+  const res = await create({ username: 'news', displayName: 'Новости weAT.media', description: 'Обновления и новые функции' })
+  assert.equal(res.status, 201)
+  const news = await res.json()
+  assert.equal(news.handle, 'news.indie.media')
+  assert.equal((await create({ username: 'news', displayName: 'дубль' })).status, 409)
+  const list = await (await app.request('/api/admin/system-accounts', { headers: admin })).json()
+  assert.equal(list[0].service, 'system')
+  assert.equal(list[0].canLogin, true)
+
+  const login = await (await app.request(`/api/admin/system-accounts/${news.did}/login`, { method: 'POST', headers: admin })).json()
+  const s = await (await app.request('/api/auth/handoff', json({ code: login.code }, '5.1.1.1'))).json()
+  assert.equal(s.user.did, news.did, 'обычная сессия системной учётки')
+  const human = await (await app.request('/api/auth/register', json({ ...reg, username: 'human', email: 'h@example.com' }, '5.1.1.1'))).json()
+  assert.equal((await app.request(`/api/admin/system-accounts/${human.user.did}/login`, { method: 'POST', headers: admin })).status, 404, 'в человека войти нельзя')
+  assert.ok(auditLog.some((e) => e.action === 'system.login' && e.target === news.did))
 })
 
 test('atproto: ru contour never registers', async () => {

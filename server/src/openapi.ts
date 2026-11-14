@@ -30,6 +30,7 @@ import { ImportDraftDto, ImportStatusBody } from './imports.js'
 import { MailMessageDto, MailSummaryDto, SendMailBody } from './mailbox.js'
 import { AdjustBody, AdjustmentDto } from './finance.js'
 import { LabelBody } from './labels.js'
+import { SystemAccountBody } from './systemAccounts.js'
 import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutRequestBody, SaleDto } from './payouts.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
@@ -263,6 +264,9 @@ const ops: Op[] = [
   { method: 'get', path: '/admin/payouts', tag: 'admin', summary: 'Заявки на выплату', auth: 'staff', query: { status: { description: 'requested | paid | rejected' } }, ok: { status: 200, schema: z.array(AdminPayoutDto), description: 'Старые сверху' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden']] },
   { method: 'patch', path: '/admin/payouts/{id}', tag: 'admin', summary: 'Отметить выплату или отклонить', auth: 'staff', description: 'Отказ — с причиной (note), её видит автор; сумма снова доступна.', body: PayoutDecisionBody, ok: { status: 200, schema: AdminPayoutDto, description: 'Решение' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']] },
   { method: 'post', path: '/admin/labels', tag: 'admin', summary: 'Поставить или снять метку коллегии', auth: 'staff', description: 'Роль moderator. neg: true — снять. Метку подписывает сервис коллегии.', body: LabelBody, ok: { status: 201, schema: z.record(z.string(), z.unknown()), description: 'Подписанная метка' }, errors: [[400, 'InvalidRequest'], [502, 'LabelerUnavailable'], [503, 'LabelerDisabled']] },
+  { method: 'get', path: '/admin/system-accounts', tag: 'admin', summary: 'Системные и служебные учётки', auth: 'staff', ok: { status: 200, schema: z.array(z.record(z.string(), z.unknown())), description: 'news, crawler, коллегии…' }, errors: [[403, 'Forbidden']] },
+  { method: 'post', path: '/admin/system-accounts', tag: 'admin', summary: 'Создать системную учётку', auth: 'staff', description: 'Только admin. handle = username.<домен>, почта system+username@<домен>; пароль знает только сервер.', body: SystemAccountBody, ok: { status: 201, schema: z.record(z.string(), z.unknown()), description: 'Создана' }, errors: [[400, 'InvalidRequest'], [409, 'HandleTaken']] },
+  { method: 'post', path: '/admin/system-accounts/{did}/login', tag: 'admin', summary: 'Войти как системная учётка', auth: 'staff', description: 'Одноразовый код для /login?handoff=…; в людей войти нельзя. В журнал.', ok: { status: 200, schema: z.object({ code: z.string() }), description: 'Код входа' }, errors: [[404, 'NotFound']] },
   // ── почта площадки: support@ — support и admin; legal@, noreply@ — admin
   { method: 'get', path: '/admin/mail/boxes', tag: 'admin', summary: 'Доступные сотруднику ящики', auth: 'staff', ok: { status: 200, schema: z.object({ boxes: z.array(z.enum(['support', 'legal', 'noreply'])) }), description: 'Ящики по ролям' }, errors: [[401, 'AuthenticationRequired']] },
   {

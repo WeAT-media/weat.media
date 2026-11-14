@@ -71,7 +71,8 @@ export default function LandingPage() {
         <WordReveal text="Дышите свободно в ATmosphere." className="mt-4 max-w-[16ch] text-5xl font-extrabold leading-[1.05] tracking-tight md:text-7xl" />
         <p className="mt-6 max-w-[62ch] text-lg leading-relaxed text-muted-foreground">
           <span className="font-semibold text-foreground">we</span> — это мы, сообщество.{' '}
-          <span className="font-semibold text-accent">AT</span> — открытый AT Protocol, на котором мы стоим. А вместе
+          <span className="font-semibold text-accent">AT</span> — открытый{' '}
+          <a href="https://atproto.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-accent underline-offset-4 hover:text-accent">AT Protocol</a>, на котором мы стоим. А вместе
           weat звучит как wheat — пшеница.
         </p>
         <p className="mt-4 max-w-[62ch] text-lg leading-relaxed text-muted-foreground">

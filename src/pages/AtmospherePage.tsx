@@ -114,11 +114,14 @@ export default function AtmospherePage() {
         <h1 className="mt-3 text-4xl font-extrabold tracking-tight md:text-5xl">AT Protocol и ATmosphere</h1>
         <p className="mt-4 max-w-[62ch] text-lg leading-relaxed text-muted-foreground">
           <span className="font-semibold text-foreground">we</span> — это мы, сообщество.{' '}
-          <span className="font-semibold text-accent">AT</span> — открытый AT Protocol, на котором мы стоим. А вместе
+          <span className="font-semibold text-accent">AT</span> — открытый{' '}
+          <a href="https://atproto.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-accent underline-offset-4 hover:text-accent">AT Protocol</a>, на котором мы стоим. А вместе
           weat звучит как wheat — пшеница.
         </p>
         <p className="mt-4 max-w-[60ch] text-muted-foreground">
-          Восемь коротких шагов. Листайте кнопками или нажимайте на элементы схемы.
+          Восемь коротких шагов. Листайте кнопками или нажимайте на элементы схемы. Спецификация и документация
+          протокола — на{' '}
+          <a href="https://atproto.com/" target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-4">atproto.com</a>.
         </p>
       </section>
 

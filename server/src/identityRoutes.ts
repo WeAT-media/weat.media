@@ -408,6 +408,8 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
 
   /** для /geo: какие кнопки входа показать на странице логина */
   return {
+    /** одноразовый код входа: /login?handoff=… (вход в системную учётку из админки) */
+    issueHandoff,
     loginProviders: (ipCountry?: string) => PROVIDERS.filter((p) => configured(p) && providerAllowed(p, d.config.CONTOUR, undefined, ipCountry)),
   }
 }

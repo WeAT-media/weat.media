@@ -23,6 +23,7 @@ import { mountShareRoutes } from './share.js'
 import { mountFinanceRoutes } from './finance.js'
 import { mountLabelRoutes } from './labels.js'
 import { mountPdsGate } from './pdsGate.js'
+import { mountSystemAccountRoutes, type SystemAccountRepo } from './systemAccounts.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -51,6 +52,7 @@ export interface Deps {
   sessions: SessionRepo
   imports: ImportRepo
   payouts: PayoutRepo
+  system: SystemAccountRepo
   /** почта площадки (/admin/email); не задана — ящиков нет */
   mail?: MailboxClient
   /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
@@ -302,6 +304,7 @@ export function createApp(deps: Deps) {
   mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource() }, { bearer })
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })
+  mountSystemAccountRoutes(app, { pds: d.pds, users: d.users, system: d.system, secrets: d.secrets, handleDomain: d.config.PDS_HANDLE_DOMAIN }, { requireStaff, audit, issueHandoff: ids.issueHandoff, sessionDto })
 
   app.get('/geo', (c) => {
     const geo = geoOf(c)

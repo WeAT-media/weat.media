@@ -28,6 +28,8 @@ export default function Footer() {
           <Link to="/feed" className={link}>Лента</Link>
           <Link to="/settings" className={link}>Модерация</Link>
           <Link to="/support" className={link}>Поддержка</Link>
+          <Link to="/atmosphere" className={link}>Что такое ATmosphere</Link>
+          <a href="https://atproto.com/" target="_blank" rel="noopener noreferrer" className={link}>AT Protocol ↗</a>
           {/* AGPL-3.0 §13: пользователи сетевого сервиса должны получить исходный код */}
           <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer" className={link}>
             Исходный код · AGPL-3.0
