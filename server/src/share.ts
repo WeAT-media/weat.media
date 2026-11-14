@@ -91,6 +91,23 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     return a
   }
 
+  // файлы автора (фото профиля и др.) — с PDS самого автора по его DID-документу: в общей ленте автор
+  // может быть из другого контура или вообще со своего PDS. Браузер идёт туда напрямую (302).
+  const pdsOf = new Map<string, { at: number; pds: string }>()
+  app.get('/blob/:did/:cid', async (c) => {
+    const { did, cid } = c.req.param()
+    if (!/^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.%-]{1,253})$/.test(did) || !/^[a-z0-9]{20,120}$/.test(cid)) return c.json({ error: 'InvalidRequest', message: 'Неверный DID или CID' }, 400)
+    let hit = pdsOf.get(did)
+    if (!hit || Date.now() - hit.at > 3_600_000) {
+      const pds = await resolvePds(did, plcUrl).catch(() => null)
+      if (!pds) return c.json({ error: 'NotFound', message: 'Сервер автора не найден' }, 404)
+      if (pdsOf.size > 5000) pdsOf.delete(pdsOf.keys().next().value!)
+      pdsOf.set(did, (hit = { at: Date.now(), pds }))
+    }
+    c.header('cache-control', 'public, max-age=3600')
+    return c.redirect(`${hit.pds}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`, 302)
+  })
+
   // картинка превью статьи: название и автор; готовые PNG — в памяти на час
   const cards = new Map<string, { at: number; png: Buffer }>()
   app.get('/og/article/:file', async (c) => {

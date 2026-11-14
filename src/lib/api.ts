@@ -346,7 +346,8 @@ export const payouts = {
 }
 
 /** картинка аватара: blob в репозитории пользователя на PDS */
-export const avatarUrl = (did: string, cid: string) => `${PDS_URL}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`
+/** фото автора — с его собственного PDS (AppView находит его по DID): автор может быть из другого контура */
+export const avatarUrl = (did: string, cid: string) => `/api/blob/${encodeURIComponent(did)}/${encodeURIComponent(cid)}`
 
 export interface ProfileView {
   did: string
