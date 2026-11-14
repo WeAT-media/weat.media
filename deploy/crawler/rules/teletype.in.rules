@@ -1,0 +1,12 @@
+~version: "2.0"
+# teletype.in: статья — /@автор/идентификатор
+?path: /@[^/]+/.+
+
+title: //h1[has-class("article__header_title")]
+author: //meta[@name="author"]
+author_url: //a[has-class("article__author_link")]
+published_date: //meta[@property="article:published_time"]
+cover: //meta[@property="og:image"]
+description: //meta[@property="og:description"]
+@remove: //article//*[has-class("bnr")]
+body: //article[has-class("article__content")]

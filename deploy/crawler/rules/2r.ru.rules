@@ -1,0 +1,8 @@
+~version: "2.0"
+# 2r.ru: статьи блога — /blog/articles/<slug>; текст — блок редактора tiptap, без оглавления
+?path: /blog/articles/.+
+
+title: //h1[1]
+description: //meta[@name="description"]
+@remove: //*[has-class("f-tiptap-content-toc")]
+body: //div[has-class("m-tiptap-preview__content")]

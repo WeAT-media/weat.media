@@ -1,0 +1,2 @@
+# Правила разбора сайтов (как Telegram Instant View) — копия того, что сохранено в краулере
+# (/admin/crawler → «Правила разбора сайтов»). Файл: <хост>.rules. Синтаксис: services/crawler/src/rules.ts

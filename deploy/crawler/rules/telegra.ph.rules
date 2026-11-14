@@ -1,0 +1,14 @@
+~version: "2.0"
+# telegra.ph: шапка (заголовок, автор, дата) — над редактором; внутри редактора она продублирована — вырезаем
+?domain: telegra\.ph
+
+title: //header//h1
+title: //h1[1]
+author: //address/a[@rel="author"]
+author_url: //address/a[@rel="author"]
+published_date: //address/time
+cover: //meta[@property="og:image"]
+description: //meta[@property="og:description"]
+@remove: //article[@id="_tl_editor"]//h1[1]
+@remove: //article[@id="_tl_editor"]//address
+body: //article[@id="_tl_editor"]
