@@ -16,7 +16,8 @@ export interface CrawlerAccount {
   created_at: Date
 }
 
-export type ItemStatus = 'queued' | 'running' | 'published' | 'failed'
+/** held — ждёт уведомления автора; skipped — решили не публиковать */
+export type ItemStatus = 'held' | 'queued' | 'running' | 'published' | 'failed' | 'skipped'
 
 export interface CrawlItem {
   id: string
@@ -30,6 +31,11 @@ export interface CrawlItem {
   at_uri: string | null
   error: string | null
   attempts: number
+  /** часов от уведомления автора до публикации (из источника) */
+  delay_hours: number
+  notified_at: Date | null
+  notified_by: string | null
+  publish_after: Date | null
   created_at: Date
   updated_at: Date
 }
@@ -101,11 +107,11 @@ export function repo(sql: Sql) {
     },
     items: {
       /** null — такая ссылка уже есть (дубликат) */
-      create: async (i: { url: string; canonical: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null }) =>
+      create: async (i: { url: string; canonical: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null; holdHours?: number }) =>
         (
           await sql<CrawlItem[]>`
-            INSERT INTO crawler_items (url, url_canonical, crawler_id, origin, requested_by)
-            VALUES (${i.url}, ${i.canonical}, ${i.crawlerId}, ${i.origin}, ${i.requestedBy})
+            INSERT INTO crawler_items (url, url_canonical, crawler_id, origin, requested_by, status, delay_hours)
+            VALUES (${i.url}, ${i.canonical}, ${i.crawlerId}, ${i.origin}, ${i.requestedBy}, ${i.holdHours ? 'held' : 'queued'}, ${i.holdHours ?? 0})
             ON CONFLICT (url_canonical) DO NOTHING RETURNING *`
         )[0] ?? null,
       byCanonical: async (c: string) => (await sql<CrawlItem[]>`SELECT * FROM crawler_items WHERE url_canonical = ${c}`)[0],
@@ -120,6 +126,16 @@ export function repo(sql: Sql) {
             attempts = COALESCE(${p.attempts ?? null}, attempts),
             updated_at = now()
           WHERE id = ${id}`,
+      /** «Написал автору»: held → queued, публикация не раньше publish_after */
+      notified: async (id: string, by: string | null, delayHours: number) =>
+        (
+          await sql<CrawlItem[]>`
+            UPDATE crawler_items SET status = 'queued', notified_at = now(), notified_by = ${by},
+              delay_hours = ${delayHours}, publish_after = now() + make_interval(hours => ${delayHours}), updated_at = now()
+            WHERE id = ${id} AND status = 'held' RETURNING *`
+        )[0],
+      skip: async (id: string, by: string | null) =>
+        (await sql<CrawlItem[]>`UPDATE crawler_items SET status = 'skipped', notified_by = ${by}, updated_at = now() WHERE id = ${id} AND status IN ('held', 'queued') RETURNING *`)[0],
     },
     rules: {
       list: () => sql<SiteRules[]>`SELECT * FROM site_rules ORDER BY host`,

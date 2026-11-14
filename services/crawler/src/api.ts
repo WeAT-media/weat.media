@@ -129,6 +129,16 @@ export function createApi(d: {
   })
 
   /** Повторить упавшую задачу */
+  /** «Написал автору»: публикация через delayHours (по умолчанию — отсрочка источника, иначе 36 ч) */
+  app.post('/items/:id/notify', async (c) => {
+    const b = await body(c, z.object({ delayHours: z.number().int().min(0).max(720).optional(), by: z.string().max(200).optional() }))
+    return c.json(await d.crawler.notifyAuthor(c.req.param('id'), b.by ?? null, b.delayHours))
+  })
+  app.post('/items/:id/skip', async (c) => {
+    const b = await body(c, z.object({ by: z.string().max(200).optional() }))
+    return c.json(await d.crawler.skipItem(c.req.param('id'), b.by ?? null))
+  })
+
   app.post('/items/:id/retry', async (c) => {
     const item = await d.repo.items.get(c.req.param('id'))
     if (!item) return c.json({ error: 'NotFound', message: 'Нет такой задачи' }, 404)

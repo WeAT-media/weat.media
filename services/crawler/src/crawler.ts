@@ -9,7 +9,7 @@ import type { SecretBox } from './secretbox.js'
 
 /** Очередь задач — интерфейс, чтобы логику можно было проверить без Redis */
 export interface JobQueue {
-  /** delayMs — отсрочка публикации (источник с delay_hours) */
+  /** delayMs — отсрочка публикации (после уведомления автора) */
   addArticle(itemId: string, delayMs?: number): Promise<void>
   addSourcePoll(sourceId: string): Promise<void>
   scheduleSource(source: CrawlSource): Promise<void>
@@ -77,7 +77,8 @@ export function createCrawler(d: CrawlerDeps) {
     },
 
     /** Поставить ссылку в очередь. Повторная ссылка не публикуется второй раз */
-    async enqueue(input: { url: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null; delayMs?: number }) {
+    /** holdHours > 0 — не публиковать, пока сотрудник не напишет автору; потом — через holdHours (notifyAuthor) */
+    async enqueue(input: { url: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null; holdHours?: number }) {
       const acc = await d.repo.accounts.get(input.crawlerId)
       if (!acc) throw new PermanentError('Нет такого краулера')
       if (!acc.enabled) throw new PermanentError('Краулер выключен')
@@ -88,10 +89,27 @@ export function createCrawler(d: CrawlerDeps) {
       } catch {
         throw new PermanentError('Некорректная ссылка')
       }
-      const item = await d.repo.items.create({ url: input.url, canonical, crawlerId: acc.id, origin: input.origin, requestedBy: input.requestedBy })
+      const item = await d.repo.items.create({ url: input.url, canonical, crawlerId: acc.id, origin: input.origin, requestedBy: input.requestedBy, holdHours: input.holdHours })
       if (!item) return { duplicate: true as const, item: (await d.repo.items.byCanonical(canonical))! }
-      await d.queue.addArticle(item.id, input.delayMs)
+      if (item.status !== 'held') await d.queue.addArticle(item.id)
       return { duplicate: false as const, item }
+    },
+
+    /** сотрудник написал автору: отсчёт отсрочки — с этого момента */
+    async notifyAuthor(itemId: string, by: string | null, delayHours?: number) {
+      const cur = await d.repo.items.get(itemId)
+      if (!cur) throw new PermanentError('Задача не найдена')
+      const hours = delayHours ?? (cur.delay_hours || 36)
+      const item = await d.repo.items.notified(itemId, by, hours)
+      if (!item) throw new PermanentError('Статья не ждёт уведомления автора')
+      await d.queue.addArticle(item.id, hours * 3_600_000)
+      return item
+    },
+
+    async skipItem(itemId: string, by: string | null) {
+      const item = await d.repo.items.skip(itemId, by)
+      if (!item) throw new PermanentError('Эту статью уже не отменить')
+      return item
     },
 
     /**
@@ -121,6 +139,9 @@ export function createCrawler(d: CrawlerDeps) {
       const item = await d.repo.items.get(itemId)
       if (!item) throw new PermanentError('Задача удалена')
       if (item.status === 'published') return item.at_uri
+      // ждёт уведомления автора или отменена — не публикуем (задача могла остаться от старой логики)
+      if (item.status === 'held' || item.status === 'skipped') return null
+      if (item.publish_after && item.publish_after.getTime() > Date.now() + 60_000) throw new Error('Рано: публикация после ' + item.publish_after.toISOString())
       const acc = await d.repo.accounts.get(item.crawler_id)
       if (!acc) throw new PermanentError('Краулер удалён')
       await d.repo.items.update(item.id, { status: 'running', attempts: attempt })
@@ -177,9 +198,8 @@ export function createCrawler(d: CrawlerDeps) {
           const published = l.date ? Date.parse(l.date) : null
           // только свежее: «за последние N часов» — по дате записи в ленте
           if (src.max_age_hours && published && now - published > src.max_age_hours * 3_600_000) continue
-          // отсрочка: не раньше чем через delay_hours после выхода оригинала (даты нет — от обнаружения)
-          const delayMs = src.delay_hours ? Math.max(0, (published ?? now) + src.delay_hours * 3_600_000 - now) : 0
-          const r = await this.enqueue({ url: l.url, crawlerId: src.crawler_id, origin: 'source', requestedBy: `source:${src.id}`, delayMs }).catch(() => null)
+          // отсрочка у источника — статья ждёт, пока сотрудник напишет автору; отсчёт — от уведомления
+          const r = await this.enqueue({ url: l.url, crawlerId: src.crawler_id, origin: 'source', requestedBy: `source:${src.id}`, holdHours: src.delay_hours || undefined }).catch(() => null)
           if (r && !r.duplicate) added++
         }
         await d.repo.sources.polled(src.id, null)

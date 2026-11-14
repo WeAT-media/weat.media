@@ -20,12 +20,15 @@ interface Item {
   id: string
   url: string
   crawler_id: string
-  status: 'queued' | 'running' | 'published' | 'failed'
+  status: 'held' | 'queued' | 'running' | 'published' | 'failed' | 'skipped'
   origin: 'manual' | 'source'
   title: string | null
   at_uri: string | null
   error: string | null
   attempts: number
+  delay_hours?: number
+  notified_at?: string | null
+  publish_after?: string | null
   created_at: string
 }
 interface Source {
@@ -47,6 +50,8 @@ const inputCls =
   'w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 const STATUS: Record<Item['status'], { label: string; cls: string }> = {
+  held: { label: 'ждёт автора', cls: 'border-accent text-accent' },
+  skipped: { label: 'не публикуем', cls: 'border-border text-muted-foreground' },
   queued: { label: 'в очереди', cls: 'border-border text-muted-foreground' },
   running: { label: 'загружается', cls: 'border-accent/60 text-accent' },
   published: { label: 'опубликовано', cls: 'border-accent bg-accent/10 text-accent' },
@@ -247,6 +252,9 @@ export default function AdminCrawlerPage() {
                   {i.origin === 'source' ? 'из RSS' : 'вручную'} · {i.crawler_id} · {fmt(i.created_at)} · попыток: {i.attempts}
                 </p>
                 {i.error && i.status !== 'published' && <p className="mt-1 text-[13px] text-destructive">{i.error}</p>}
+                {i.status === 'queued' && i.publish_after && (
+                  <p className="meta mt-0.5 !normal-case tracking-normal">автору написали {fmt(i.notified_at ?? null)} · публикация {fmt(i.publish_after)}</p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] ${STATUS[i.status].cls}`}>
@@ -258,6 +266,21 @@ export default function AdminCrawlerPage() {
                   </Link>
                 )}
                 <a href={i.url} target="_blank" rel="noopener noreferrer" aria-label="Оригинал" title="Оригинал" className="btn-ghost !px-2 !py-1.5"><ExternalLink size={12} aria-hidden="true" /></a>
+                {i.status === 'held' && (
+                  <>
+                    <button
+                      type="button"
+                      title={`Вы написали автору, что опубликуете статью: публикация через ${i.delay_hours || 36} ч`}
+                      onClick={() => act(async () => (await call(`/items/${i.id}/notify`, { method: 'POST', body: '{}' }), `Публикация через ${i.delay_hours || 36} ч.`))}
+                      className="btn-primary !px-2.5 !py-1.5 !text-[11px]"
+                    >
+                      Написал автору · {i.delay_hours || 36} ч
+                    </button>
+                    <button type="button" onClick={() => act(async () => (await call(`/items/${i.id}/skip`, { method: 'POST', body: '{}' }), 'Не публикуем.'))} className="btn-ghost !px-2.5 !py-1.5 !text-[11px]">
+                      Не публиковать
+                    </button>
+                  </>
+                )}
                 {i.status === 'failed' && (
                   <button type="button" onClick={() => act(async () => (await call(`/items/${i.id}/retry`, { method: 'POST' }), 'Повтор поставлен в очередь.'))} className="btn-ghost !px-2.5 !py-1.5 !text-[11px]">
                     <RotateCcw size={12} aria-hidden="true" /> Повторить

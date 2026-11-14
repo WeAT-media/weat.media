@@ -103,12 +103,13 @@ function memRepo() {
       setEnabled: async (id: string, enabled: boolean) => void (accounts.get(id)!.enabled = enabled),
     },
     items: {
-      create: async (i: { url: string; canonical: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null }) => {
+      create: async (i: { url: string; canonical: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null; holdHours?: number }) => {
         if ([...items.values()].some((x) => x.url_canonical === i.canonical)) return null
         const id = String(++seq)
         const row: CrawlItem = {
-          id, url: i.url, url_canonical: i.canonical, crawler_id: i.crawlerId, status: 'queued', origin: i.origin,
+          id, url: i.url, url_canonical: i.canonical, crawler_id: i.crawlerId, status: i.holdHours ? 'held' : 'queued', origin: i.origin,
           requested_by: i.requestedBy, title: null, at_uri: null, error: null, attempts: 0, created_at: new Date(), updated_at: new Date(),
+          delay_hours: i.holdHours ?? 0, notified_at: null, notified_by: null, publish_after: null,
         }
         items.set(id, row)
         return row
@@ -119,6 +120,16 @@ function memRepo() {
       update: async (id: string, p: { status: CrawlItem['status']; title?: string | null; atUri?: string | null; error?: string | null; attempts?: number }) => {
         const it = items.get(id)!
         Object.assign(it, { status: p.status, title: p.title ?? it.title, at_uri: p.atUri ?? it.at_uri, error: p.error ?? null, attempts: p.attempts ?? it.attempts })
+      },
+      notified: async (id: string, by: string | null, h: number) => {
+        const it = items.get(id)
+        if (!it || it.status !== 'held') return undefined
+        return Object.assign(it, { status: 'queued', notified_at: new Date(), notified_by: by, delay_hours: h, publish_after: new Date(Date.now() + h * 3_600_000) })
+      },
+      skip: async (id: string, by: string | null) => {
+        const it = items.get(id)
+        if (!it || !['held', 'queued'].includes(it.status)) return undefined
+        return Object.assign(it, { status: 'skipped', notified_by: by })
       },
     },
     rules: {
@@ -151,6 +162,7 @@ function setup(pages: Record<string, string | FetchError | { redirect: string; b
   const { repo, items } = memRepo()
   const published: { handle: string; record: Record<string, unknown> }[] = []
   const queued: string[] = []
+  const delays = new Map<string, number>()
   const pds = {
     createAccount: async (handle: string) => ({ did: `did:plc:${handle.split('.')[0]}`, handle, accessJwt: 'a', refreshJwt: 'r' }),
     createRecord: async (cred: { handle: string }, _c: string, record: Record<string, unknown>) => {
@@ -160,7 +172,7 @@ function setup(pages: Record<string, string | FetchError | { redirect: string; b
     putProfile: async () => {},
   } as unknown as Pds
   const queue: JobQueue = {
-    addArticle: async (id) => void queued.push(id),
+    addArticle: async (id, delayMs) => void (queued.push(id), delays.set(id, delayMs ?? 0)),
     addSourcePoll: async () => {},
     scheduleSource: async () => {},
     unscheduleSource: async () => {},
@@ -173,7 +185,7 @@ function setup(pages: Record<string, string | FetchError | { redirect: string; b
     return { url, status: 200, contentType: 'text/html', body: p }
   }
   const crawler = createCrawler({ repo, pds, fetchPage, secrets: createSecretBox('33'.repeat(32)), queue, handleDomain: 'indie.media' })
-  return { crawler, items, published, queued }
+  return { crawler, items, published, queued, delays }
 }
 
 test('admin flow: create crawler, enqueue habr link, publish into crawler repo; duplicate not re-published', async () => {
@@ -295,4 +307,21 @@ test('extract: OpenNet news (table layout, no og:title)', () => {
   assert.match(a.markdown, /\[Polo 1\.0\]\(https:\/\/github\.com\//)
   assert.equal(a.publishedAt, '2026-11-12T19:10:00.000Z')
   assert.equal(a.lang, 'ru')
+})
+
+test('author notice: source with delay holds items; «написал автору» schedules publish in N hours; skip cancels', async () => {
+  const t = setup({})
+  await t.crawler.createAccount({ id: 'habr', site: 'habr.com', displayName: 'Хабр' })
+  const held = await t.crawler.enqueue({ url: 'https://habr.com/ru/articles/1/', crawlerId: 'habr', origin: 'source', requestedBy: 'source:1', holdHours: 36 })
+  assert.equal(held.item.status, 'held')
+  assert.deepEqual(t.queued, [], 'до уведомления автора — не в очереди')
+  assert.equal(await t.crawler.processArticle(held.item.id, 1), null, 'старая задача из очереди ничего не публикует')
+  assert.equal(t.published.length, 0)
+  const n = await t.crawler.notifyAuthor(held.item.id, 'zitadel:u1')
+  assert.equal(n.status, 'queued')
+  assert.equal(t.delays.get(held.item.id), 36 * 3_600_000, 'через 36 ч от уведомления')
+  await assert.rejects(t.crawler.notifyAuthor(held.item.id, null), /не ждёт/)
+  const other = await t.crawler.enqueue({ url: 'https://habr.com/ru/articles/2/', crawlerId: 'habr', origin: 'source', requestedBy: 'source:1', holdHours: 36 })
+  assert.equal((await t.crawler.skipItem(other.item.id, null)).status, 'skipped')
+  assert.equal(await t.crawler.processArticle(other.item.id, 1), null)
 })
