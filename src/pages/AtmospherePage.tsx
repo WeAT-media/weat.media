@@ -197,6 +197,64 @@ export default function AtmospherePage() {
           </div>
         </div>
       </div>
+
+      {/* Модерация в AT Protocol: лейблеры и наши коллегии */}
+      <section aria-labelledby="labelers-title" className="rule mt-16 pt-10">
+        <p className="meta">Модерация в ATmosphere</p>
+        <h2 id="labelers-title" className="mt-3 text-3xl font-extrabold tracking-tight">Лейблеры: метки вместо удаления</h2>
+        <div className="mt-5 grid gap-8 md:grid-cols-2">
+          <div className="space-y-4 leading-relaxed text-muted-foreground">
+            <p>
+              В закрытой соцсети модерацию решает одна компания: она удаляет записи и блокирует людей. В AT Protocol модерация
+              устроена иначе — её делают <b className="text-foreground">лейблеры</b>: независимые службы, у каждой свой DID и
+              ключ подписи. Лейблер ставит на запись или аккаунт <b className="text-foreground">подписанную метку</b> —
+              «спам», «нерабочий код», «18+». Подделать метку нельзя: подпись проверяется ключом из DID-документа лейблера.
+            </p>
+            <p>
+              Метка ничего не удаляет — запись остаётся в репозитории автора. Что с ней делать, решает{' '}
+              <b className="text-foreground">читатель</b>: подписывается на нужные лейблеры и для каждой метки выбирает
+              «скрыть», «предупредить» или «показать». Любой может запустить свой лейблер, а приложения — выбрать, каким
+              доверять по умолчанию.
+            </p>
+            <p>
+              Технически это открытые методы протокола: <code className="font-mono text-[13px]">com.atproto.label.queryLabels</code> и
+              поток <code className="font-mono text-[13px]">subscribeLabels</code>, а описание меток лейблер публикует записью{' '}
+              <code className="font-mono text-[13px]">app.bsky.labeler.service</code>. Подробнее — в{' '}
+              <a href="https://atproto.com/specs/label" target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-4">
+                спецификации меток на atproto.com
+              </a>
+              .
+            </p>
+          </div>
+          <div>
+            <h3 className="text-lg font-bold">Коллегии {SITE_NAME}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Лейблеры {SITE_NAME} — коллегии присяжных. Решение выносит коллегия, метку видит вся сеть: и {SITE_NAME}, и Bluesky.
+            </p>
+            <ul className="mt-4 space-y-2 text-sm">
+              {[
+                ['spam', 'накрутки и спам'],
+                ['tech', 'техническая экспертиза'],
+                ['law', 'законность'],
+                ['politics', 'политическая агитация и пропаганда'],
+                ['nsfw', 'контент 18+'],
+                ['tone', 'тон и манера'],
+                ['general', 'всё остальное'],
+              ].map(([id, what]) => (
+                <li key={id} className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/70 pb-2">
+                  <span className="font-mono">{id}.justice.{HANDLE_DOMAIN}</span>
+                  <span className="text-muted-foreground">{what}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-sm text-muted-foreground">
+              На {SITE_NAME} — в{' '}
+              <Link to="/settings/moderation" className="text-accent underline underline-offset-4">настройках модерации</Link>. В Bluesky — Настройки →
+              Модерация → найдите <span className="font-mono">tech-justice.{HANDLE_DOMAIN}</span> → «Подписаться».
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
