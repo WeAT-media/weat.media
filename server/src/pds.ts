@@ -23,6 +23,8 @@ export interface PdsClient {
   createSession(identifier: string, password: string, authFactorToken?: string): Promise<PdsSession>
   getSession(accessJwt: string): Promise<PdsAccountInfo>
   refreshSession(refreshJwt: string): Promise<PdsSession>
+  /** отзыв сессии в PDS: refresh-токен перестаёт обновляться */
+  deleteSession(refreshJwt: string): Promise<void>
   /** app password для входа через привязанный аккаунт; требует полную (не app-pass) сессию */
   createAppPassword(accessJwt: string, name: string): Promise<{ password: string }>
   revokeAppPassword(accessJwt: string, name: string): Promise<void>
@@ -107,6 +109,9 @@ export function createPdsClient(baseUrl: string, adminPassword: string): PdsClie
     },
     getSession(accessJwt) {
       return xrpc('GET', 'com.atproto.server.getSession', { auth: `Bearer ${accessJwt}` })
+    },
+    async deleteSession(refreshJwt) {
+      await xrpc<unknown>('POST', 'com.atproto.server.deleteSession', { auth: `Bearer ${refreshJwt}` })
     },
     refreshSession(refreshJwt) {
       return xrpc<PdsSession>('POST', 'com.atproto.server.refreshSession', { auth: `Bearer ${refreshJwt}` })

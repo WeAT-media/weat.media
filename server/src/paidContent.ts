@@ -39,6 +39,8 @@ export interface PaidRepo {
   /** читателей с действующей платной подпиской на автора (агрегат, без имён) */
   countSubscribers(authorDid: string): Promise<number>
   grant(g: { readerDid: string; contentId?: string; authorDid?: string; tierId?: string; source: 'purchase' | 'subscription' | 'grant'; paymentRef?: string; expiresAt?: Date }): Promise<boolean>
+  /** возврат или chargeback: право, выданное этим платежом, гаснет сразу */
+  revokeByPayment(paymentRef: string): Promise<number>
 }
 
 export function paidRepo(sql: Sql): PaidRepo {
@@ -88,6 +90,10 @@ export function paidRepo(sql: Sql): PaidRepo {
                 ${g.paymentRef ?? null}, ${g.expiresAt ?? null})
         ON CONFLICT (payment_ref) DO NOTHING RETURNING id`
       return rows.length > 0
+    },
+    async revokeByPayment(paymentRef) {
+      const rows = await sql`UPDATE entitlements SET expires_at = now() WHERE payment_ref = ${paymentRef} AND (expires_at IS NULL OR expires_at > now()) RETURNING id`
+      return rows.length
     },
   }
 }

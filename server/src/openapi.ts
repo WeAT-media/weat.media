@@ -479,6 +479,7 @@ const ops: Op[] = [
   },
   { method: 'get', path: '/labelers', tag: 'profile', summary: 'Коллегии присяжных и их метки', ok: { status: 200, schema: z.object({ labelers: z.array(z.record(z.string(), z.unknown())) }), description: 'Коллегии' }, errors: [[502, 'LabelerUnavailable'], [503, 'LabelerDisabled']] },
   { method: 'get', path: '/labels', tag: 'profile', summary: 'Действующие метки на записях', query: { uris: { description: 'at://… через запятую, до 100', required: true } }, ok: { status: 200, schema: z.object({ labels: z.array(z.record(z.string(), z.unknown())) }), description: 'Подписанные метки (com.atproto.label.defs#label)' } },
+  { method: 'post', path: '/pds/createSession', tag: 'external', summary: 'Вход в PDS снаружи (через Caddy)', description: 'pds.weat.media/xrpc/com.atproto.server.createSession: у аккаунтов с TOTP полный вход паролем отклоняется, пароль приложения работает.', ok: { status: 200, schema: z.record(z.string(), z.unknown()), description: 'Ответ PDS' }, errors: [[401, 'AuthFactorTokenRequired'], [502, 'UpstreamFailure']] },
   // ── импорт из AT-аккаунта
   {
     method: 'post', path: '/me/imports/atproto', tag: 'profile', summary: 'Импортировать посты AT-аккаунта в черновики', auth: 'bearer',

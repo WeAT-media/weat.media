@@ -76,6 +76,8 @@ export interface OrderRepo {
   byContract(contractId: string): Promise<OrderRow | undefined>
   /** переход только из pending: повтор вебхука ничего не меняет */
   settle(id: string, status: 'paid' | 'failed'): Promise<boolean>
+  /** возврат: только из paid; сумма уходит из баланса автора (баланс считается по status = 'paid') */
+  refund(id: string): Promise<boolean>
 }
 
 export function orderRepo(sql: Sql): OrderRepo {
@@ -97,6 +99,10 @@ export function orderRepo(sql: Sql): OrderRepo {
       const rows = await sql`
         UPDATE orders SET status = ${status}, paid_at = CASE WHEN ${status} = 'paid' THEN now() ELSE paid_at END
         WHERE id = ${id} AND status = 'pending' RETURNING 1`
+      return rows.length > 0
+    },
+    async refund(id) {
+      const rows = await sql`UPDATE orders SET status = 'refunded' WHERE id = ${id} AND status = 'paid' RETURNING 1`
       return rows.length > 0
     },
   }
@@ -128,6 +134,19 @@ export interface LavaDeps {
   offerId?: string
   webhookSecret?: string
   publicUrl: string
+  /** возвраты, которые не удалось сопоставить с заказом, — в журнал сотрудников для ручного разбора */
+  audit?: (action: string, target: string | null, details: Record<string, unknown>) => Promise<void>
+}
+
+/** refund.success / chargeback.initiated: другая обёртка (snake_case, data), id контракта — под разными именами */
+export function refundContract(raw: unknown): { event: string; contractId: string | null; data: Record<string, unknown> } | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const event = String(r.event_type ?? r.eventType ?? '')
+  if (!/^(refund|chargeback)\./.test(event)) return null
+  const data = (r.data && typeof r.data === 'object' ? r.data : r) as Record<string, unknown>
+  const pick = (...keys: string[]) => keys.map((k) => data[k] ?? r[k]).find((v) => typeof v === 'string' && v.length > 0) as string | undefined
+  return { event, contractId: pick('contract_id', 'contractId', 'parent_contract_id', 'parentContractId', 'invoice_id', 'invoiceId') ?? null, data }
 }
 
 const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409 | 503) => new PdsError(status, code, message)
@@ -212,8 +231,23 @@ export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context):
     const raw = await c.req.json().catch(() => null)
     const ev = PurchaseWebhook.safeParse(raw)
     if (!ev.success) {
-      // refund.* / chargeback.* — другая обёртка; связи с контрактом в ней нет, разбираем вручную
-      if (raw && typeof raw === 'object' && 'event_type' in raw) console.warn('lava webhook needs manual review', JSON.stringify(raw))
+      // refund.success / chargeback.*: доступ гасим и заказ выводим из баланса автора; не нашли заказ — в журнал
+      const refund = refundContract(raw)
+      if (refund) {
+        const order = refund.contractId ? await d.orders.byContract(refund.contractId) : undefined
+        if (order) {
+          await d.orders.refund(order.id)
+          await d.paid.revokeByPayment(`lava:${order.contract_id}`)
+          await d.audit?.('payment.refund', order.id, { event: refund.event, author: order.author_did, amount: order.amount, currency: order.currency.trim() })
+          return c.json({ ok: true })
+        }
+        const keep = ['refund_id', 'refund_type', 'amount', 'currency', 'customer_email', 'offer_id', 'event_id']
+        await d.audit?.('payment.refund_unmatched', refund.contractId, {
+          event: refund.event,
+          ...Object.fromEntries(keep.filter((k) => refund.data[k] !== undefined).map((k) => [k, refund.data[k]])),
+        })
+        console.warn('lava refund without matching order — see staff audit', refund.event, refund.contractId)
+      }
       return c.json({ ok: true })
     }
     const order = await d.orders.byContract(ev.data.contractId)

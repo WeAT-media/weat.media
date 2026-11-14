@@ -159,6 +159,13 @@
 	}
 	respond @admin 404
 
+	# вход снаружи — через AppView: у аккаунтов с TOTP полный вход паролем без второго фактора закрыт
+	# (server/src/pdsGate.ts); пароли приложений и аккаунты без TOTP работают как обычно
+	handle /xrpc/com.atproto.server.createSession {
+		rewrite * /api/pds/createSession
+		reverse_proxy appview:8787
+	}
+
 	# подбор паролей напрямую в PDS, минуя AppView
 	rate_limit {
 		zone pds_auth {
@@ -179,7 +186,9 @@
 		# blob-загрузки (картинки) — до 50 МБ
 		max_size 50MB
 	}
-	reverse_proxy pds:2583
+	handle {
+		reverse_proxy pds:2583
+	}
 }
 
 # Вход сотрудников (Zitadel, deploy/auth): Login UI и API (gRPC/Connect по h2c) за одним адресом.

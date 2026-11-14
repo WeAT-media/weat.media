@@ -22,6 +22,7 @@ import { mountPayoutRoutes, type PayoutRepo } from './payouts.js'
 import { mountShareRoutes } from './share.js'
 import { mountFinanceRoutes } from './finance.js'
 import { mountLabelRoutes } from './labels.js'
+import { mountPdsGate } from './pdsGate.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -54,6 +55,8 @@ export interface Deps {
   mail?: MailboxClient
   /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
   postSource?: PostSource
+  /** внутренний адрес PDS: вход в PDS снаружи проверяется здесь (TOTP) */
+  pdsUrl?: string
   /** сервис коллегий (services/labeler): внутренний адрес и токен записи; не задан — метки выключены */
   labelerUrl?: string
   labelerToken?: string
@@ -171,7 +174,7 @@ export function createApp(deps: Deps) {
     bodyLimit({ maxSize: BIG.has(c.req.path) ? 1024 * 1024 : 64 * 1024, onError: tooLarge })(c, next),
   )
   // журнал устройств: завершённая сессия не проходит; выданная пара токенов — запись (sessions.ts)
-  app.use('*', sessionTracking({ sessions: d.sessions }, { bearer, country: (c) => d.geo.country(clientIp(c)) }))
+  app.use('*', sessionTracking({ sessions: d.sessions, secrets: d.secrets }, { bearer, country: (c) => d.geo.country(clientIp(c)) }))
   mountContourRoutes(app, { users: d.users, peer: d.peer, nodeRole: d.nodeRole ?? 'primary' })
 
   const geoOf = (c: Context) => {
@@ -280,15 +283,16 @@ export function createApp(deps: Deps) {
   )
   mountLavaRoutes(
     app,
-    { users: d.users, pds: d.pds, paid: d.paid, orders: d.orders, lava: d.lava, offerId: d.config.LAVA_OFFER_ID, webhookSecret: d.config.LAVA_WEBHOOK_SECRET, publicUrl: d.config.PUBLIC_URL },
+    { users: d.users, pds: d.pds, paid: d.paid, orders: d.orders, lava: d.lava, offerId: d.config.LAVA_OFFER_ID, webhookSecret: d.config.LAVA_WEBHOOK_SECRET, publicUrl: d.config.PUBLIC_URL, audit: (a, t, x) => audit('break-glass', a, t, x) },
     { bearer },
   )
   mountClaimRoutes(app, { users: d.users, pds: d.pds, claims: d.claims }, { bearer, requireStaff, audit })
   mountTicketRoutes(app, { pds: d.pds, tickets: d.tickets, users: d.users }, { bearer, requireStaff, audit })
-  mountSessionRoutes(app, { pds: d.pds, sessions: d.sessions }, { bearer, requireStaff, audit })
+  mountSessionRoutes(app, { pds: d.pds, sessions: d.sessions, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountMailboxRoutes(app, { mail: d.mail }, { requireStaff, audit })
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountFinanceRoutes(app, { payouts: d.payouts, users: d.users }, { requireStaff, audit })
+  mountPdsGate(app, { pdsUrl: d.pdsUrl, pds: d.pds, mfa: d.mfa })
   mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken }, { requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL })

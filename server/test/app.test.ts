@@ -228,8 +228,8 @@ function memSessions(): SessionRepo {
   return {
     async record(s) {
       const prev = s.prevRefreshHash ? rows.find((r) => r.refresh_hash === s.prevRefreshHash && !r.revoked_at) : undefined
-      if (prev) return void Object.assign(prev, { access_hash: s.accessHash, refresh_hash: s.refreshHash, last_seen_at: new Date(), country: s.country })
-      rows.push({ id: `ses_${++n}`, did: s.did, access_hash: s.accessHash, refresh_hash: s.refreshHash, device: s.device, country: s.country, created_at: new Date(), last_seen_at: new Date(), revoked_at: null, revoked_by: null })
+      if (prev) return void Object.assign(prev, { access_hash: s.accessHash, refresh_hash: s.refreshHash, refresh_enc: s.refreshEnc ?? null, last_seen_at: new Date(), country: s.country })
+      rows.push({ id: `ses_${++n}`, did: s.did, access_hash: s.accessHash, refresh_hash: s.refreshHash, refresh_enc: s.refreshEnc ?? null, device: s.device, country: s.country, created_at: new Date(), last_seen_at: new Date(), revoked_at: null, revoked_by: null })
     },
     async isRevoked(h) {
       const hit = rows.filter((r) => r.access_hash === h || r.refresh_hash === h)
@@ -239,8 +239,9 @@ function memSessions(): SessionRepo {
     async list(did) { return rows.filter((r) => r.did === did) },
     async revoke(did, ids, by, keep) {
       const hit = rows.filter((r) => r.did === did && !r.revoked_at && (ids ? ids.includes(r.id) : r.id !== keep))
-      for (const r of hit) Object.assign(r, { revoked_at: new Date(), revoked_by: by })
-      return hit.length
+      const refresh = hit.map((r) => r.refresh_enc).filter((e): e is string => !!e)
+      for (const r of hit) Object.assign(r, { revoked_at: new Date(), revoked_by: by, refresh_enc: null })
+      return { count: hit.length, refresh }
     },
   }
 }
@@ -423,6 +424,11 @@ function memPaid(): PaidRepo {
       ents.push(g)
       return true
     },
+    async revokeByPayment(ref) {
+      const hit = ents.filter((e) => e.paymentRef === ref && (!e.expiresAt || e.expiresAt > new Date()))
+      for (const e of hit) e.expiresAt = new Date(Date.now() - 1)
+      return hit.length
+    },
   }
 }
 
@@ -474,6 +480,12 @@ function memOrders(): OrderRepo {
       o.status = status
       return true
     },
+    async refund(id) {
+      const o = rows.get(id)
+      if (!o || o.status !== 'paid') return false
+      o.status = 'refunded'
+      return true
+    },
   }
 }
 
@@ -522,6 +534,9 @@ const fakeOAuth = (p: OAuthProviderId, pkce = false): OAuthClient => ({
     return prof
   },
 })
+
+/** refresh-токены, отозванные в PDS (deleteSession) */
+const pdsDeleted: string[] = []
 
 /** токены: acc-<did> — полная сессия, app-<did> — сессия по app password */
 let fakePdsLast: PdsClient | undefined
@@ -592,7 +607,11 @@ function fakePds(): PdsClient {
       if (!a) throw new PdsError(400, 'ExpiredToken', 'Token has expired')
       a.password = password
     },
+    async deleteSession(refreshJwt) {
+      pdsDeleted.push(refreshJwt)
+    },
     async refreshSession(refreshJwt) {
+      if (pdsDeleted.includes(refreshJwt)) throw new PdsError(401, 'ExpiredToken', 'revoked')
       const did = refreshJwt.replace(/^ref-/, '').replace(/~\d+$/, '')
       const hit = byDid(did)
       if (!refreshJwt.startsWith('ref-') || !hit) throw new PdsError(401, 'ExpiredToken', 'expired')
@@ -1080,6 +1099,38 @@ test('finance: admin sees totals, credits and debits a user balance with reason;
   const mine = await (await app.request('/api/me/earnings', { headers: { authorization: `Bearer ${u.accessJwt}` } })).json()
   assert.equal(mine.balances[0].available, 70_000, 'автор видит скорректированный баланс')
   assert.ok(auditLog.filter((e) => e.action === 'finance.adjust').length >= 2)
+})
+
+test('pds gate: external createSession — TOTP account with main password refused and session revoked; app password and non-TOTP pass', async () => {
+  const { Hono } = await import('hono')
+  const { mountPdsGate } = await import('../src/pdsGate.ts')
+  const jwt = (scope: string) => `h.${Buffer.from(JSON.stringify({ scope })).toString('base64url')}.s`
+  const deleted: string[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+    const { identifier, password } = JSON.parse(String(init?.body)) as { identifier: string; password: string }
+    const did = identifier === 'totp' ? 'did:plc:totp' : 'did:plc:plain'
+    const scope = password.startsWith('app-') ? 'com.atproto.appPass' : 'com.atproto.access'
+    return new Response(JSON.stringify({ did, accessJwt: jwt(scope), refreshJwt: `ref-${identifier}` }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }) as typeof fetch
+  try {
+    const app = new Hono()
+    mountPdsGate(app, {
+      pdsUrl: 'http://pds.test',
+      pds: { deleteSession: async (t: string) => void deleted.push(t) } as unknown as PdsClient,
+      mfa: { get: async (did: string) => ({ totpEnabledAt: did === 'did:plc:totp' ? new Date() : null }) } as unknown as MfaRepo,
+    })
+    const login = (identifier: string, password: string) =>
+      app.request('/pds/createSession', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identifier, password }) })
+    const blocked = await login('totp', 'main-pass')
+    assert.equal(blocked.status, 401)
+    assert.equal((await blocked.json()).error, 'AuthFactorTokenRequired')
+    assert.deepEqual(deleted, ['ref-totp'], 'выданная PDS полная сессия сразу отозвана')
+    assert.equal((await login('totp', 'app-xxxx-xxxx')).status, 200, 'пароль приложения работает')
+    assert.equal((await login('plain', 'main-pass')).status, 200, 'без TOTP — как обычно')
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })
 
 test('atproto: ru contour never registers', async () => {
@@ -1830,7 +1881,10 @@ test('device journal: sessions recorded on login and refresh, revoked tokens ref
   assert.equal((await (await app.request('/api/me/sessions', { headers: auth(u.accessJwt) })).json()).length, 2)
 
   // «Завершить все, кроме этого» — токены Windows больше не принимаются, и refresh тоже
+  const before = pdsDeleted.length
   const r = await (await app.request('/api/me/sessions/revoke-others', { method: 'POST', headers: auth(u.accessJwt) })).json()
+  assert.ok(pdsDeleted.length > before, 'отозванная сессия отозвана и в PDS (deleteSession)')
+  assert.ok(pdsDeleted.slice(before).every((t) => t.startsWith('ref-')), 'в PDS ушёл расшифрованный refresh')
   assert.equal(r.revoked, 1)
   const denied = await app.request('/api/me', { headers: auth(refreshed.accessJwt) })
   assert.equal(denied.status, 401)
@@ -1888,6 +1942,12 @@ test('lava.top: invoice, forged webhook refused, access only after API confirms,
   assert.equal((await app.request(`/api/me/purchases/${orderId}`, { headers: auth(author.accessJwt) })).status, 404, 'чужой заказ')
   assert.equal((await app.request('/api/me/purchases', { method: 'POST', headers: auth(reader.accessJwt), body: JSON.stringify({ contentId }) })).status, 409)
   assert.equal((await hook({ event_type: 'refund.success', data: {} })).status, 200, 'неизвестный формат — 200')
+  assert.ok(auditLog.some((e) => e.action === 'payment.refund_unmatched'), 'несопоставленный возврат — в журнал')
+  // возврат с id контракта: доступ гаснет, заказ — refunded
+  assert.equal((await hook({ event_type: 'refund.success', data: { contract_id: contractId, refund_type: 'full' } })).status, 200)
+  assert.equal((await read()).status, 402, 'после возврата статья снова закрыта')
+  assert.equal((await (await app.request(`/api/me/purchases/${orderId}`, { headers: auth(reader.accessJwt) })).json()).status, 'refunded')
+  assert.ok(auditLog.some((e) => e.action === 'payment.refund' && e.target === orderId))
 })
 
 test('lava.top: Premium author keeps 99% of a sale, regular — 90%', async () => {

@@ -4,15 +4,16 @@ import type { Sql } from './db.js'
 import { PdsError, type PdsClient } from './pds.js'
 import type { Staff, StaffRole } from './staff.js'
 import { tokenHash } from './securityRoutes.js'
+import type { SecretBox } from './secretbox.js'
 
 /**
  * Журнал устройств. Каждая пара токенов, которую выдаёт сервер (вход, регистрация, OAuth, второй фактор,
  * обновление), — сессия; при обновлении — та же сессия с новыми хешами. Пользователь видит свои устройства
  * в «Безопасности», сотрудник — в /admin/users; оба могут завершить.
  *
- * Ограничение: сессию завершает сервер — её токены больше не пройдут через него, refresh не обновится.
- * Access-токен, украденный и предъявленный PDS напрямую, проживёт до своих 2 часов: оборвать всё сразу
- * может только смена пароля (PDS отзывает все сессии).
+ * Завершение сессии отзывает её и в PDS (deleteSession по сохранённому зашифрованному refresh): новую пару
+ * из неё не получить ни через сайт, ни напрямую. Уже выданный access-токен PDS живёт до своих 2 часов —
+ * через сайт он не пройдёт сразу (журнал), напрямую к PDS — до истечения; оборвать сразу всё — смена пароля.
  */
 
 export interface SessionRow {
@@ -26,17 +27,19 @@ export interface SessionRow {
   last_seen_at: Date
   revoked_at: Date | null
   revoked_by: string | null
+  /** refresh-токен PDS, зашифрованный SECRETS_KEY — для отзыва в PDS */
+  refresh_enc: string | null
 }
 
 export interface SessionRepo {
   /** новая сессия или ротация: prevRefreshHash — refresh, которым обновились */
-  record(s: { did: string; accessHash: string; refreshHash: string; device: string; country: string; prevRefreshHash?: string }): Promise<void>
+  record(s: { did: string; accessHash: string; refreshHash: string; refreshEnc?: string; device: string; country: string; prevRefreshHash?: string }): Promise<void>
   /** токен (access или refresh) завершённой сессии */
   isRevoked(hash: string): Promise<boolean>
   byAccess(hash: string): Promise<SessionRow | undefined>
   list(did: string, limit: number): Promise<SessionRow[]>
-  /** ids — какие завершить; null — все активные аккаунта; keep — кроме этой */
-  revoke(did: string, ids: string[] | null, by: string, keep?: string): Promise<number>
+  /** ids — какие завершить; null — все активные аккаунта; keep — кроме этой. refresh — зашифрованные refresh отозванных (для PDS) */
+  revoke(did: string, ids: string[] | null, by: string, keep?: string): Promise<{ count: number; refresh: string[] }>
 }
 
 export function sessionRepo(sql: Sql): SessionRepo {
@@ -44,13 +47,13 @@ export function sessionRepo(sql: Sql): SessionRepo {
     async record(s) {
       if (s.prevRefreshHash) {
         const rows = await sql`
-          UPDATE user_sessions SET access_hash = ${s.accessHash}, refresh_hash = ${s.refreshHash}, last_seen_at = now(), country = ${s.country}
+          UPDATE user_sessions SET access_hash = ${s.accessHash}, refresh_hash = ${s.refreshHash}, refresh_enc = ${s.refreshEnc ?? null}, last_seen_at = now(), country = ${s.country}
           WHERE refresh_hash = ${s.prevRefreshHash} AND revoked_at IS NULL RETURNING id`
         if (rows.length) return
       }
       await sql`
-        INSERT INTO user_sessions (id, did, access_hash, refresh_hash, device, country)
-        VALUES (${newId()}, ${s.did}, ${s.accessHash}, ${s.refreshHash}, ${s.device}, ${s.country})`
+        INSERT INTO user_sessions (id, did, access_hash, refresh_hash, refresh_enc, device, country)
+        VALUES (${newId()}, ${s.did}, ${s.accessHash}, ${s.refreshHash}, ${s.refreshEnc ?? null}, ${s.device}, ${s.country})`
     },
     // у access-токена PDS нет уникального номера: два входа в одну секунду дают один и тот же токен.
     // Поэтому отозван — только если отозваны все сессии с этим хешем
@@ -67,10 +70,15 @@ export function sessionRepo(sql: Sql): SessionRepo {
       return sql<SessionRow[]>`SELECT * FROM user_sessions WHERE did = ${did} ORDER BY revoked_at IS NOT NULL, last_seen_at DESC LIMIT ${limit}`
     },
     async revoke(did, ids, by, keep) {
+      // refresh_enc после отзыва больше не нужен: возвращаем для deleteSession и стираем
       const rows = ids
-        ? await sql`UPDATE user_sessions SET revoked_at = now(), revoked_by = ${by} WHERE did = ${did} AND id = ANY(${ids}) AND revoked_at IS NULL RETURNING id`
-        : await sql`UPDATE user_sessions SET revoked_at = now(), revoked_by = ${by} WHERE did = ${did} AND revoked_at IS NULL AND id <> ${keep ?? ''} RETURNING id`
-      return rows.length
+        ? await sql<{ enc: string | null }[]>`UPDATE user_sessions u SET revoked_at = now(), revoked_by = ${by}, refresh_enc = NULL
+            FROM (SELECT id, refresh_enc AS enc FROM user_sessions WHERE did = ${did} AND id = ANY(${ids}) AND revoked_at IS NULL FOR UPDATE) o
+            WHERE u.id = o.id RETURNING o.enc`
+        : await sql<{ enc: string | null }[]>`UPDATE user_sessions u SET revoked_at = now(), revoked_by = ${by}, refresh_enc = NULL
+            FROM (SELECT id, refresh_enc AS enc FROM user_sessions WHERE did = ${did} AND revoked_at IS NULL AND id <> ${keep ?? ''} FOR UPDATE) o
+            WHERE u.id = o.id RETURNING o.enc`
+      return { count: rows.length, refresh: rows.map((r) => r.enc).filter((e): e is string => !!e) }
     },
   }
 }
@@ -113,7 +121,7 @@ const fail = (code: string, message: string, status: 400 | 401 | 404) => new Pds
  * До маршрутов: токен завершённой сессии — 401 сразу (и refresh в /auth/refresh тоже).
  * После: если ответ выдал пару токенов — записать сессию (при обновлении — перенести на новые токены).
  */
-export function sessionTracking(d: { sessions: SessionRepo }, h: { bearer(c: Context): string | undefined; country(c: Context): string }): MiddlewareHandler {
+export function sessionTracking(d: { sessions: SessionRepo; secrets: SecretBox }, h: { bearer(c: Context): string | undefined; country(c: Context): string }): MiddlewareHandler {
   return async (c, next) => {
     const bearer = h.bearer(c)
     const isRefresh = c.req.method === 'POST' && c.req.path.endsWith('/auth/refresh')
@@ -131,6 +139,7 @@ export function sessionTracking(d: { sessions: SessionRepo }, h: { bearer(c: Con
       did: body.user.did,
       accessHash: tokenHash(body.accessJwt),
       refreshHash: tokenHash(body.refreshJwt),
+      refreshEnc: d.secrets.seal(body.refreshJwt),
       device: deviceLabel(c.req.header('user-agent') ?? ''),
       country: h.country(c),
       ...(prevRefresh ? { prevRefreshHash: tokenHash(prevRefresh) } : {}),
@@ -150,7 +159,7 @@ const dto = (s: SessionRow, current?: string) => ({
 
 export function mountSessionRoutes(
   app: Hono,
-  d: { pds: PdsClient; sessions: SessionRepo },
+  d: { pds: PdsClient; sessions: SessionRepo; secrets: SecretBox },
   h: {
     bearer(c: Context): string | undefined
     requireStaff(c: Context, role: StaffRole): Promise<Staff | 'break-glass'>
@@ -164,6 +173,21 @@ export function mountSessionRoutes(
     return { did, current: (await d.sessions.byAccess(tokenHash(token)))?.id }
   }
 
+  /** отозвать в AppView, затем в PDS: refresh отозванных сессий больше не обновится нигде */
+  const revoke = async (did: string, ids: string[] | null, by: string, keep?: string) => {
+    const r = await d.sessions.revoke(did, ids, by, keep)
+    await Promise.all(
+      r.refresh.map(async (enc) => {
+        try {
+          await d.pds.deleteSession(d.secrets.open(enc))
+        } catch {
+          // уже истёк или отозван сменой пароля — на стороне PDS сессии и так нет
+        }
+      }),
+    )
+    return r.count
+  }
+
   app.get('/me/sessions', async (c) => {
     const { did, current } = await me(c)
     c.header('cache-control', 'private, no-store')
@@ -172,7 +196,7 @@ export function mountSessionRoutes(
 
   app.delete('/me/sessions/:id', async (c) => {
     const { did } = await me(c)
-    const n = await d.sessions.revoke(did, [c.req.param('id')], 'user')
+    const n = await revoke(did, [c.req.param('id')], 'user')
     if (!n) throw fail('NotFound', 'Сессия не найдена или уже завершена', 404)
     return c.json({ ok: true })
   })
@@ -180,7 +204,7 @@ export function mountSessionRoutes(
   /** «Завершить все, кроме этого устройства» */
   app.post('/me/sessions/revoke-others', async (c) => {
     const { did, current } = await me(c)
-    return c.json({ ok: true, revoked: await d.sessions.revoke(did, null, 'user', current) })
+    return c.json({ ok: true, revoked: await revoke(did, null, 'user', current) })
   })
 
   app.get('/admin/users/:did/sessions', async (c) => {
@@ -192,7 +216,7 @@ export function mountSessionRoutes(
   app.delete('/admin/users/:did/sessions/:id', async (c) => {
     const staff = await h.requireStaff(c, 'support')
     const did = c.req.param('did')
-    const n = await d.sessions.revoke(did, [c.req.param('id')], staff === 'break-glass' ? 'break-glass' : staff.sub)
+    const n = await revoke(did, [c.req.param('id')], staff === 'break-glass' ? 'break-glass' : staff.sub)
     if (!n) throw fail('NotFound', 'Сессия не найдена или уже завершена', 404)
     await h.audit(staff, 'session.revoke', did, { session: c.req.param('id') })
     return c.json({ ok: true })
@@ -201,7 +225,7 @@ export function mountSessionRoutes(
   app.post('/admin/users/:did/sessions/revoke-all', async (c) => {
     const staff = await h.requireStaff(c, 'support')
     const did = c.req.param('did')
-    const revoked = await d.sessions.revoke(did, null, staff === 'break-glass' ? 'break-glass' : staff.sub)
+    const revoked = await revoke(did, null, staff === 'break-glass' ? 'break-glass' : staff.sub)
     await h.audit(staff, 'session.revoke_all', did, { revoked })
     return c.json({ ok: true, revoked })
   })

@@ -78,6 +78,7 @@ const app = createApp({
       })
     : undefined,
   pds: createPdsClient(config.PDS_URL, config.PDS_ADMIN_PASSWORD),
+  pdsUrl: config.PDS_URL,
   peer: config.PEER_CONTOUR_URL ? createPeer(config.PEER_CONTOUR_URL) : undefined,
   nodeRole: config.NODE_ROLE,
   geo: await createGeo({ dbPath: config.GEOIP_DB_PATH, devCountry: config.GEOIP_DEV_COUNTRY }),
