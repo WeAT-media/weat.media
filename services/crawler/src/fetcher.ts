@@ -1,6 +1,7 @@
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import ipaddr from 'ipaddr.js'
 import { Agent, fetch as undiciFetch } from 'undici'
+import { allowedByRobots, parseRobots } from './robots.js'
 
 /**
  * Загрузка чужих страниц без SSRF: админ присылает произвольную ссылку, а краулер
@@ -85,9 +86,38 @@ export function createFetcher(opts: FetcherOptions) {
     return u
   }
 
-  return async function fetchPage(raw: string, accept = 'text/html,application/xhtml+xml,application/rss+xml,application/xml;q=0.9'): Promise<FetchResult> {
+  // robots.txt по origin: кэш на час; нет файла — можно всё; сервер сайта сбоит — повтор позже
+  const robotsCache = new Map<string, { at: number; rules: ReturnType<typeof parseRobots> }>()
+  const robotsFor = async (u: URL) => {
+    const hit = robotsCache.get(u.origin)
+    if (hit && Date.now() - hit.at < 3_600_000) return hit.rules
+    let rules: ReturnType<typeof parseRobots> = []
+    try {
+      const r = await fetchRaw(new URL('/robots.txt', u).toString(), 'text/plain', false)
+      rules = parseRobots(r.body)
+    } catch (err) {
+      if (err instanceof FetchError && err.code === 'BadStatus' && /ответ 5\d\d/.test(err.message)) {
+        throw new FetchError('BadStatus', 'robots.txt сайта временно недоступен (5xx) — повторим позже')
+      }
+      // 4xx, не текст, слишком большой — правил нет
+    }
+    if (robotsCache.size > 5000) robotsCache.clear()
+    robotsCache.set(u.origin, { at: Date.now(), rules })
+    return rules
+  }
+
+  /** страница источника; robots: false — без проверки robots.txt (сам robots.txt) */
+  async function fetchPage(raw: string, accept = 'text/html,application/xhtml+xml,application/rss+xml,application/xml;q=0.9'): Promise<FetchResult> {
+    return fetchRaw(raw, accept, true)
+  }
+  return fetchPage
+
+  async function fetchRaw(raw: string, accept: string, robots: boolean): Promise<FetchResult> {
     let url = checkUrl(raw)
     for (let hop = 0; hop <= maxRedirects; hop++) {
+      if (robots && !allowedByRobots(await robotsFor(url), url.pathname + url.search)) {
+        throw new FetchError('Blocked', `robots.txt сайта ${url.hostname} запрещает загрузку ${url.pathname}`)
+      }
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), timeoutMs)
       try {
