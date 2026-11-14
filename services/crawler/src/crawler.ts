@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import type { CrawlerAccount, CrawlSource, Repo } from './db.js'
+import type { CrawlerAccount, CrawlSource, Repo, SourceInput } from './db.js'
 import { extractByRules, RulesError } from './rules.js'
-import { ExtractError, extractArticle, rssLinks } from './extract.js'
+import { ExtractError, extractArticle, listingLinks, rssLinks } from './extract.js'
 import { FetchError, canonicalUrl, type FetchPage } from './fetcher.js'
 import { PdsError, type Pds } from './pds.js'
 import { ARTICLE_COLLECTION, articleRecord } from './record.js'
@@ -9,7 +9,8 @@ import type { SecretBox } from './secretbox.js'
 
 /** Очередь задач — интерфейс, чтобы логику можно было проверить без Redis */
 export interface JobQueue {
-  addArticle(itemId: string): Promise<void>
+  /** delayMs — отсрочка публикации (источник с delay_hours) */
+  addArticle(itemId: string, delayMs?: number): Promise<void>
   addSourcePoll(sourceId: string): Promise<void>
   scheduleSource(source: CrawlSource): Promise<void>
   unscheduleSource(sourceId: string): Promise<void>
@@ -76,7 +77,7 @@ export function createCrawler(d: CrawlerDeps) {
     },
 
     /** Поставить ссылку в очередь. Повторная ссылка не публикуется второй раз */
-    async enqueue(input: { url: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null }) {
+    async enqueue(input: { url: string; crawlerId: string; origin: 'manual' | 'source'; requestedBy: string | null; delayMs?: number }) {
       const acc = await d.repo.accounts.get(input.crawlerId)
       if (!acc) throw new PermanentError('Нет такого краулера')
       if (!acc.enabled) throw new PermanentError('Краулер выключен')
@@ -89,7 +90,7 @@ export function createCrawler(d: CrawlerDeps) {
       }
       const item = await d.repo.items.create({ url: input.url, canonical, crawlerId: acc.id, origin: input.origin, requestedBy: input.requestedBy })
       if (!item) return { duplicate: true as const, item: (await d.repo.items.byCanonical(canonical))! }
-      await d.queue.addArticle(item.id)
+      await d.queue.addArticle(item.id, input.delayMs)
       return { duplicate: false as const, item }
     },
 
@@ -163,7 +164,9 @@ export function createCrawler(d: CrawlerDeps) {
       if (!src || !src.enabled) return { added: 0, seen: 0 }
       try {
         const page = await d.fetchPage(src.url)
-        const links = rssLinks(page.body).slice(0, 30)
+        // RSS/Atom; источник со шаблоном ссылок — страница-список без RSS
+        const links = src.link_pattern ? listingLinks(page.body, page.url, new RegExp(src.link_pattern)).slice(0, 200) : rssLinks(page.body).slice(0, 50)
+        const now = Date.now()
         // только ссылки того же сайта, что RSS или сайт аккаунта: лента не может подсунуть чужие страницы
         const acc = await d.repo.accounts.get(src.crawler_id)
         const refs = [new URL(src.url).hostname, acc?.site ? (hostOf(acc.site) ?? acc.site) : null].filter((x): x is string => !!x)
@@ -171,7 +174,12 @@ export function createCrawler(d: CrawlerDeps) {
         for (const l of links) {
           const h = hostOf(l.url)
           if (!h || !refs.some((r) => sameSite(h, r))) continue
-          const r = await this.enqueue({ url: l.url, crawlerId: src.crawler_id, origin: 'source', requestedBy: `source:${src.id}` }).catch(() => null)
+          const published = l.date ? Date.parse(l.date) : null
+          // только свежее: «за последние N часов» — по дате записи в ленте
+          if (src.max_age_hours && published && now - published > src.max_age_hours * 3_600_000) continue
+          // отсрочка: не раньше чем через delay_hours после выхода оригинала (даты нет — от обнаружения)
+          const delayMs = src.delay_hours ? Math.max(0, (published ?? now) + src.delay_hours * 3_600_000 - now) : 0
+          const r = await this.enqueue({ url: l.url, crawlerId: src.crawler_id, origin: 'source', requestedBy: `source:${src.id}`, delayMs }).catch(() => null)
           if (r && !r.duplicate) added++
         }
         await d.repo.sources.polled(src.id, null)
@@ -182,12 +190,19 @@ export function createCrawler(d: CrawlerDeps) {
       }
     },
 
-    async addSource(input: { crawlerId: string; url: string; intervalMin: number }) {
+    async addSource(input: SourceInput) {
       if (!(await d.repo.accounts.get(input.crawlerId))) throw new PermanentError('Нет такого краулера')
       try {
         if (!/^https?:$/.test(new URL(input.url).protocol)) throw new Error()
       } catch {
         throw new PermanentError('Некорректная ссылка на RSS')
+      }
+      if (input.linkPattern) {
+        try {
+          new RegExp(input.linkPattern)
+        } catch {
+          throw new PermanentError('Неверный шаблон ссылок (регулярное выражение)')
+        }
       }
       const src = await d.repo.sources.insert(input)
       await d.queue.scheduleSource(src)

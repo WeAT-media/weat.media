@@ -36,6 +36,9 @@ interface Source {
   enabled: boolean
   last_polled_at: string | null
   last_error: string | null
+  delay_hours?: number
+  max_age_hours?: number | null
+  link_pattern?: string | null
 }
 
 const TOKEN_KEY = 'indie-media:crawler-admin-token'
@@ -79,7 +82,7 @@ export default function AdminCrawlerPage() {
   const [url, setUrl] = useState('')
   const [crawlerId, setCrawlerId] = useState('')
   const [newCrawler, setNewCrawler] = useState({ id: '', site: '', displayName: '' })
-  const [newSource, setNewSource] = useState({ url: '', crawler: '', intervalMin: 30 })
+  const [newSource, setNewSource] = useState({ url: '', crawler: '', intervalMin: 30, delayHours: '0', maxAgeHours: '', linkPattern: '' })
 
   const call = useCallback(
     async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -318,7 +321,7 @@ export default function AdminCrawlerPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{s.url}</p>
                   <p className="meta truncate !normal-case tracking-normal">
-                    {s.crawler_id} · каждые {s.interval_min} мин · опрошен {fmt(s.last_polled_at)}
+                    {s.crawler_id} · каждые {s.interval_min} мин{s.delay_hours ? ` · отсрочка ${s.delay_hours} ч` : ""}{s.max_age_hours ? ` · не старше ${s.max_age_hours} ч` : ""}{s.link_pattern ? " · страница-список" : ""} · опрошен {fmt(s.last_polled_at)}
                     {s.last_error && ` · ошибка: ${s.last_error}`}
                   </p>
                 </div>
@@ -340,7 +343,17 @@ export default function AdminCrawlerPage() {
           <form
             onSubmit={(e) =>
               act(async () => {
-                await call('/sources', { method: 'POST', body: JSON.stringify({ ...newSource, url: newSource.url.trim() }) })
+                await call('/sources', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    crawler: newSource.crawler,
+                    url: newSource.url.trim(),
+                    intervalMin: newSource.intervalMin,
+                    delayHours: Number(newSource.delayHours) || 0,
+                    ...(newSource.maxAgeHours ? { maxAgeHours: Number(newSource.maxAgeHours) } : {}),
+                    ...(newSource.linkPattern.trim() ? { linkPattern: newSource.linkPattern.trim() } : {}),
+                  }),
+                })
                 setNewSource({ ...newSource, url: '' })
                 return 'Источник добавлен, первый опрос уже идёт.'
               }, e)
@@ -355,6 +368,9 @@ export default function AdminCrawlerPage() {
               {[15, 30, 60, 180, 720, 1440].map((m) => <option key={m} value={m}>{m < 60 ? `${m} мин` : `${m / 60} ч`}</option>)}
             </select>
             <button type="submit" className="btn-ghost !px-3 !py-2 !text-[11px]">Добавить</button>
+            <input value={newSource.delayHours} onChange={(e) => setNewSource({ ...newSource, delayHours: e.target.value })} inputMode="numeric" placeholder="отсрочка, ч" title="публиковать через N часов после выхода оригинала" aria-label="Отсрочка в часах" className={inputCls} />
+            <input value={newSource.maxAgeHours} onChange={(e) => setNewSource({ ...newSource, maxAgeHours: e.target.value })} inputMode="numeric" placeholder="не старше, ч" title="брать из ленты только записи моложе N часов" aria-label="Не старше, часов" className={inputCls} />
+            <input value={newSource.linkPattern} onChange={(e) => setNewSource({ ...newSource, linkPattern: e.target.value })} placeholder="без RSS: ^/blog/articles/.+" title="страница-список без RSS: регулярка пути статей" aria-label="Шаблон ссылок" className={`${inputCls} sm:col-span-2`} />
           </form>
         </section>
       </div>

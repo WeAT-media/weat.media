@@ -18,7 +18,7 @@ export function createQueues(redisUrl: string) {
   const source = new Queue(SOURCE_QUEUE, { connection })
 
   const jobQueue: JobQueue = {
-    async addArticle(itemId) {
+    async addArticle(itemId, delayMs) {
       const jobId = `item-${itemId}`
       // jobId фиксирован, а упавшие/завершённые задачи хранятся: без этого повтор — пустая операция
       const existing = await article.getJob(jobId)
@@ -33,6 +33,7 @@ export function createQueues(redisUrl: string) {
         { itemId },
         {
           jobId, // одна задача на ссылку
+          ...(delayMs ? { delay: delayMs } : {}),
           attempts: ATTEMPTS,
           backoff: { type: 'exponential', delay: 30_000 },
           removeOnComplete: { age: 7 * 24 * 3600, count: 5000 },

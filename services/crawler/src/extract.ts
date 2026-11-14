@@ -211,13 +211,43 @@ export function extractArticle(html: string, url: string, rules?: (html: string,
 }
 
 /** Ссылки на статьи из RSS/Atom */
-export function rssLinks(xml: string): { url: string; title: string }[] {
+export function rssLinks(xml: string): { url: string; title: string; date: string | null }[] {
   const $ = cheerio.load(xml, { xml: true })
+  const date = (s: string) => (s && !Number.isNaN(Date.parse(s)) ? new Date(s).toISOString() : null)
   const items = $('item')
-    .map((_, el) => ({ url: clean($(el).find('guid[isPermaLink="true"]').text()) || clean($(el).find('link').text()), title: clean($(el).find('title').text()) }))
+    .map((_, el) => ({
+      url: clean($(el).find('guid[isPermaLink="true"]').text()) || clean($(el).find('link').text()),
+      title: clean($(el).find('title').text()),
+      date: date(clean($(el).find('pubDate').text()) || clean($(el).find('dc\\:date').text())),
+    }))
     .get()
   const entries = $('entry')
-    .map((_, el) => ({ url: $(el).find('link[rel="alternate"], link').first().attr('href') ?? '', title: clean($(el).find('title').text()) }))
+    .map((_, el) => ({
+      url: $(el).find('link[rel="alternate"], link').first().attr('href') ?? '',
+      title: clean($(el).find('title').text()),
+      date: date(clean($(el).find('published').text()) || clean($(el).find('updated').text())),
+    }))
     .get()
   return [...items, ...entries].filter((x) => /^https?:\/\//.test(x.url))
+}
+
+/** страница-список без RSS (2r.ru/blog): ссылки того же хоста, чей путь подходит под pattern; без повторов, по порядку */
+export function listingLinks(html: string, base: string, pattern: RegExp): { url: string; title: string; date: null }[] {
+  const $ = cheerio.load(html)
+  const host = new URL(base).hostname
+  const seen = new Set<string>()
+  const out: { url: string; title: string; date: null }[] = []
+  $('a[href]').each((_, el) => {
+    let u: URL
+    try {
+      u = new URL($(el).attr('href')!, base)
+    } catch {
+      return
+    }
+    u.hash = ''
+    if (u.hostname !== host || !pattern.test(u.pathname) || seen.has(u.toString())) return
+    seen.add(u.toString())
+    out.push({ url: u.toString(), title: clean($(el).text()), date: null })
+  })
+  return out
 }

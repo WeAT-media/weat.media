@@ -71,3 +71,11 @@ test('robots.txt: own group over *, longest match wins, Allow on tie, $ and * pa
   assert.equal(allowedByRobots(star, '/blog'), true)
   assert.equal(allowedByRobots(parseRobots(''), '/x'), true, 'нет правил — можно')
 })
+
+test('sources: RSS dates parsed; listing page links by path pattern, same host, no dupes', async () => {
+  const { rssLinks, listingLinks } = await import('../src/extract.ts')
+  const rss = rssLinks('<rss><channel><item><link>https://habr.com/ru/articles/1/</link><title>A</title><pubDate>Fri, 14 Nov 2026 10:00:00 GMT</pubDate></item></channel></rss>')
+  assert.equal(rss[0]!.date, '2026-11-14T10:00:00.000Z')
+  const html = '<a href="/blog/articles/a">A</a><a href="/blog/articles/a#x">A2</a><a href="/blog">list</a><a href="https://evil.com/blog/articles/b">B</a><a href="/blog/articles/c">C</a>'
+  assert.deepEqual(listingLinks(html, 'https://2r.ru/blog', /^\/blog\/articles\/.+/).map((l) => l.url), ['https://2r.ru/blog/articles/a', 'https://2r.ru/blog/articles/c'])
+})

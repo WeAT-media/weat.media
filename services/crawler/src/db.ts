@@ -42,6 +42,18 @@ export interface CrawlSource {
   enabled: boolean
   last_polled_at: Date | null
   last_error: string | null
+  delay_hours: number
+  max_age_hours: number | null
+  link_pattern: string | null
+}
+
+export interface SourceInput {
+  crawlerId: string
+  url: string
+  intervalMin: number
+  delayHours?: number
+  maxAgeHours?: number | null
+  linkPattern?: string | null
 }
 
 /** правила разбора сайта (rules.ts) */
@@ -126,10 +138,11 @@ export function repo(sql: Sql) {
     sources: {
       list: () => sql<CrawlSource[]>`SELECT * FROM crawler_sources ORDER BY id`,
       get: async (id: string) => (await sql<CrawlSource[]>`SELECT * FROM crawler_sources WHERE id = ${id}`)[0],
-      insert: async (s: { crawlerId: string; url: string; intervalMin: number }) =>
+      insert: async (s: SourceInput) =>
         (
           await sql<CrawlSource[]>`
-            INSERT INTO crawler_sources (crawler_id, url, interval_min) VALUES (${s.crawlerId}, ${s.url}, ${s.intervalMin})
+            INSERT INTO crawler_sources (crawler_id, url, interval_min, delay_hours, max_age_hours, link_pattern)
+            VALUES (${s.crawlerId}, ${s.url}, ${s.intervalMin}, ${s.delayHours ?? 0}, ${s.maxAgeHours ?? null}, ${s.linkPattern ?? null})
             RETURNING *`
         )[0]!,
       setEnabled: (id: string, enabled: boolean) => sql`UPDATE crawler_sources SET enabled = ${enabled} WHERE id = ${id}`,

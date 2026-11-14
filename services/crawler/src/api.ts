@@ -14,7 +14,17 @@ const AccountBody = z.object({
   site: z.string().trim().min(1).max(253),
   displayName: z.string().trim().min(1).max(64),
 })
-const SourceBody = z.object({ crawler: z.string().min(1), url: z.string().trim().url().max(2000), intervalMin: z.number().int().min(5).max(1440).default(30) })
+const SourceBody = z.object({
+  crawler: z.string().min(1),
+  url: z.string().trim().url().max(2000),
+  intervalMin: z.number().int().min(5).max(1440).default(30),
+  /** публиковать через N часов после выхода оригинала */
+  delayHours: z.number().int().min(0).max(720).default(0),
+  /** брать только записи моложе N часов */
+  maxAgeHours: z.number().int().min(1).max(8760).optional(),
+  /** страница без RSS: регулярка пути статей, напр. ^/blog/articles/.+ */
+  linkPattern: z.string().max(300).optional(),
+})
 const ToggleBody = z.object({ enabled: z.boolean() })
 
 const safeEqual = (a: string, b: string) => {
@@ -132,7 +142,7 @@ export function createApi(d: {
 
   app.post('/sources', async (c) => {
     const s = await body(c, SourceBody)
-    return c.json(await d.crawler.addSource({ crawlerId: s.crawler, url: s.url, intervalMin: s.intervalMin }), 201)
+    return c.json(await d.crawler.addSource({ crawlerId: s.crawler, url: s.url, intervalMin: s.intervalMin, delayHours: s.delayHours, maxAgeHours: s.maxAgeHours ?? null, linkPattern: s.linkPattern ?? null }), 201)
   })
 
   app.post('/sources/:id/poll', async (c) => {
