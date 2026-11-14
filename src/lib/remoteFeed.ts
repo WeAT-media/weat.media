@@ -29,6 +29,7 @@ interface FeedItem {
     kind?: string
     videos?: RecordVideo[]
     noindex?: boolean
+    reviewers?: { did?: string; handle?: string }[]
   }
 }
 
@@ -156,6 +157,7 @@ export function toArticle(i: FeedItem): Article | null {
     atUri: i.uri,
     fromIndex: true,
     ...(r.noindex ? { noindex: true } : {}),
+    ...(r.reviewers?.length ? { reviewers: r.reviewers.filter((x) => typeof x?.did === 'string').slice(0, 20).map((x) => ({ did: x.did!, ...(typeof x.handle === 'string' ? { handle: x.handle } : {}) })) } : {}),
     ...(r.kind === 'video' || videos.length
       ? {
           kind: 'video' as const,

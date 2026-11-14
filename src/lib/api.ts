@@ -318,6 +318,8 @@ export const articles = {
     kind: 'text' | 'video'
     videos: RecordVideo[]
     noindex?: boolean
+    /** черновик-источник: сервер добавит в запись его рецензентов */
+    draftId?: string
   }) => authed<{ uri: string; cid: string }>('/me/articles', post(b)),
 }
 
@@ -367,6 +369,18 @@ export const profile = {
   update: (b: { displayName?: string | null; description?: string | null }) => authed<ProfileView>('/me/profile', { method: 'PATCH', body: JSON.stringify(b) }),
   setAvatar: (file: File) => authed<ProfileView>('/me/avatar', { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } }),
   removeAvatar: () => authed<ProfileView>('/me/avatar', { method: 'DELETE' }),
+}
+
+/** Совместное редактирование черновика по ссылке /shared-draft/<token>: 24 ч, только для вошедших */
+export interface SharedPerson { did: string; handle: string | null; displayName: string | null }
+export interface SharedDraftView { token: string; title: string; text: string; owner: SharedPerson; isOwner: boolean; expiresAt: string; reviewers: SharedPerson[] }
+export const shared = {
+  create: (draftId: string) => authed<{ token: string; expiresAt: string }>(`/me/drafts/${encodeURIComponent(draftId)}/share`, { method: 'POST' }),
+  ofDraft: (draftId: string) => authed<{ token: string | null; expiresAt: string | null; reviewers: SharedPerson[] }>(`/me/drafts/${encodeURIComponent(draftId)}/share`),
+  get: (token: string) => authed<SharedDraftView>(`/shared/${encodeURIComponent(token)}`),
+  updates: (token: string, after: number) => authed<{ updates: { seq: number; data: string }[] }>(`/shared/${encodeURIComponent(token)}/updates?after=${after}`),
+  push: (token: string, b: { data: string; edited?: boolean; seed?: boolean }) => authed<{ seq: number }>(`/shared/${encodeURIComponent(token)}/updates`, post(b)),
+  saveText: (token: string, b: { title: string; text: string }) => authed<{ ok: true }>(`/shared/${encodeURIComponent(token)}/text`, { method: 'PUT', body: JSON.stringify(b) }),
 }
 
 /** превью ссылки для карточки «/link» в редакторе — страницу грузит AppView (из браузера CORS не пустит) */

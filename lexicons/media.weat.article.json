@@ -91,6 +91,15 @@
               "ref": "#video"
             },
             "description": "Плейлист видео-записи"
+          },
+          "reviewers": {
+            "type": "array",
+            "maxLength": 20,
+            "description": "Рецензенты: правили черновик по ссылке для совместного редактирования (ставит AppView при публикации)",
+            "items": {
+              "type": "ref",
+              "ref": "#reviewer"
+            }
           }
         }
       },
@@ -242,6 +251,22 @@
         "end": {
           "type": "integer",
           "minimum": 1
+        }
+      }
+    },
+    "reviewer": {
+      "type": "object",
+      "required": [
+        "did"
+      ],
+      "properties": {
+        "did": {
+          "type": "string",
+          "format": "did"
+        },
+        "handle": {
+          "type": "string",
+          "format": "handle"
         }
       }
     }

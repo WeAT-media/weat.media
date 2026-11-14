@@ -2288,3 +2288,47 @@ test('personal token: rotate keeps identity, old value dies; token can revoke it
   const list = await (await app.request('/api/me/tokens', { headers: auth(u.accessJwt) })).json()
   assert.equal(list.length, 0, 'при визите владельца истёкший убран вместе с app password')
 })
+
+test('shared drafts: login required, Yjs updates sync, editor becomes reviewer, publish carries reviewers and closes link', async () => {
+  const Y = await import('yjs')
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'author', email: 'au@example.com' }, '5.1.1.1'))).json()
+  const b = await (await app.request('/api/auth/register', json({ ...reg, username: 'reviewer', email: 're@example.com' }, '5.1.1.1'))).json()
+  const c = await (await app.request('/api/auth/register', json({ ...reg, username: 'reader', email: 'rd@example.com' }, '5.1.1.1'))).json()
+  const H = (t: string) => ({ authorization: `Bearer ${t}`, 'content-type': 'application/json' })
+  const draft = await (await app.request('/api/me/drafts', { method: 'POST', headers: H(a.accessJwt), body: JSON.stringify({ title: 'Общий', text: 'абзац' }) })).json()
+  const share = await (await app.request(`/api/me/drafts/${draft.id}/share`, { method: 'POST', headers: H(a.accessJwt) })).json()
+  assert.match(share.token, /^sd_/)
+  assert.equal((await app.request(`/api/me/drafts/${draft.id}/share`, { method: 'POST', headers: H(b.accessJwt) })).status, 404, 'чужой черновик не расшарить')
+  assert.equal((await app.request(`/api/shared/${share.token}`)).status, 401, 'без входа не открыть')
+
+  const doc = new Y.Doc()
+  doc.getText('t').insert(0, 'абзац')
+  const b64 = (u: Uint8Array) => Buffer.from(u).toString('base64')
+  const push = (t: string, data: Uint8Array, extra: object = {}) => app.request(`/api/shared/${share.token}/updates`, { method: 'POST', headers: H(t), body: JSON.stringify({ data: b64(data), ...extra }) })
+  assert.equal((await push(b.accessJwt, Y.encodeStateAsUpdate(doc), { seed: true })).status, 403, 'наполняет только автор')
+  assert.equal((await push(a.accessJwt, Y.encodeStateAsUpdate(doc), { seed: true })).status, 201)
+  assert.equal((await push(a.accessJwt, Y.encodeStateAsUpdate(doc), { seed: true })).status, 409, 'повторно не наполнить')
+
+  // рецензент забирает документ, правит
+  const remote = new Y.Doc()
+  for (const u of (await (await app.request(`/api/shared/${share.token}/updates?after=0`, { headers: H(b.accessJwt) })).json()).updates) Y.applyUpdate(remote, Buffer.from(u.data, 'base64'))
+  assert.equal(remote.getText('t').toString(), 'абзац')
+  const sv = Y.encodeStateVector(remote)
+  remote.getText('t').insert(5, ' и правка')
+  assert.equal((await push(b.accessJwt, Y.encodeStateAsUpdate(remote, sv), { edited: true })).status, 201)
+  // просто открыл, ничего не менял — не рецензент
+  assert.equal((await push(c.accessJwt, new Uint8Array([0, 0]))).status, 201)
+  await app.request(`/api/shared/${share.token}/text`, { method: 'PUT', headers: H(b.accessJwt), body: JSON.stringify({ title: 'Общий', text: 'абзац и правка' }) })
+
+  const view = await (await app.request(`/api/shared/${share.token}`, { headers: H(c.accessJwt) })).json()
+  assert.equal(view.text, 'абзац и правка')
+  assert.equal(view.isOwner, false)
+  assert.deepEqual(view.reviewers.map((r: { handle: string }) => r.handle), ['reviewer.indie.media'])
+
+  const pub = await app.request('/api/me/articles', { method: 'POST', headers: H(a.accessJwt), body: JSON.stringify({ title: 'Общий', text: 'абзац и правка', draftId: draft.id }) })
+  assert.equal(pub.status, 201)
+  const rec = published.at(-1)!.record as { reviewers?: { did: string; handle?: string }[] }
+  assert.deepEqual(rec.reviewers, [{ did: b.user.did, handle: 'reviewer.indie.media' }])
+  assert.equal((await app.request(`/api/shared/${share.token}`, { headers: H(b.accessJwt) })).status, 410, 'после публикации ссылка закрыта')
+})

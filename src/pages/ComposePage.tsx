@@ -21,7 +21,7 @@ import { LANGUAGES } from '@/data/languages'
 import Reveal from '@/components/Reveal'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
-import { drafts as draftsApi, hasSession, imports } from '@/lib/api'
+import { drafts as draftsApi, hasSession, imports, shared as sharedApi, type SharedPerson } from '@/lib/api'
 import PeopleAutocomplete, { type PersonCandidate } from '@/components/PeopleAutocomplete'
 import ArticleToc from '@/components/ArticleToc'
 import BlockView from '@/components/ArticleBlock'
@@ -125,7 +125,7 @@ function PollPreview({ raw }: { raw: string }) {
 
 export default function ComposePage() {
   const navigate = useNavigate()
-  const { publishArticle, payoutConnected, shareDraft, user, collections, tiers, articles, prefs } = useStore()
+  const { publishArticle, payoutConnected, user, collections, tiers, articles, prefs } = useStore()
   const [bodyText, setBodyText] = useState('')
   const [title, setTitle] = useState('')
   // ?import=<id> — черновик из импорта постов AT-аккаунта: редактор открывается с его текстом
@@ -290,6 +290,24 @@ export default function ComposePage() {
   // min для datetime-local вычисляется один раз при монтировании шага
   const [minPublishAt] = useState(() => new Date(Date.now() + 60_000).toISOString().slice(0, 16))
   const [shareLink, setShareLink] = useState('')
+  // совместное редактирование: действующая ссылка черновика — редактор автора в той же комнате, что и у рецензентов
+  const [sharedToken, setSharedToken] = useState<string | null>(null)
+  const [reviewers, setReviewers] = useState<SharedPerson[]>([])
+  const [shareError, setShareError] = useState('')
+  useEffect(() => {
+    if (!draftId || !hasSession()) return
+    const load = () =>
+      sharedApi.ofDraft(draftId).then((r) => {
+        setReviewers(r.reviewers)
+        if (r.token) {
+          setSharedToken(r.token)
+          setShareLink(`${window.location.origin}/shared-draft/${r.token}`)
+        }
+      }, () => {})
+    void load()
+    const t = window.setInterval(load, 20_000)
+    return () => window.clearInterval(t)
+  }, [draftId])
   const [payoutDialogOpen, setPayoutDialogOpen] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -431,7 +449,7 @@ export default function ComposePage() {
     setPublishing(true)
     setPublishError('')
     try {
-      const uri = await publishArticle({ ...draft, blocks, id, title: title.trim() }, text)
+      const uri = await publishArticle({ ...draft, blocks, id, title: title.trim() }, text, draftId ?? undefined)
       if (importId) await imports.setStatus(importId, 'published', uri).catch(() => {})
       // опубликовано — черновик больше не нужен
       if (draftId) await draftsApi.remove(draftId).catch(() => {})
@@ -537,6 +555,8 @@ export default function ComposePage() {
             <span className="meta" id="bodyLabel">Заголовок и текст</span>
             <div className="mt-2" aria-labelledby="bodyLabel">
               {importReady ? <BlocksEditor
+                key={sharedToken ?? 'solo'}
+                serverRoom={sharedToken ? { token: sharedToken, isOwner: true } : undefined}
                 value={bodyText}
                 title={title}
                 onContentInspect={(info) => setHasVideoEmbed(info.hasVideo)}
@@ -1138,23 +1158,34 @@ export default function ComposePage() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                const token = shareDraft({ ...draft, id: `draft-${Date.now()}`, title: title.trim() || 'Без заголовка' })
-                setShareLink(`${window.location.origin}/shared-draft/${token}`)
+              onClick={async () => {
+                setShareError('')
+                if (!draftId) return setShareError('Черновик ещё не сохранён: напишите пару слов и подождите 2 секунды')
+                try {
+                  const { token } = await sharedApi.create(draftId)
+                  setSharedToken(token)
+                  setShareLink(`${window.location.origin}/shared-draft/${token}`)
+                } catch (e) {
+                  setShareError(e instanceof Error ? e.message : 'Не удалось создать ссылку')
+                }
               }}
               className="btn-ghost"
             >
-              <Share2 size={14} aria-hidden="true" /> Ссылка для рецензии
+              <Share2 size={14} aria-hidden="true" /> Совместное редактирование
             </button>
           </div>
           {shareLink && (
             <p className="border border-dashed border-accent bg-secondary/40 p-4 font-mono text-[12px]">
-              <span className="meta block">временная ссылка · 24 ч · соавторство между вкладками этого браузера</span>
+              <span className="meta block">ссылка на 24 ч · открыть и править могут вошедшие пользователи · кто поменял текст — рецензент</span>
               <a href={shareLink} target="_blank" rel="noreferrer" className="mt-1 inline-block break-all text-accent underline underline-offset-4">
                 {shareLink}
               </a>
+              <span className="meta mt-2 block !normal-case tracking-normal">
+                Рецензенты: {reviewers.length ? reviewers.map((r) => r.displayName || (r.handle ? `@${r.handle}` : r.did)).join(', ') : 'пока никто не правил'}
+              </span>
             </p>
           )}
+          {shareError && <p role="alert" className="text-sm text-destructive">{shareError}</p>}
         </Reveal>
         )}
       </form>

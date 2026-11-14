@@ -15,6 +15,7 @@ import { mountFeedRoutes } from './feed.js'
 import { mountLikeRoutes } from './likes.js'
 import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
+import { memShared, mountSharedRoutes, type SharedRepo } from './shared.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
@@ -58,6 +59,8 @@ export interface Deps {
   payouts: PayoutRepo
   system: SystemAccountRepo
   drafts: DraftRepo
+  /** совместное редактирование черновиков по ссылке; по умолчанию — в памяти (тесты) */
+  shared?: SharedRepo
   /** почта площадки (/admin/email); не задана — ящиков нет */
   mail?: MailboxClient
   /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
@@ -208,7 +211,7 @@ export function createApp(deps: Deps) {
     if (err instanceof PdsError) {
       const status = ['HandleNotAvailable', 'HandleTaken', 'EmailTaken', 'InvalidHandle'].includes(err.code) ? 409
         : err.status === 401 || ['AuthenticationRequired', 'ExpiredToken', 'InvalidToken'].includes(err.code) ? 401
-        : [400, 402, 403, 404, 409, 413, 415, 429, 502, 503].includes(err.status) ? (err.status as 400 | 402 | 403 | 404 | 409 | 413 | 415 | 429 | 502 | 503)
+        : [400, 402, 403, 404, 409, 410, 413, 415, 429, 502, 503].includes(err.status) ? (err.status as 400 | 402 | 403 | 404 | 409 | 410 | 413 | 415 | 429 | 502 | 503)
         : 502
       return c.json({ error: err.code, message: err.message }, status)
     }
@@ -315,7 +318,9 @@ export function createApp(deps: Deps) {
   mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
-  mountArticleRoutes(app, { pds: d.pds }, { bearer })
+  const shared = d.shared ?? memShared()
+  mountSharedRoutes(app, { pds: d.pds, drafts: d.drafts, shared, users: d.users }, { bearer })
+  mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts }, { bearer })
   mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource() }, { bearer })
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })

@@ -135,6 +135,8 @@ export interface Article {
   coAuthor?: string
   /** редактор статьи, напр. "claude" */
   editor?: string
+  /** рецензенты: правили черновик по ссылке совместного редактирования (ставит AppView) */
+  reviewers?: { did: string; handle?: string }[]
   paywall?: Paywall
   source?: SourceRef
   collectionId?: string

@@ -165,7 +165,7 @@ interface StoreValue extends Persisted {
    * или видео-файл (его некуда загрузить) — только локально.
    */
   /** uri записи в репозитории; undefined — статья осталась локальной (платная, отложенная, без сессии) */
-  publishArticle: (article: Article, text?: string) => Promise<string | undefined>
+  publishArticle: (article: Article, text?: string, draftId?: string) => Promise<string | undefined>
   /** у статьи из индекса — запись в репозиторий читателя; ошибка API пробрасывается (ApiError) */
   addComment: (articleId: string, text: string, parentId?: string) => Promise<void>
   /** свой комментарий: из репозитория читателя (AT URI) или локальный; ошибка API пробрасывается */
@@ -697,7 +697,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setEditorPrefs: (p) => patch({ editorPrefs: { ...persisted.editorPrefs, ...p } }),
       setBlockDefs: (defs) => patch({ blockDefs: defs }),
       unlock: (articleId) => patch({ unlocked: { ...persisted.unlocked, [articleId]: true } }),
-      publishArticle: async (article, text) => {
+      publishArticle: async (article, text, draftId) => {
         const now = new Date().toISOString()
         const video = article.kind === 'video'
         // видео-ссылка; пустая — демо-ролик площадки (DEMO_VIDEO на странице статьи)
@@ -719,6 +719,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             langs: article.language ? [article.language] : [],
             kind: video ? 'video' : 'text',
             ...(article.noindex ? { noindex: true } : {}),
+            ...(draftId ? { draftId } : {}),
             videos: clip
               ? [
                   {

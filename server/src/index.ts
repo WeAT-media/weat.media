@@ -23,6 +23,7 @@ import { createMailboxClient } from './mailbox.js'
 import { payoutRepo } from './payouts.js'
 import { systemAccountRepo } from './systemAccounts.js'
 import { draftRepo } from './drafts.js'
+import { sharedRepo } from './shared.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
@@ -44,6 +45,7 @@ const app = createApp({
   payouts: payoutRepo(sql),
   system: systemAccountRepo(sql),
   drafts: draftRepo(sql),
+  shared: sharedRepo(sql),
   mail: createMailboxClient({
     domain: config.MAIL_DOMAIN,
     imapHost: config.MAIL_HOST,

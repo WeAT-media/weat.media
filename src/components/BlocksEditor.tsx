@@ -10,6 +10,11 @@ interface BlocksEditorProps {
   /** id комнаты BroadcastChannel: совместное редактирование между вкладками этого браузера */
   roomId?: string
   /**
+   * Сетевая комната совместного редактирования (ссылка /shared-draft): документ Yjs синхронизируется через
+   * AppView. Пустой документ наполняет только автор (isOwner) из value; остальные ждут его состояния.
+   */
+  serverRoom?: { token: string; isOwner: boolean; onStatus?: (s: 'ok' | 'offline' | 'expired' | 'waiting') => void }
+  /**
    * Начальный заголовок страницы (blocksuite page-title). Когда задан вместе
    * с onTitleChange, в редакторе монтируется настоящий <doc-title>: заголовок
    * живёт в root-блоке affine:page и сериализуется в markdown как `# Title`.
@@ -37,7 +42,13 @@ const VIDEO_FLAVOURS = new Set([
  * Инициализация по API 0.19.5: doc создаётся и load() вызывается ДО editor.doc;
  * editor.doc/specs присваиваются ДО appendChild (connectedCallback читает doc).
  */
-export default function BlocksEditor({ value, onChange, compact, roomId, title, onTitleChange, onContentInspect }: BlocksEditorProps) {
+export default function BlocksEditor({ value, onChange, compact, roomId, serverRoom, title, onTitleChange, onContentInspect }: BlocksEditorProps) {
+  const serverRoomRef = useRef(serverRoom)
+  useEffect(() => {
+    serverRoomRef.current = serverRoom
+  }, [serverRoom])
+  // правка руками (ввод, вставка, удаление) с последней отправки — для отметки рецензента
+  const editedRef = useRef(false)
   const holder = useRef<HTMLDivElement>(null)
   const stateRef = useRef<{ doc: Doc } | null>(null)
   const updateHandlerRef = useRef<(() => void) | null>(null)
@@ -156,7 +167,38 @@ export default function BlocksEditor({ value, onChange, compact, roomId, title, 
         // комната: сначала пустой doc, ждём состояние от других вкладок;
         // если никто не ответил — инициализируемся из markdown сами
         let doc: Doc | undefined
-        if (roomId) {
+        const room = serverRoomRef.current
+        if (room) {
+          // пустой doc без блоков: корень придёт с сервера (или его создаст автор) — два корня ломают документ
+          doc = collection.createDoc({ id: `room-${room.token}` })
+          doc.load()
+          const [{ connectServerDoc, SEED_ORIGIN }, Y] = await Promise.all([import('@/lib/serverSync'), import('yjs')])
+          const conn = connectServerDoc(doc.spaceDoc, room.token, {
+            takeEdited: () => {
+              const v = editedRef.current
+              editedRef.current = false
+              return v
+            },
+            onStatus: (st) => serverRoomRef.current?.onStatus?.(st),
+          })
+          syncRef.current = conn
+          const filled = await conn.ready
+          if (disposed) return
+          if (!filled) {
+            if (room.isOwner) {
+              const src = (await loadMarkdown(value)) ?? createEmptyDoc(`seed-${Date.now()}`)
+              Y.applyUpdate(doc.spaceDoc, Y.encodeStateAsUpdate(src.spaceDoc), SEED_ORIGIN)
+              await conn.seed(Y.encodeStateAsUpdate(doc.spaceDoc))
+            } else {
+              room.onStatus?.('waiting')
+              await conn.waitForState()
+              room.onStatus?.('ok')
+            }
+            if (disposed) return
+          }
+          // корень мог ещё не собраться из обновлений — ждём (до 5 с)
+          for (let i = 0; i < 50 && !doc.root; i++) await new Promise((r) => setTimeout(r, 100))
+        } else if (roomId) {
           doc = createEmptyDoc(`room-${roomId}`)
           const { connectBroadcastDoc } = await import('@/lib/broadcastSync')
           const conn = connectBroadcastDoc(doc.spaceDoc, roomId)
@@ -312,7 +354,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, title, 
     }
     // редактор создаётся один раз из начального value; дальше он — источник markdown
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId])
+  }, [roomId, serverRoom?.token])
 
   if (error) {
     return (
@@ -339,15 +381,26 @@ export default function BlocksEditor({ value, onChange, compact, roomId, title, 
       {!compact && (
         <p className="meta mb-2 inline-flex items-center gap-1.5">
           BlockSuite · PageEditor {ready ? '· готов' : '· загрузка…'}
-          {roomId && (
+          {roomId && !serverRoom && (
             <span className="inline-flex items-center gap-1 text-accent">
               <Users size={11} aria-hidden="true" /> комната {roomId}: синхронизация между вкладками этого браузера
+            </span>
+          )}
+          {serverRoom && (
+            <span className="inline-flex items-center gap-1 text-accent">
+              <Users size={11} aria-hidden="true" /> совместное редактирование: правки видят все по ссылке
             </span>
           )}
         </p>
       )}
       <div
         ref={holder}
+        onBeforeInput={() => (editedRef.current = true)}
+        onPaste={() => (editedRef.current = true)}
+        onDrop={() => (editedRef.current = true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete' || ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'x' || e.key === 'y'))) editedRef.current = true
+        }}
         onPointerDown={(e) => {
           // клик по рамке/padding вне самого редактора: без этого фокус оставался
           // на <body> и ввод терялся — переводим фокус в первый абзац

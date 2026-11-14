@@ -495,6 +495,19 @@ export default function ArticlePage() {
               <p className="meta">@{article.author.handle} · {article.author.did}</p>
             </div>
           </div>
+          {!!article.reviewers?.length && (
+            <p className="meta mt-3">
+              Рецензенты:{' '}
+              {article.reviewers.map((r, i) => (
+                <span key={r.did}>
+                  {i > 0 && ', '}
+                  <Link to={`/profile/${r.handle ?? r.did}`} className="text-accent underline-offset-4 hover:underline">
+                    @{r.handle ?? r.did.slice(0, 18)}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
           {collection && (
             <p className="meta mt-3 inline-flex items-center gap-1.5">
               <Share2 size={11} aria-hidden="true" /> из подборки{' '}
