@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Search, ShieldCheck } from 'lucide-react'
 import { SITE_NAME } from '@/config/site'
-import { countryLabel } from '@/lib/api'
+import { countryLabel, profile } from '@/lib/api'
 import { staffAuthConfigured, staffLogin, staffToken } from '@/lib/staffAuth'
 import CountrySelect from '@/components/CountrySelect'
 import DevicesList, { type DeviceSession } from '@/components/DevicesList'
@@ -64,6 +64,10 @@ export default function AdminUsersPage() {
     try {
       const c = await call<UserCard>(`/admin/users/${encodeURIComponent(did)}`)
       setCard(c)
+      setProfName(c.displayName ?? '')
+      setProfAbout('')
+      // «О себе» служебной учётки — из её записи профиля (публично с PDS)
+      if (c.service) void profile.get(c.did).then((p) => setProfAbout(p.description ?? ''))
       setResidence([c.residenceCountry])
       setTicketRef('')
     } catch (e) {
@@ -71,6 +75,21 @@ export default function AdminUsersPage() {
     }
   }
 
+  const [profName, setProfName] = useState('')
+  const [profAbout, setProfAbout] = useState('')
+  /** профиль: служебной учётки — её запись AT; человека — только имя на сайте (модерация) */
+  const saveProfile = async () => {
+    if (!card) return
+    setError('')
+    try {
+      const body = card.service ? { displayName: profName.trim() || null, description: profAbout.trim() || null } : { displayName: profName.trim() || null }
+      const r = await call<{ scope: 'repo' | 'site' }>(`/admin/users/${encodeURIComponent(card.did)}/profile`, { method: 'PUT', body: JSON.stringify(body) })
+      setDone(r.scope === 'repo' ? `Профиль @${card.handle} обновлён` : `Имя на сайте для @${card.handle} изменено (в Bluesky — прежнее)`)
+      await open(card.did)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось')
+    }
+  }
   const [tierReason, setTierReason] = useState('')
   /** Premium вручную — например, оплата прошла, а подписка не включилась; причина — в журнал */
   const changeTier = async (tier: 'free' | 'premium') => {
@@ -188,6 +207,18 @@ export default function AdminUsersPage() {
             </p>
             <p className="mt-2 text-sm">
               <Link to={`/profile/${card.handle}`} className="text-accent hover:underline">Профиль на сайте</Link>
+            </p>
+
+            <h3 className="mt-6 text-sm font-semibold">Профиль</h3>
+            <div className="mt-2 grid gap-2">
+              <input value={profName} onChange={(e) => setProfName(e.target.value)} maxLength={64} placeholder="имя" aria-label="Имя" className={input} />
+              {card.service && (
+                <textarea value={profAbout} onChange={(e) => setProfAbout(e.target.value)} maxLength={256} rows={2} placeholder="о себе" aria-label="О себе" className={input} />
+              )}
+              <button type="button" onClick={() => void saveProfile()} className="btn-primary !px-3 !py-2 sm:w-fit">Сохранить профиль</button>
+            </div>
+            <p className="meta mt-1 !normal-case tracking-normal">
+              {card.service ? 'служебная учётка: меняется её профиль в сети AT' : 'пользователь: меняется только имя на сайте; его профиль в сети AT меняет он сам'} · только admin; пишется в аудит
             </p>
 
             <h3 className="mt-6 text-sm font-semibold">Тариф</h3>

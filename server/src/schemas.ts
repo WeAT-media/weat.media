@@ -86,6 +86,11 @@ export const CodeBody = z.object({ code: Code })
 
 // ── администрирование ───────────────────────────────────────────────────
 /** reason — почему выдан/снят вручную (техническая причина, компенсация): в журнал сотрудников */
+/** правка профиля сотрудником: null — убрать поле */
+export const AdminProfileBody = z
+  .object({ displayName: z.string().trim().min(1).max(64).nullable().optional(), description: z.string().trim().max(256).nullable().optional(), reason: z.string().trim().max(500).optional() })
+  .refine((b) => b.displayName !== undefined || b.description !== undefined, 'нужно displayName или description')
+
 export const TierBody = z.object({ tier: z.enum(['free', 'premium']), reason: z.string().trim().min(5).max(500).optional() })
 
 /** смена страны резидентства сотрудником; ticket — номер заявки в поддержку */

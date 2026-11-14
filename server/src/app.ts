@@ -37,7 +37,7 @@ import type { OAuthClient, OAuthProviderId } from './providers.js'
 import { contourAllows, type GeoLookup } from './geo.js'
 import { PdsError, type PdsClient, type PdsSession } from './pds.js'
 import { buildOpenApi } from './openapi.js'
-import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, ResidenceBody, TierBody } from './schemas.js'
+import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, ResidenceBody, TierBody, AdminProfileBody } from './schemas.js'
 import { SettingsPatch, type SettingsRepo } from './settings.js'
 
 export interface Deps {
@@ -509,6 +509,33 @@ export function createApp(deps: Deps) {
   })
 
   /** страна резидентства — по заявке из поддержки, после проверки документа; в аудит */
+  /**
+   * Профиль из админки (роль admin, в журнал). Служебная учётка (пароль на сервере) — правится её запись
+   * app.bsky.actor.profile, как через API. Человек — только имя на сайте (модерация): его репозиторий без его
+   * сессии не изменить, в Bluesky имя останется прежним.
+   */
+  app.put('/admin/users/:did/profile', async (c) => {
+    const staff = await requireStaff(c, 'admin')
+    const body = AdminProfileBody.safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return c.json({ error: 'InvalidRequest', message: z.prettifyError(body.error) }, 400)
+    const user = await d.users.findByDid(c.req.param('did'))
+    if (!user) return c.json({ error: 'NotFound', message: 'Пользователь не найден' }, 404)
+    const enc = user.service ? await d.system.password(user.did) : undefined
+    let scope: 'repo' | 'site'
+    if (enc) {
+      const s = await d.pds.createSession(user.did, d.secrets.open(enc))
+      await profiles.update(s.accessJwt, user.did, { displayName: body.data.displayName, description: body.data.description })
+      scope = 'repo'
+    } else {
+      if (body.data.displayName === undefined) return c.json({ error: 'InvalidRequest', message: 'У пользователя можно сменить только имя на сайте' }, 400)
+      await d.users.setDisplayName(user.did, body.data.displayName)
+      scope = 'site'
+    }
+    await audit(staff, 'user.profile', user.did, { scope, ...body.data })
+    const fresh = await d.users.findByDid(user.did)
+    return c.json({ ...toPublic(fresh!), scope })
+  })
+
   app.put('/admin/users/:did/residence', async (c) => {
     const staff = await requireStaff(c, 'support')
     const body = ResidenceBody.safeParse(await c.req.json().catch(() => null))

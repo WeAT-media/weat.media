@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { useStore } from '@/lib/store'
-import { fromRealStats, getArticleAnalytics, upvoteCount as countUpvotes } from '@/lib/analytics'
+import { EMPTY_STATS, fromRealStats, getArticleAnalytics, upvoteCount as countUpvotes } from '@/lib/analytics'
 import { useArticleStats } from '@/lib/tracking'
 import { normalizeVideos } from '@/lib/videos'
 import { normalizeAtProto } from '@/lib/atproto'
@@ -90,8 +90,9 @@ export default function ArticleAnalyticsPage() {
   }
 
   const upvoteCount = countUpvotes(article, upvotes.includes(article.id))
-  // реальные данные сервиса; пока просмотров нет — демо-модель с пометкой
-  const an = real ? fromRealStats(article, upvoteCount, real) : getArticleAnalytics(article, upvoteCount)
+  // статья из сети — только реальные данные сервиса (нет просмотров — нули); модель — лишь у демо-статей
+  const demo = !article.fromIndex && !real
+  const an = real ? fromRealStats(article, upvoteCount, real) : demo ? getArticleAnalytics(article, upvoteCount) : fromRealStats(article, upvoteCount, EMPTY_STATS)
 
   const stats = [
     { label: 'Просмотры', value: an.views.toLocaleString('ru-RU'), icon: Eye },
@@ -233,6 +234,8 @@ export default function ArticleAnalyticsPage() {
         const playlist = normalizeVideos(article)
         if (playlist.length === 0) return null
         const nativeItems = playlist.filter((v) => v.source === 'native' && v.analyticsCapabilities.retention)
+        // по-видео метрики — модель только у демо-статей; у настоящих их ещё не собираем — не выдумываем
+        if (!demo) return null
         const perVideo = playlist.map((v) => {
           const seed = videoSeed(v.id)
           return {

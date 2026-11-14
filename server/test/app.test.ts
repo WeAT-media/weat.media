@@ -1278,6 +1278,24 @@ test('drafts: create, autosave, list, others cannot read; mention search finds u
   assert.deepEqual(found.users.map((u: { handle: string }) => u.handle), ['drafter.indie.media'])
 })
 
+test('admin profile edit: service account — repo profile; human — only site name; audited', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }
+  const support = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  const news = await (await app.request('/api/admin/system-accounts', { method: 'POST', headers: admin, body: JSON.stringify({ username: 'news', displayName: 'Новости' }) })).json()
+  const edit = (did: string, b: unknown, h = admin) => app.request(`/api/admin/users/${did}/profile`, { method: 'PUT', headers: h, body: JSON.stringify(b) })
+  assert.equal((await edit(news.did, { displayName: 'X' }, support)).status, 403)
+  const r = await (await edit(news.did, { displayName: 'Новости площадки', description: 'Обновления' })).json()
+  assert.equal(r.scope, 'repo')
+  assert.equal(r.displayName, 'Новости площадки')
+  const human = await (await app.request('/api/auth/register', json({ ...reg, username: 'rude', email: 'r@example.com' }, '5.1.1.1'))).json()
+  assert.equal((await edit(human.user.did, { description: 'x' })).status, 400, 'описание человека не меняем')
+  const h = await (await edit(human.user.did, { displayName: 'Пользователь', reason: 'оскорбительное имя' })).json()
+  assert.equal(h.scope, 'site')
+  assert.equal(h.displayName, 'Пользователь')
+  assert.ok(auditLog.some((e) => e.action === 'user.profile' && e.target === human.user.did))
+})
+
 test('atproto: ru contour never registers', async () => {
   const app = makeApp({ atproto: true, contour: 'ru', ipCountry: { '95.1.1.1': 'RU' } })
   const start = await app.request('/api/auth/atproto/start?handle=perfscale.su&consent=1')

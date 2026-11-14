@@ -123,7 +123,7 @@ export function useArticleStats(articleId: string | undefined, days = 14): RealS
     fetch(`${BASE}/articles/${encodeURIComponent(articleId)}?days=${days}`)
       .then((r) => (r.ok ? (r.json() as Promise<RealStats>) : null))
       .catch(() => null)
-      .then((data) => alive && setStats({ id: articleId, data: data && data.views > 0 ? data : null }))
+      .then((data) => alive && setStats({ id: articleId, data }))
     return () => {
       alive = false
     }

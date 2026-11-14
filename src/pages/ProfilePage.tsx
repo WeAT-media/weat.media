@@ -74,10 +74,11 @@ export default function ProfilePage() {
     }
   }, [lookup])
   const author = useMemo<Author | undefined>(() => {
-    if (local) return local
     const p = remoteProfile
-    if (p && (p.handle === decoded || p.did === decoded)) return { name: p.displayName || p.handle, handle: p.handle, did: p.did }
-    return undefined
+    const own = p && (p.handle === decoded || p.did === decoded || p.did === local?.did) ? p : null
+    // имя — из профиля учётки; у статей краулера «автор» — автор оригинала, а не сама учётка
+    if (own) return { name: own.displayName || own.handle, handle: own.handle, did: own.did }
+    return local
   }, [local, remoteProfile, decoded])
 
   // комментарии из индекса ленты: все, что пользователь оставил под статьями площадки

@@ -68,6 +68,9 @@ export interface RealStats {
   utm: { source: string; medium: string; campaign: string; views: number }[]
 }
 
+/** статья из сети без просмотров (или сервис аналитики недоступен): честные нули, а не модель */
+export const EMPTY_STATS: RealStats = { views: 0, uniques: 0, anon_views: 0, reads: 0, avg_time_ms: 0, daily: [], sources: [], utm: [] }
+
 const CHANNEL_LABEL: Record<RealStats['sources'][number]['channel'], string> = {
   feed: `Лента ${SITE_NAME}`,
   direct: 'Прямые ссылки',
