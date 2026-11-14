@@ -8,8 +8,9 @@
  *   отметка «служебная» в базе AppView, PLC-операция (сервис #atproto_labeler + ключ #atproto_label
  *   из сервиса коллегий; код подтверждения читаем из ящика по IMAP) и запись app.bsky.labeler.service.
  *   Вход (stdin): {"<id>": {"mailboxPassword": "…"}}; выход (stdout): то же + did и password учётки.
- * handles — после LABELER_DIDS (сервис коллегий отдаёт did:plc на /.well-known/atproto-did):
- *   handle учётки → <id>.justice.<домен>.
+ * handles — после LABELER_DIDS: handle учётки → <id>.justice.<домен>. На нашем PDS не работает: handle на
+ *   *.<домен> PDS считает своими, а spam/tech/… — зарезервированными. Поэтому handle коллегий — <id>-justice.<домен>,
+ *   адрес сервиса — <id>.justice.<домен>; режим оставлен для коллегий на чужом PDS.
  *
  * Повторный запуск безопасен: уже созданные учётки и записи пропускаются.
  */
