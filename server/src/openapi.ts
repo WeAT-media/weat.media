@@ -28,6 +28,7 @@ import { ClaimBody, ClaimDto, DecideBody } from './claims.js'
 import { LikeBody, LikeRefDto } from './likes.js'
 import { ImportDraftDto, ImportStatusBody } from './imports.js'
 import { MailMessageDto, MailSummaryDto, SendMailBody } from './mailbox.js'
+import { AdjustBody, AdjustmentDto } from './finance.js'
 import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutRequestBody, SaleDto } from './payouts.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
@@ -255,6 +256,9 @@ const ops: Op[] = [
     query: { status: { description: 'pending | approved | rejected | transferred' } },
     ok: { status: 200, description: 'Заявки с заявителем' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden — нужна роль support']],
   },
+  { method: 'get', path: '/admin/finance/summary', tag: 'admin', summary: 'Финансы площадки: итоги, заказы, корректировки', auth: 'staff', ok: { status: 200, schema: z.object({ totals: z.array(z.record(z.string(), z.unknown())), orders: z.array(z.record(z.string(), z.unknown())), adjustments: z.array(AdjustmentDto) }), description: 'По валютам' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden']] },
+  { method: 'get', path: '/admin/finance/users/{id}', tag: 'admin', summary: 'Баланс пользователя', auth: 'staff', ok: { status: 200, schema: z.object({ did: z.string(), handle: z.string(), balances: z.array(z.record(z.string(), z.unknown())), adjustments: z.array(AdjustmentDto) }), description: 'Баланс и корректировки' }, errors: [[404, 'NotFound']] },
+  { method: 'post', path: '/admin/finance/adjustments', tag: 'admin', summary: 'Корректировка баланса (начисление или списание)', auth: 'staff', description: 'Сумма со знаком, в минимальных единицах. Списание не ниже доступного остатка. Причина обязательна.', body: AdjustBody, ok: { status: 201, schema: AdjustmentDto, description: 'Корректировка' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound'], [409, 'InsufficientBalance']] },
   { method: 'get', path: '/admin/payouts', tag: 'admin', summary: 'Заявки на выплату', auth: 'staff', query: { status: { description: 'requested | paid | rejected' } }, ok: { status: 200, schema: z.array(AdminPayoutDto), description: 'Старые сверху' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden']] },
   { method: 'patch', path: '/admin/payouts/{id}', tag: 'admin', summary: 'Отметить выплату или отклонить', auth: 'staff', description: 'Отказ — с причиной (note), её видит автор; сумма снова доступна.', body: PayoutDecisionBody, ok: { status: 200, schema: AdminPayoutDto, description: 'Решение' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']] },
   // ── почта площадки: support@ — support и admin; legal@, noreply@ — admin

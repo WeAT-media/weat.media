@@ -20,6 +20,7 @@ import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
 import { mountPayoutRoutes, type PayoutRepo } from './payouts.js'
 import { mountShareRoutes } from './share.js'
+import { mountFinanceRoutes } from './finance.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -283,6 +284,7 @@ export function createApp(deps: Deps) {
   mountSessionRoutes(app, { pds: d.pds, sessions: d.sessions }, { bearer, requireStaff, audit })
   mountMailboxRoutes(app, { mail: d.mail }, { requireStaff, audit })
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
+  mountFinanceRoutes(app, { payouts: d.payouts, users: d.users }, { requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })

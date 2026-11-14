@@ -18,7 +18,7 @@ import type { MessageRow, TicketRepo, TicketRow } from '../src/tickets.ts'
 import type { AtprotoAuth } from '../src/atprotoOAuth.ts'
 import type { ImportDraftRow, ImportRepo, PostSource } from '../src/imports.ts'
 import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
-import type { PayoutRepo, PayoutRow } from '../src/payouts.ts'
+import type { AdjustmentRow, PayoutRepo, PayoutRow } from '../src/payouts.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
@@ -137,14 +137,16 @@ function memMail(): MailboxClient {
 let paidSales: { author: string; share: number; currency: string; paidAt: Date; title: string }[] = []
 function memPayouts(): PayoutRepo {
   const rows: PayoutRow[] = []
+  const adj: AdjustmentRow[] = []
   const balances: PayoutRepo['balances'] = async (did, holdDays) => {
-    const cur = new Set([...paidSales.filter((x) => x.author === did).map((x) => x.currency), ...rows.filter((x) => x.author_did === did).map((x) => x.currency)])
+    const cur = new Set([...paidSales.filter((x) => x.author === did).map((x) => x.currency), ...rows.filter((x) => x.author_did === did).map((x) => x.currency), ...adj.filter((x) => x.did === did).map((x) => x.currency)])
     const since = Date.now() - holdDays * 86_400_000
     return [...cur].sort().map((currency) => {
       const mine = paidSales.filter((x) => x.author === did && x.currency === currency)
-      const earned = mine.reduce((a, x) => a + x.share, 0)
+      const earned = mine.reduce((a, x) => a + x.share, 0) + adj.filter((x) => x.did === did && x.currency === currency).reduce((a, x) => a + x.amount, 0)
       const pending = mine.filter((x) => +x.paidAt > since).reduce((a, x) => a + x.share, 0)
       const po = rows.filter((x) => x.author_did === did && x.currency === currency)
+      const adjusted = adj.filter((x) => x.did === did && x.currency === currency).reduce((a, x) => a + x.amount, 0)
       const reserved = po.filter((x) => x.status === 'requested').reduce((a, x) => a + x.amount, 0)
       const paidOut = po.filter((x) => x.status === 'paid').reduce((a, x) => a + x.amount, 0)
       return { currency, earned, pending, reserved, paidOut, available: Math.max(0, earned - pending - reserved - paidOut) }
@@ -170,6 +172,20 @@ function memPayouts(): PayoutRepo {
       if (r) Object.assign(r, { status, decided_by: by, staff_note: note, decided_at: new Date() })
       return r
     },
+    async adjust(a) {
+      const row = { ...a, created_at: new Date() }
+      adj.push(row)
+      return row
+    },
+    async adjustments(did) { return adj.filter((x) => !did || x.did === did).reverse() },
+    async summary() {
+      const cur = [...new Set(paidSales.map((x) => x.currency))]
+      return cur.map((currency) => {
+        const share = paidSales.filter((x) => x.currency === currency).reduce((a, x) => a + x.share, 0)
+        return { currency, gross: share * 2, platformFee: share, authorShare: share, orders: paidSales.length, refunded: 0, payoutsRequested: 0, payoutsPaid: 0, adjustments: adj.filter((x) => x.currency === currency).reduce((a, x) => a + x.amount, 0) }
+      })
+    },
+    async recentOrders() { return [] },
   }
 }
 
@@ -1039,6 +1055,31 @@ test('global contour: from a Russian IP foreign providers (Telegram, Google, AT)
   await oauthFlow(app, 'telegram', 'code-tg', '5.1.1.1', { linkToken: accessJwt })
   const cbFromRu = await oauthFlow(app, 'telegram', 'code-tg', '95.1.1.1').catch(() => null)
   assert.ok(cbFromRu === null || cbFromRu.searchParams.get('error') === 'ProviderForbidden')
+})
+
+test('finance: admin sees totals, credits and debits a user balance with reason; debit cannot exceed available', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'fin', email: 'fin@example.com' }, '5.1.1.1'))).json()
+  paidSales = [{ author: u.user.did, share: 50_000, currency: 'RUB', paidAt: new Date(Date.now() - 30 * 86_400_000), title: 'Т' }]
+  const support = { authorization: `Bearer ${await staffToken(['support'])}`, 'content-type': 'application/json' }
+  const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }
+  assert.equal((await app.request('/api/admin/finance/summary', { headers: support })).status, 403)
+  const sum = await (await app.request('/api/admin/finance/summary', { headers: admin })).json()
+  assert.equal(sum.totals[0].authorShare, 50_000)
+
+  const adjust = (b: unknown) => app.request('/api/admin/finance/adjustments', { method: 'POST', headers: admin, body: JSON.stringify(b) })
+  assert.equal((await adjust({ user: 'fin.indie.media', amount: 10_000, currency: 'RUB', reason: 'x' })).status, 400, 'причина короткая')
+  assert.equal((await adjust({ user: 'nobody.indie.media', amount: 10_000, currency: 'RUB', reason: 'Бонус за конкурс' })).status, 404)
+  assert.equal((await adjust({ user: 'fin.indie.media', amount: 25_000, currency: 'RUB', reason: 'Бонус за конкурс' })).status, 201)
+  assert.equal((await adjust({ user: u.user.did, amount: -100_000, currency: 'RUB', reason: 'Ошибочное начисление' })).status, 409, 'не ниже нуля')
+  assert.equal((await adjust({ user: u.user.did, amount: -5_000, currency: 'RUB', reason: 'Исправление суммы' })).status, 201)
+
+  const card = await (await app.request('/api/admin/finance/users/fin.indie.media', { headers: admin })).json()
+  assert.equal(card.balances[0].available, 70_000)
+  assert.equal(card.adjustments.length, 2)
+  const mine = await (await app.request('/api/me/earnings', { headers: { authorization: `Bearer ${u.accessJwt}` } })).json()
+  assert.equal(mine.balances[0].available, 70_000, 'автор видит скорректированный баланс')
+  assert.ok(auditLog.filter((e) => e.action === 'finance.adjust').length >= 2)
 })
 
 test('atproto: ru contour never registers', async () => {

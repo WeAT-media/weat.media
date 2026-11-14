@@ -63,6 +63,48 @@ export interface PayoutRepo {
   queue(status: PayoutStatus | null): Promise<PayoutRow[]>
   get(id: string): Promise<PayoutRow | undefined>
   decide(id: string, status: 'paid' | 'rejected', by: string, note: string | null): Promise<PayoutRow | undefined>
+  // ── финансы площадки (/admin/finance)
+  adjust(a: Omit<AdjustmentRow, 'created_at'>): Promise<AdjustmentRow>
+  adjustments(did: string | null, limit: number): Promise<AdjustmentRow[]>
+  summary(): Promise<PlatformTotals[]>
+  recentOrders(limit: number): Promise<OrderLine[]>
+}
+
+export interface AdjustmentRow {
+  id: string
+  did: string
+  amount: number
+  currency: string
+  reason: string
+  created_by: string
+  created_at: Date
+}
+
+/** итоги площадки по валюте, минимальные единицы */
+export interface PlatformTotals {
+  currency: string
+  gross: number
+  platformFee: number
+  authorShare: number
+  orders: number
+  refunded: number
+  payoutsRequested: number
+  payoutsPaid: number
+  adjustments: number
+}
+
+export interface OrderLine {
+  id: string
+  title: string
+  readerDid: string
+  authorDid: string
+  amount: number
+  authorShare: number
+  platformFee: number
+  currency: string
+  status: string
+  createdAt: Date
+  paidAt: Date | null
 }
 
 export function payoutRepo(sql: Sql): PayoutRepo {
@@ -78,11 +120,17 @@ export function payoutRepo(sql: Sql): PayoutRepo {
                sum(amount) FILTER (WHERE status = 'requested') AS reserved,
                sum(amount) FILTER (WHERE status = 'paid') AS paid_out
         FROM payouts WHERE author_did = ${did} GROUP BY currency
+      ), a AS (
+        -- ручные корректировки (/admin/finance): сразу доступны, без окна возвратов
+        SELECT currency, sum(amount) AS adjusted FROM balance_adjustments WHERE did = ${did} GROUP BY currency
+      ), cur AS (
+        SELECT currency FROM s UNION SELECT currency FROM p UNION SELECT currency FROM a
       )
-      SELECT coalesce(s.currency, p.currency) AS currency,
-             coalesce(s.earned, 0) AS earned, coalesce(s.pending, 0) AS pending,
+      SELECT cur.currency,
+             coalesce(s.earned, 0) + coalesce(a.adjusted, 0) AS earned, coalesce(s.pending, 0) AS pending,
              coalesce(p.reserved, 0) AS reserved, coalesce(p.paid_out, 0) AS paid_out
-      FROM s FULL JOIN p ON p.currency = s.currency ORDER BY 1`
+      FROM cur LEFT JOIN s ON s.currency = cur.currency LEFT JOIN p ON p.currency = cur.currency
+      LEFT JOIN a ON a.currency = cur.currency ORDER BY 1`
     return rows.map((r) => {
       const [earned, pending, reserved, paidOut] = [r.earned, r.pending, r.reserved, r.paid_out].map(Number) as [number, number, number, number]
       return { currency: r.currency.trim(), earned, pending, reserved, paidOut, available: Math.max(0, earned - pending - reserved - paidOut) }
@@ -122,6 +170,49 @@ export function payoutRepo(sql: Sql): PayoutRepo {
         UPDATE payouts SET status = ${status}, decided_by = ${by}, staff_note = ${note}, decided_at = now()
         WHERE id = ${id} AND status = 'requested' RETURNING *`
       return r
+    },
+    async adjust(a) {
+      const [r] = await sql<AdjustmentRow[]>`
+        INSERT INTO balance_adjustments (id, did, amount, currency, reason, created_by)
+        VALUES (${a.id}, ${a.did}, ${a.amount}, ${a.currency}, ${a.reason}, ${a.created_by}) RETURNING *`
+      return r!
+    },
+    adjustments: (did, limit) => sql<AdjustmentRow[]>`
+      SELECT * FROM balance_adjustments ${did ? sql`WHERE did = ${did}` : sql``} ORDER BY created_at DESC LIMIT ${limit}`,
+    async summary() {
+      const rows = await sql<{ currency: string; gross: string; fee: string; share: string; orders: string; refunded: string; req: string; paid: string; adj: string }[]>`
+        WITH o AS (
+          SELECT currency, sum(amount) FILTER (WHERE status = 'paid') AS gross, sum(platform_fee) FILTER (WHERE status = 'paid') AS fee,
+                 sum(author_share) FILTER (WHERE status = 'paid') AS share, count(*) FILTER (WHERE status = 'paid') AS orders,
+                 sum(amount) FILTER (WHERE status = 'refunded') AS refunded
+          FROM orders GROUP BY currency
+        ), p AS (
+          SELECT currency, sum(amount) FILTER (WHERE status = 'requested') AS req, sum(amount) FILTER (WHERE status = 'paid') AS paid
+          FROM payouts GROUP BY currency
+        ), a AS (SELECT currency, sum(amount) AS adj FROM balance_adjustments GROUP BY currency),
+        cur AS (SELECT currency FROM o UNION SELECT currency FROM p UNION SELECT currency FROM a)
+        SELECT cur.currency, coalesce(o.gross, 0) AS gross, coalesce(o.fee, 0) AS fee, coalesce(o.share, 0) AS share,
+               coalesce(o.orders, 0) AS orders, coalesce(o.refunded, 0) AS refunded,
+               coalesce(p.req, 0) AS req, coalesce(p.paid, 0) AS paid, coalesce(a.adj, 0) AS adj
+        FROM cur LEFT JOIN o ON o.currency = cur.currency LEFT JOIN p ON p.currency = cur.currency LEFT JOIN a ON a.currency = cur.currency
+        ORDER BY 1`
+      return rows.map((r) => ({
+        currency: r.currency.trim(),
+        gross: Number(r.gross),
+        platformFee: Number(r.fee),
+        authorShare: Number(r.share),
+        orders: Number(r.orders),
+        refunded: Number(r.refunded),
+        payoutsRequested: Number(r.req),
+        payoutsPaid: Number(r.paid),
+        adjustments: Number(r.adj),
+      }))
+    },
+    async recentOrders(limit) {
+      const rows = await sql<{ id: string; title: string; reader_did: string; author_did: string; amount: number; author_share: number; platform_fee: number; currency: string; status: string; created_at: Date; paid_at: Date | null }[]>`
+        SELECT o.id, c.title, o.reader_did, o.author_did, o.amount, o.author_share, o.platform_fee, o.currency, o.status, o.created_at, o.paid_at
+        FROM orders o JOIN paid_content c ON c.id = o.content_id ORDER BY o.created_at DESC LIMIT ${limit}`
+      return rows.map((r) => ({ id: r.id, title: r.title, readerDid: r.reader_did, authorDid: r.author_did, amount: r.amount, authorShare: r.author_share, platformFee: r.platform_fee, currency: r.currency.trim(), status: r.status, createdAt: r.created_at, paidAt: r.paid_at }))
     },
   }
 }

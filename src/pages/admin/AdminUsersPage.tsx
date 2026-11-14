@@ -122,6 +122,7 @@ export default function AdminUsersPage() {
           <Link to="/admin/tickets" className="btn-ghost !px-3 !py-2 !text-[11px]">Обращения</Link>
           <Link to="/admin/email" className="btn-ghost !px-3 !py-2 !text-[11px]">Почта</Link>
           <Link to="/admin/payouts" className="btn-ghost !px-3 !py-2 !text-[11px]">Выплаты</Link>
+          <Link to="/admin/finance" className="btn-ghost !px-3 !py-2 !text-[11px]">Финансы</Link>
           <Link to="/admin/claims" className="btn-ghost !px-3 !py-2 !text-[11px]">Заявки на авторство</Link>
         </div>
       </div>
