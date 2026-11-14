@@ -33,6 +33,9 @@ const Env = z.object({
   MAILBOX_SUPPORT_PASSWORD: z.string().optional(),
   MAILBOX_LEGAL_PASSWORD: z.string().optional(),
   MAILBOX_NOREPLY_PASSWORD: z.string().optional(),
+  /** сервис коллегий (services/labeler): внутренний адрес и токен записи меток */
+  LABELER_URL: z.string().url().optional(),
+  LABELER_ADMIN_TOKEN: z.string().min(32).optional(),
   ZITADEL_ISSUER: z.string().url().optional(),
   ZITADEL_PROJECT_ID: z.string().optional(),
   ZITADEL_JWKS_URL: z.string().url().optional(),

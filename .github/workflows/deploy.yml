@@ -53,6 +53,7 @@ jobs:
           - { name: appview, context: server }
           - { name: feed, context: services/feed }
           - { name: analytics, context: services/analytics }
+          - { name: labeler, context: services/labeler }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -149,6 +150,9 @@ jobs:
           REPLICATION_PRIMARY_DSN: ${{ secrets.REPLICATION_PRIMARY_DSN }}
           # резерв глобального контура на Supabase (Session pooler, IPv4): логическая реплика AppView
           SUPABASE_DSN: ${{ secrets.SUPABASE_DSN }}
+          # коллегии присяжных: ключи подписи (только в .env.labeler) и общий с AppView токен записи меток
+          LABELER_KEYS: ${{ secrets.LABELER_KEYS }}
+          LABELER_ADMIN_TOKEN: ${{ secrets.LABELER_ADMIN_TOKEN }}
           # пароль пользователя replicator: им резерв подписывается на публикацию indie_all
           REPLICATION_PASSWORD: ${{ secrets.REPLICATION_PASSWORD }}
           PG_BIND: ${{ vars.PG_BIND }}
@@ -189,7 +193,7 @@ jobs:
           line() { [ -n "${!1:-}" ] && printf '%s=%s\n' "$1" "${!1}" || true; }
           {
             for k in CONTOUR NODE_ROLE COMPOSE_PROFILES SITE_DOMAINS PDS_HOST PEER_CONTOUR_URL ACME_EMAIL ACME_DNS_USERNAME ACME_DNS_PASSWORD ACME_DNS_SUBDOMAIN \
-                     PG_PASSWORD DATABASE_URL FEED_DATABASE_URL ANALYTICS_DATABASE_URL REPLICATION_PRIMARY_DSN SUPABASE_DSN REPLICATION_PASSWORD PG_BIND PG_BIND6 ZITADEL_ISSUER ZITADEL_PROJECT_ID MAILBOX_SUPPORT_PASSWORD MAILBOX_LEGAL_PASSWORD MAILBOX_NOREPLY_PASSWORD \
+                     PG_PASSWORD DATABASE_URL FEED_DATABASE_URL ANALYTICS_DATABASE_URL REPLICATION_PRIMARY_DSN SUPABASE_DSN REPLICATION_PASSWORD PG_BIND PG_BIND6 ZITADEL_ISSUER ZITADEL_PROJECT_ID LABELER_ADMIN_TOKEN MAILBOX_SUPPORT_PASSWORD MAILBOX_LEGAL_PASSWORD MAILBOX_NOREPLY_PASSWORD \
                      SECRETS_KEY ADMIN_TOKEN PAID_CONTENT_KEY PDS_ADMIN_PASSWORD ANALYTICS_VISITOR_SECRET \
                      LAVA_API_KEY LAVA_OFFER_ID LAVA_WEBHOOK_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
                      GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET TELEGRAM_CLIENT_ID TELEGRAM_CLIENT_SECRET RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
@@ -197,6 +201,8 @@ jobs:
             done
             printf 'PUBLIC_URL=%s\nCORS_ORIGIN=%s\nPDS_HANDLE_DOMAIN=weat.media\nACME_DNS_SERVER=https://auth.acme-dns.io\nGEOIP_DB_PATH=/geoip/country.mmdb\nADMIN_ALLOW_IPS=127.0.0.1/32\nBACKUP_INTERVAL_SEC=300\n' "$SITE_URL" "$SITE_URL"
             [ "$CONTOUR" = ru ] && echo MAIL_HOST=mail-ru.weat.media || echo MAIL_HOST=mail.weat.media
+            # AppView ходит к коллегиям внутри узла, если они здесь; ключей подписи в .env нет
+            [ -n "${LABELER_KEYS:-}" ] && echo LABELER_URL=http://labeler:8791 || true
           } > node.env
           {
             printf 'PDS_HOSTNAME=%s\nPDS_SERVICE_HANDLE_DOMAINS=.weat.media\n' "$PDS_HOST"
@@ -206,11 +212,16 @@ jobs:
             # PDS требует адрес отправителя и SMTP вместе — без почты не пишем ни то, ни другое
             if [ -n "${PDS_EMAIL_SMTP_URL:-}" ]; then printf 'PDS_EMAIL_SMTP_URL=%s\nPDS_EMAIL_FROM_ADDRESS=noreply@weat.media\n' "$PDS_EMAIL_SMTP_URL"; fi
           } > node.env.pds
+          {
+            line LABELER_KEYS; line LABELER_ADMIN_TOKEN
+            [ -n "${PG_PASSWORD:-}" ] && printf 'DATABASE_URL=postgres://indie:%s@postgres:5432/labeler\n' "$PG_PASSWORD" || true
+          } > node.env.labeler
           # на узел — во временные файлы, затем атомарная замена; на раннере не оставляем
           scp -q -i ~/.ssh/deploy -o BatchMode=yes node.env "root@$HOST:/opt/weat/deploy/node/.env.new"
           scp -q -i ~/.ssh/deploy -o BatchMode=yes node.env.pds "root@$HOST:/opt/weat/deploy/node/.env.pds.new"
-          rm -f node.env node.env.pds
-          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'cd /opt/weat/deploy/node && chmod 600 .env.new .env.pds.new && mv .env.new .env && mv .env.pds.new .env.pds'
+          scp -q -i ~/.ssh/deploy -o BatchMode=yes node.env.labeler "root@$HOST:/opt/weat/deploy/node/.env.labeler.new"
+          rm -f node.env node.env.pds node.env.labeler
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'cd /opt/weat/deploy/node && chmod 600 .env.new .env.pds.new .env.labeler.new && mv .env.new .env && mv .env.pds.new .env.pds && mv .env.labeler.new .env.labeler'
 
       - name: Обновить узел
         env:
@@ -220,12 +231,13 @@ jobs:
           APPVIEW: ${{ env.REGISTRY }}/appview:${{ github.sha }}
           FEED: ${{ env.REGISTRY }}/feed:${{ github.sha }}
           ANALYTICS: ${{ env.REGISTRY }}/analytics:${{ github.sha }}
+          LABELER: ${{ env.REGISTRY }}/labeler:${{ github.sha }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # токен GHCR живёт, пока идёт джоб; на узле не остаётся (docker logout в конце)
           ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" \
-            SHA="$SHA" EDGE="$EDGE" APPVIEW="$APPVIEW" FEED="$FEED" ANALYTICS="$ANALYTICS" GHCR_USER="$GHCR_USER" GHCR_TOKEN="$GHCR_TOKEN" \
+            SHA="$SHA" EDGE="$EDGE" APPVIEW="$APPVIEW" FEED="$FEED" ANALYTICS="$ANALYTICS" LABELER="$LABELER" GHCR_USER="$GHCR_USER" GHCR_TOKEN="$GHCR_TOKEN" \
             'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/weat
@@ -239,11 +251,19 @@ jobs:
               -keyout pg-tls/server.key -out pg-tls/server.crt 2>/dev/null
           fi
           chown -R 70:70 pg-tls && chmod 600 pg-tls/server.key && chmod 644 pg-tls/server.crt
-          printf 'EDGE_IMAGE=%s\nAPPVIEW_IMAGE=%s\nFEED_IMAGE=%s\nANALYTICS_IMAGE=%s\n' "$EDGE" "$APPVIEW" "$FEED" "$ANALYTICS" > .env.images
+          printf 'EDGE_IMAGE=%s\nAPPVIEW_IMAGE=%s\nFEED_IMAGE=%s\nANALYTICS_IMAGE=%s\nLABELER_IMAGE=%s\n' "$EDGE" "$APPVIEW" "$FEED" "$ANALYTICS" "$LABELER" > .env.images
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null
           compose() { docker compose --env-file .env --env-file .env.images "$@"; }
           compose pull --quiet edge appview feed analytics
+          # коллегии — только где включён профиль labeler; база создаётся при первом включении
+          if grep -q '^COMPOSE_PROFILES=.*labeler' .env; then
+            compose pull --quiet labeler
+            if compose ps --services --status running | grep -qx postgres; then
+              compose exec -T postgres psql -U indie -d indie -tAc "SELECT 1 FROM pg_database WHERE datname='labeler'" | grep -q 1 \
+                || compose exec -T postgres psql -U indie -d indie -qc 'CREATE DATABASE labeler OWNER indie'
+            fi
+          fi
           compose up -d --remove-orphans
           docker image prune -f >/dev/null
           # пользователь репликации и публикация всех таблиц — если узел держит свой Postgres и пароль задан

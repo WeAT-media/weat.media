@@ -47,6 +47,8 @@ const app = createApp({
     passwords: { support: config.MAILBOX_SUPPORT_PASSWORD, legal: config.MAILBOX_LEGAL_PASSWORD, noreply: config.MAILBOX_NOREPLY_PASSWORD },
   }),
   feedUrl: config.FEED_URL,
+  labelerUrl: config.LABELER_URL,
+  labelerToken: config.LABELER_ADMIN_TOKEN,
   staff:
     config.ZITADEL_ISSUER && config.ZITADEL_PROJECT_ID
       ? createStaffVerifier({ issuer: config.ZITADEL_ISSUER, projectId: config.ZITADEL_PROJECT_ID, jwksUrl: config.ZITADEL_JWKS_URL })

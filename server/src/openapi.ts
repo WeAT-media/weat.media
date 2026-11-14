@@ -29,6 +29,7 @@ import { LikeBody, LikeRefDto } from './likes.js'
 import { ImportDraftDto, ImportStatusBody } from './imports.js'
 import { MailMessageDto, MailSummaryDto, SendMailBody } from './mailbox.js'
 import { AdjustBody, AdjustmentDto } from './finance.js'
+import { LabelBody } from './labels.js'
 import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutRequestBody, SaleDto } from './payouts.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
@@ -261,6 +262,7 @@ const ops: Op[] = [
   { method: 'post', path: '/admin/finance/adjustments', tag: 'admin', summary: 'Корректировка баланса (начисление или списание)', auth: 'staff', description: 'Сумма со знаком, в минимальных единицах. Списание не ниже доступного остатка. Причина обязательна.', body: AdjustBody, ok: { status: 201, schema: AdjustmentDto, description: 'Корректировка' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound'], [409, 'InsufficientBalance']] },
   { method: 'get', path: '/admin/payouts', tag: 'admin', summary: 'Заявки на выплату', auth: 'staff', query: { status: { description: 'requested | paid | rejected' } }, ok: { status: 200, schema: z.array(AdminPayoutDto), description: 'Старые сверху' }, errors: [[401, 'AuthenticationRequired'], [403, 'Forbidden']] },
   { method: 'patch', path: '/admin/payouts/{id}', tag: 'admin', summary: 'Отметить выплату или отклонить', auth: 'staff', description: 'Отказ — с причиной (note), её видит автор; сумма снова доступна.', body: PayoutDecisionBody, ok: { status: 200, schema: AdminPayoutDto, description: 'Решение' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']] },
+  { method: 'post', path: '/admin/labels', tag: 'admin', summary: 'Поставить или снять метку коллегии', auth: 'staff', description: 'Роль moderator. neg: true — снять. Метку подписывает сервис коллегии.', body: LabelBody, ok: { status: 201, schema: z.record(z.string(), z.unknown()), description: 'Подписанная метка' }, errors: [[400, 'InvalidRequest'], [502, 'LabelerUnavailable'], [503, 'LabelerDisabled']] },
   // ── почта площадки: support@ — support и admin; legal@, noreply@ — admin
   { method: 'get', path: '/admin/mail/boxes', tag: 'admin', summary: 'Доступные сотруднику ящики', auth: 'staff', ok: { status: 200, schema: z.object({ boxes: z.array(z.enum(['support', 'legal', 'noreply'])) }), description: 'Ящики по ролям' }, errors: [[401, 'AuthenticationRequired']] },
   {
@@ -475,6 +477,8 @@ const ops: Op[] = [
     description: 'HTML с og:/twitter:-тегами для ботов соцсетей; id — из адреса /article/<id>. Людям Caddy отдаёт сайт.',
     ok: { status: 200, schema: z.string().describe('text/html'), description: 'Страница превью' },
   },
+  { method: 'get', path: '/labelers', tag: 'profile', summary: 'Коллегии присяжных и их метки', ok: { status: 200, schema: z.object({ labelers: z.array(z.record(z.string(), z.unknown())) }), description: 'Коллегии' }, errors: [[502, 'LabelerUnavailable'], [503, 'LabelerDisabled']] },
+  { method: 'get', path: '/labels', tag: 'profile', summary: 'Действующие метки на записях', query: { uris: { description: 'at://… через запятую, до 100', required: true } }, ok: { status: 200, schema: z.object({ labels: z.array(z.record(z.string(), z.unknown())) }), description: 'Подписанные метки (com.atproto.label.defs#label)' } },
   // ── импорт из AT-аккаунта
   {
     method: 'post', path: '/me/imports/atproto', tag: 'profile', summary: 'Импортировать посты AT-аккаунта в черновики', auth: 'bearer',

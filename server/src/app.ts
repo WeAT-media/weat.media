@@ -21,6 +21,7 @@ import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
 import { mountPayoutRoutes, type PayoutRepo } from './payouts.js'
 import { mountShareRoutes } from './share.js'
 import { mountFinanceRoutes } from './finance.js'
+import { mountLabelRoutes } from './labels.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -53,6 +54,9 @@ export interface Deps {
   mail?: MailboxClient
   /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
   postSource?: PostSource
+  /** сервис коллегий (services/labeler): внутренний адрес и токен записи; не задан — метки выключены */
+  labelerUrl?: string
+  labelerToken?: string
   /** сервис ленты; не задан — лента собирается обходом PDS */
   feedUrl?: string
   /** lava.top; не задан — оплата выключена (503 PaymentsDisabled) */
@@ -285,6 +289,7 @@ export function createApp(deps: Deps) {
   mountMailboxRoutes(app, { mail: d.mail }, { requireStaff, audit })
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountFinanceRoutes(app, { payouts: d.payouts, users: d.users }, { requireStaff, audit })
+  mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken }, { requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
   mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })

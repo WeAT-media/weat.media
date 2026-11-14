@@ -219,6 +219,16 @@
 	respond 404
 }
 
+# Коллегии присяжных (services/labeler): <id>.justice.weat.media — DID-документ, queryLabels, subscribeLabels.
+# Сертификат *.justice.weat.media — DNS-01, CNAME _acme-challenge.justice на тот же acme-dns.
+*.{$LABELER_DOMAIN:justice.weat.media} {
+	import tls_dns
+	import security_headers
+	@write path /admin/*
+	respond @write 404
+	reverse_proxy labeler:8791
+}
+
 # www — постоянный 301 на основной адрес: для поисковиков это один сайт, а не два одинаковых.
 # Точный адрес важнее «*» ниже, поэтому www не уходит в профиль пользователя.
 www.{$PDS_HANDLE_DOMAIN} {

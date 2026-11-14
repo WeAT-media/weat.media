@@ -1,0 +1,29 @@
+[package]
+name = "weat-labeler"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+description = "Коллегии присяжных weat.media: AT Protocol labeler — подписанные метки, queryLabels и subscribeLabels"
+publish = false
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate", "chrono"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_ipld_dagcbor = "0.6"
+ipld-core = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+k256 = { version = "0.13", features = ["ecdsa"] }
+sha2 = "0.10"
+bs58 = "0.5"
+hex = "0.4"
+base64 = "0.22"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

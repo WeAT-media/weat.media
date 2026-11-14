@@ -67,6 +67,18 @@ services:
       ANALYTICS_URL: http://analytics:8789
     depends_on: [pds]
 
+  # коллегии присяжных (Rust, services/labeler): подписанные метки на <id>.justice.weat.media.
+  # Ключи подписи — только в .env.labeler: AppView и остальные сервисы их не видят.
+  # Можно вынести на отдельный сервер: тот же образ, своя БД, DNS *.justice → его IP, LABELER_URL в AppView.
+  labeler:
+    image: ${LABELER_IMAGE:-weat-labeler:latest}
+    restart: unless-stopped
+    env_file: .env.labeler
+    environment:
+      PORT: "8791"
+      LABELER_DOMAIN: ${LABELER_DOMAIN:-justice.weat.media}
+    profiles: ["labeler"]
+
   # открытая аналитика: дневные агрегаты без IP и cookie; своя БД ANALYTICS_DATABASE_URL
   analytics:
     image: ${ANALYTICS_IMAGE:-weat-analytics:latest}

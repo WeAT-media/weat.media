@@ -1,10 +1,11 @@
 import type { Labeler, User } from '@/types/types'
 
+/** id — ключи настроек модерации у читателей (не менять); handle — адрес сервиса коллегии (services/labeler) */
 export const labelers: Labeler[] = [
   {
     id: 'collegium-fraud',
-    name: 'Коллегия по накруткам',
-    handle: 'fraud-court.prisyazhnye.dev',
+    name: 'Коллегия по накруткам и спаму',
+    handle: 'spam.justice.weat.media',
     description:
       'Разбирает искусственный рейтинг: купленные голоса, ботов, накрутку просмотров и подписчиков. Присяжные смотрят агрегированную аналитику без персональных данных.',
     subscribers: 9420,
@@ -16,7 +17,7 @@ export const labelers: Labeler[] = [
   {
     id: 'collegium-tech',
     name: 'Техническая экспертиза',
-    handle: 'tech-expertise.prisyazhnye.dev',
+    handle: 'tech.justice.weat.media',
     description:
       'Коллегия из практикующих инженеров. Проверяет код-примеры из статей: компилирует, запускает, замеряет. Метит статьи с нерабочим кодом и поверхностной экспертизой.',
     subscribers: 6312,
@@ -29,7 +30,7 @@ export const labelers: Labeler[] = [
   {
     id: 'collegium-law',
     name: 'Коллегия по законности',
-    handle: 'law-court.prisyazhnye.dev',
+    handle: 'law.justice.weat.media',
     description:
       'Рассматривает возможные нарушения закона: запрещённый контент, авторские права, раскрытие персональных данных. Метка не заменяет решение суда государства.',
     subscribers: 7105,
@@ -42,7 +43,7 @@ export const labelers: Labeler[] = [
   {
     id: 'collegium-tone',
     name: 'Коллегия тона и манеры',
-    handle: 'tone-court.prisyazhnye.dev',
+    handle: 'tone.justice.weat.media',
     description:
       'Судит споры о токсичности, переходах на личности и рекламном тоне. Самая спорная коллегия — подписка только по желанию.',
     subscribers: 2890,
@@ -54,8 +55,8 @@ export const labelers: Labeler[] = [
   {
     // id сохранён: на него ссылаются старые дела и настройки модерации
     id: 'collegium-main',
-    name: 'Общая коллегия · прочее',
-    handle: 'collegium-1.prisyazhnye.dev',
+    name: 'Общая коллегия',
+    handle: 'general.justice.weat.media',
     description:
       'Коллективный суд из 7 случайно выбранных читателей с репутацией 1000+. Всё, что не подходит профильным коллегиям: недостоверность, плагиат, иные нарушения правил.',
     subscribers: 12840,
