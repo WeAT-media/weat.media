@@ -179,6 +179,9 @@ export type FetchPage = ReturnType<typeof createFetcher>
 export function canonicalUrl(raw: string): string {
   const u = new URL(raw)
   u.hash = ''
+  // habr: одна статья — по адресам /ru/articles/N, /ru/companies/x/articles/N, /en/…, /post/N → один ключ
+  const habr = /^(?:www\.)?habr\.com$/i.test(u.hostname) ? /\/(?:articles|post|news\/t)\/(\d+)/.exec(u.pathname) : null
+  if (habr) return `https://habr.com/ru/articles/${habr[1]}`
   for (const k of [...u.searchParams.keys()]) if (/^(utm_|fbclid|gclid|yclid|ref$)/i.test(k)) u.searchParams.delete(k)
   u.hostname = u.hostname.toLowerCase().replace(/^www\./, '')
   let s = u.toString()

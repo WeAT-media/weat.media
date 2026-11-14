@@ -126,6 +126,9 @@ function memRepo() {
         if (!it || it.status !== 'held') return undefined
         return Object.assign(it, { status: 'queued', notified_at: new Date(), notified_by: by, delay_hours: h, publish_after: new Date(Date.now() + h * 3_600_000) })
       },
+      duplicateOf: async (id: string, cp: string | null, tk: string | null) =>
+        [...items.values()].find((x) => x.status === 'published' && x.id !== id && ((cp && x.canonical_page === cp) || (tk && x.title_key === tk))),
+      fingerprint: async (id: string, cp: string | null, tk: string | null) => void Object.assign(items.get(id)!, { canonical_page: cp, title_key: tk }),
       skip: async (id: string, by: string | null) => {
         const it = items.get(id)
         if (!it || !['held', 'queued'].includes(it.status)) return undefined
@@ -324,4 +327,15 @@ test('author notice: source with delay holds items; «написал автор�
   const other = await t.crawler.enqueue({ url: 'https://habr.com/ru/articles/2/', crawlerId: 'habr', origin: 'source', requestedBy: 'source:1', holdHours: 36 })
   assert.equal((await t.crawler.skipItem(other.item.id, null)).status, 'skipped')
   assert.equal(await t.crawler.processArticle(other.item.id, 1), null)
+})
+
+test('dedupe: habr article by id across paths; rel=canonical; same title from another site is skipped', async () => {
+  const { canonicalUrl } = await import('../src/fetcher.ts')
+  const { pageCanonical, titleFingerprint } = await import('../src/crawler.ts')
+  assert.equal(canonicalUrl('https://habr.com/ru/companies/timeweb/articles/1107670/'), 'https://habr.com/ru/articles/1107670')
+  assert.equal(canonicalUrl('https://habr.com/en/articles/1107670/?utm_source=x'), 'https://habr.com/ru/articles/1107670')
+  assert.equal(pageCanonical('<link rel="canonical" href="/blog/a/">', 'https://x.dev/blog/a?ref=1'), 'https://x.dev/blog/a')
+  assert.equal(pageCanonical('<link rel="canonical" href="https://other.com/a">', 'https://x.dev/a'), null, 'чужой сайт — не верим')
+  assert.equal(titleFingerprint('Как Я «стал» разработчиком — с нуля!'), titleFingerprint('как я стал разработчиком с нуля'))
+  assert.equal(titleFingerprint('Новости'), null, 'короткий — не сравниваем')
 })

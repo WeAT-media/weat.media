@@ -28,6 +28,24 @@ export interface CrawlerDeps {
   handleDomain: string
 }
 
+/** адрес статьи по самому сайту: <link rel="canonical"> того же сайта, приведённый canonicalUrl; иначе null */
+export function pageCanonical(html: string, base: string): string | null {
+  const href = /<link[^>]+rel=["']canonical["'][^>]*>/i.exec(html)?.[0].match(/href=["']([^"']+)["']/i)?.[1]
+  if (!href) return null
+  try {
+    const u = new URL(href, base)
+    return sameSite(u.hostname, new URL(base).hostname) ? canonicalUrl(u.toString()) : null
+  } catch {
+    return null
+  }
+}
+
+/** заголовок для сравнения: регистр, ёлочки, пунктуация и пробелы не важны; короче 20 символов — не сравниваем */
+export function titleFingerprint(title: string): string | null {
+  const t = title.toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  return t.length >= 20 ? t : null
+}
+
 /** Упрощённый «сайт» (eTLD+1): последние две метки хоста без www */
 export function siteOf(host: string): string {
   const h = host.toLowerCase().replace(/\.$/, '').replace(/^www\./, '')
@@ -157,6 +175,15 @@ export function createCrawler(d: CrawlerDeps) {
         const siteRules = await d.repo.rules.get(finalHost.replace(/^www\./, ''))
         const byRules = siteRules ? (h: string, u: string) => extractByRules(siteRules.rules, h, u) : undefined
         const article = { ...extractArticle(page.body, page.url, byRules), url: item.url_canonical }
+        // дубли: та же статья по другому адресу (rel=canonical сайта) или тот же текст с другого сайта (заголовок)
+        const canonicalPage = pageCanonical(page.body, page.url)
+        const titleKey = titleFingerprint(article.title)
+        const dup = await d.repo.items.duplicateOf(item.id, canonicalPage, titleKey)
+        if (dup) {
+          await d.repo.items.update(item.id, { status: 'skipped', title: article.title, error: `Дубль: уже опубликована ${dup.url}`, attempts: attempt })
+          return dup.at_uri
+        }
+        await d.repo.items.fingerprint(item.id, canonicalPage, titleKey)
         const { uri } = await d.pds.createRecord(cred(acc), ARTICLE_COLLECTION, articleRecord(article))
         await d.repo.items.update(item.id, { status: 'published', title: article.title, atUri: uri, attempts: attempt })
         return uri

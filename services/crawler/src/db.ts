@@ -36,6 +36,8 @@ export interface CrawlItem {
   notified_at: Date | null
   notified_by: string | null
   publish_after: Date | null
+  canonical_page?: string | null
+  title_key?: string | null
   created_at: Date
   updated_at: Date
 }
@@ -134,6 +136,17 @@ export function repo(sql: Sql) {
               delay_hours = ${delayHours}, publish_after = now() + make_interval(hours => ${delayHours}), updated_at = now()
             WHERE id = ${id} AND status = 'held' RETURNING *`
         )[0],
+      /** уже опубликованная статья с тем же адресом по сайту или тем же заголовком (дубль) */
+      duplicateOf: async (id: string, canonicalPage: string | null, titleKey: string | null) =>
+        (
+          await sql<CrawlItem[]>`
+            SELECT * FROM crawler_items
+            WHERE status = 'published' AND id <> ${id}
+              AND ((${canonicalPage}::text IS NOT NULL AND canonical_page = ${canonicalPage}) OR (${titleKey}::text IS NOT NULL AND title_key = ${titleKey}))
+            LIMIT 1`
+        )[0],
+      fingerprint: (id: string, canonicalPage: string | null, titleKey: string | null) =>
+        sql`UPDATE crawler_items SET canonical_page = ${canonicalPage}, title_key = ${titleKey} WHERE id = ${id}`,
       skip: async (id: string, by: string | null) =>
         (await sql<CrawlItem[]>`UPDATE crawler_items SET status = 'skipped', notified_by = ${by}, updated_at = now() WHERE id = ${id} AND status IN ('held', 'queued') RETURNING *`)[0],
     },
