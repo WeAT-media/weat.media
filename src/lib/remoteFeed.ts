@@ -57,6 +57,18 @@ function toVideos(i: FeedItem): VideoItem[] {
 const BASE = import.meta.env?.VITE_API_URL ?? '/api'
 
 /** markdown → блоки статьи: заголовки, код, цитаты, списки, абзацы */
+/**
+ * BlockSuite экранирует в markdown символы рядом с выделением (`**текст.**&#x20;Дальше`) — в тексте показываем
+ * сами символы. Только вне блоков кода: там всё как написано.
+ */
+const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' }
+export const decodeEntities = (s: string) =>
+  s
+    .replace(/&#x([0-9a-f]{1,6});/gi, (m, h: string) => safeChar(parseInt(h, 16)) ?? m)
+    .replace(/&#(\d{1,7});/g, (m, d: string) => safeChar(Number(d)) ?? m)
+    .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_m, n: string) => NAMED[n]!)
+const safeChar = (code: number) => (code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : null)
+
 export function markdownToBlocks(md: string): ArticleBlock[] {
   const blocks: ArticleBlock[] = []
   const lines = md.replace(/\r\n/g, '\n').split('\n')
@@ -64,7 +76,7 @@ export function markdownToBlocks(md: string): ArticleBlock[] {
   // картинка: ![подпись](адрес) или картинка-ссылка [![подпись](адрес)](куда)
   const IMG = /\[?!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)(?:\]\([^)]+\))?/g
   const flush = () => {
-    const t = para.join(' ').trim()
+    const t = decodeEntities(para.join(' ').trim())
     para = []
     if (!t) return
     const images = [...t.matchAll(IMG)]
@@ -85,15 +97,15 @@ export function markdownToBlocks(md: string): ArticleBlock[] {
       } else blocks.push({ type: 'code', text: code.join('\n'), ...(fence[1] ? { lang: fence[1] } : {}) })
     } else if (/^#{1,6}\s/.test(line)) {
       flush()
-      blocks.push({ type: 'h2', text: line.replace(/^#{1,6}\s+/, '') })
+      blocks.push({ type: 'h2', text: decodeEntities(line.replace(/^#{1,6}\s+/, '')) })
     } else if (line.startsWith('>')) {
       flush()
-      blocks.push({ type: 'quote', text: line.replace(/^>\s?/, '') })
+      blocks.push({ type: 'quote', text: decodeEntities(line.replace(/^>\s?/, '')) })
     } else if (/^\s*[-*]\s+/.test(line)) {
       flush()
       const items = [line.replace(/^\s*[-*]\s+/, '')]
       while (i + 1 < lines.length && /^\s*[-*]\s+/.test(lines[i + 1]!)) items.push(lines[++i]!.replace(/^\s*[-*]\s+/, ''))
-      blocks.push({ type: 'ul', text: items.join('\n') })
+      blocks.push({ type: 'ul', text: decodeEntities(items.join('\n')) })
     } else if (!line.trim()) {
       flush()
     } else {

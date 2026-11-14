@@ -1,5 +1,5 @@
 import { FEE_NOTE } from '@/components/FeeNote'
-import { customFenceBlock, isCustomFence } from '@/lib/customFences'
+import { markdownToBlocks } from '@/lib/remoteFeed'
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import {
@@ -37,42 +37,10 @@ import {
 import type { Article, ArticleBlock, ArticleLanguage, Paywall } from '@/types/types'
 
 /** Мини-разметка: ### заголовок, ``` код ```, > цитата, - список, абзацы через пустую строку */
+/** предпросмотр — тем же разбором, что страница статьи (списки «* », свои блоки, экранирование BlockSuite) */
 function parseBlocks(text: string): ArticleBlock[] {
   // ведущая `# Title`-строка — page-title из BlockSuite-редактора, в тело не входит
-  const body = text.replace(/^#\s+.*(?:\n+|$)/, '')
-  const blocks: ArticleBlock[] = []
-  const chunks = body.split(/\n{2,}/)
-  for (const chunk of chunks) {
-    const lines = chunk.trim().split('\n')
-    if (lines.every((l) => l.startsWith('- '))) {
-      blocks.push({ type: 'ul', text: lines.map((l) => l.slice(2)).join('\n') })
-      continue
-    }
-    const c = chunk.trim()
-    if (!c) continue
-    // свои блоки (```carousel, ```poll, ```button…) — общий разбор, тот же для статей из индекса
-    const fence = /^```(\w+)\n?([\s\S]*?)\n?```$/.exec(c)
-    if (fence && isCustomFence(fence[1]!)) {
-      const block = customFenceBlock(fence[1]!, fence[2]!)
-      if (block) blocks.push(block)
-      continue
-    }
-    // картинка отдельным абзацем: ![подпись](адрес) — так их приносит импорт постов
-    const img = /^!\[([^\]]*)\]\((\S+)\)$/.exec(c)
-    if (img) {
-      blocks.push({ type: 'image', text: img[2]!, alt: img[1]!.trim() })
-      continue
-    }
-    if (c.startsWith('### ')) blocks.push({ type: 'h2', text: c.slice(4) })
-    else if (c.startsWith('## ')) blocks.push({ type: 'h2', text: c.slice(3) })
-    else if (c.startsWith('```')) {
-      const inner = c.replace(/^```\w*\n?/, '').replace(/```$/, '').trim()
-      const lang = c.match(/^```(\w+)/)?.[1]
-      blocks.push({ type: 'code', text: inner, lang })
-    } else if (c.startsWith('> ')) blocks.push({ type: 'quote', text: c.replace(/^> /gm, '') })
-    else blocks.push({ type: 'p', text: c.replace(/\n/g, ' ') })
-  }
-  return blocks
+  return markdownToBlocks(text.replace(/^#\s+.*(?:\n+|$)/, ''))
 }
 
 /** Нормализация самописного тега: lowercase, пробелы в дефисы, безопасные символы, до 24 знаков */
