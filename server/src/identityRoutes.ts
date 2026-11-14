@@ -106,7 +106,7 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
     if (existing) {
       const user = await d.users.findByDid(existing.did)
       if (!user) throw fail('NotFound', 'Пользователь не найден', 404)
-      if (!providerAllowed(p, d.config.CONTOUR, user.signup_country)) {
+      if (!providerAllowed(p, d.config.CONTOUR, user.signup_country, h.geoOf(c).country)) {
         throw fail('ProviderForbidden', 'Для российских аккаунтов вход через этот сервис запрещён законом. Войдите паролем или через Яндекс ID.', 403)
       }
       // вход открыт из любой страны
@@ -226,7 +226,7 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
   app.get('/oauth/client-metadata.json', (c) => c.json(requireAtproto().clientMetadata))
 
   app.get('/auth/atproto/start', async (c) => {
-    if (!providerAllowed('atproto', d.config.CONTOUR)) {
+    if (!providerAllowed('atproto', d.config.CONTOUR, undefined, h.geoOf(c).country)) {
       return toLogin(c, { error: 'ProviderForbidden' })
     }
     const handle = Handle.safeParse(c.req.query('handle') ?? '')
@@ -306,7 +306,7 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
 
   app.get('/auth/:provider/start', (c) => {
     const provider = oauthProvider(c)
-    if (!providerAllowed(provider, d.config.CONTOUR)) {
+    if (!providerAllowed(provider, d.config.CONTOUR, undefined, h.geoOf(c).country)) {
       throw fail('ProviderForbidden', 'В РФ-контуре этот способ входа недоступен', 403)
     }
     const q = c.req.query()
@@ -408,6 +408,6 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
 
   /** для /geo: какие кнопки входа показать на странице логина */
   return {
-    loginProviders: () => PROVIDERS.filter((p) => configured(p) && providerAllowed(p, d.config.CONTOUR)),
+    loginProviders: (ipCountry?: string) => PROVIDERS.filter((p) => configured(p) && providerAllowed(p, d.config.CONTOUR, undefined, ipCountry)),
   }
 }

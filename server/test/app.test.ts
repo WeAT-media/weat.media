@@ -1013,6 +1013,34 @@ test('admin: 5 bad staff tokens in a row ban the IP; other IPs and anonymous pag
   assert.ok(auditLog.some((e) => e.action === 'staff.ip_banned' && e.target === '7.7.7.7'))
 })
 
+test('share: article preview HTML escapes fields; unknown id falls back to site card', async () => {
+  const { sharePage, plainExcerpt } = await import('../src/share.ts')
+  const html = sharePage({ siteName: 'weAT.media', siteUrl: 'https://weat.media', url: 'https://weat.media/article/x-abcdef', title: 'A <b>"x"</b>', description: 'd&d', image: 'https://weat.media/og-image.png' })
+  assert.match(html, /<meta property="og:title" content="A &lt;b&gt;&quot;x&quot;&lt;\/b&gt;">/)
+  assert.match(html, /<meta name="twitter:card" content="summary_large_image">/)
+  assert.equal(plainExcerpt('# Заголовок\n\nТекст со [ссылкой](https://x) и ![img](u) **жирным**'), 'Заголовок Текст со ссылкой и жирным')
+  const app = makeApp()
+  const res = await app.request('/api/share/article/not%20an%20id')
+  assert.equal(res.status, 200)
+  assert.match(await res.text(), /og:image" content="http:\/\/localhost:3000\/og-image.png"/)
+})
+
+test('global contour: from a Russian IP foreign providers (Telegram, Google, AT) are hidden and refused', async () => {
+  const app = makeApp({ atproto: true, ipCountry: { '95.1.1.1': 'RU', '5.1.1.1': 'DE' } })
+  const ru = await (await app.request('/api/geo', { headers: { 'x-forwarded-for': '95.1.1.1' } })).json()
+  assert.deepEqual(ru.providers, ['yandex'])
+  const de = await (await app.request('/api/geo', { headers: { 'x-forwarded-for': '5.1.1.1' } })).json()
+  assert.ok(de.providers.includes('telegram'))
+  assert.equal((await app.request('/api/auth/telegram/start', { headers: { 'x-forwarded-for': '95.1.1.1' } })).status, 403)
+  const at = await app.request('/api/auth/atproto/start?handle=perfscale.su', { headers: { 'x-forwarded-for': '95.1.1.1' } })
+  assert.equal(new URL(at.headers.get('location')!).searchParams.get('error'), 'ProviderForbidden')
+  // привязанный Telegram: вход с российского IP закрыт, из Германии — открыт
+  const { accessJwt } = await registerWithPassword(app, '5.1.1.1')
+  await oauthFlow(app, 'telegram', 'code-tg', '5.1.1.1', { linkToken: accessJwt })
+  const cbFromRu = await oauthFlow(app, 'telegram', 'code-tg', '95.1.1.1').catch(() => null)
+  assert.ok(cbFromRu === null || cbFromRu.searchParams.get('error') === 'ProviderForbidden')
+})
+
 test('atproto: ru contour never registers', async () => {
   const app = makeApp({ atproto: true, contour: 'ru', ipCountry: { '95.1.1.1': 'RU' } })
   const start = await app.request('/api/auth/atproto/start?handle=perfscale.su&consent=1')

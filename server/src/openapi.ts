@@ -466,6 +466,11 @@ const ops: Op[] = [
     body: PayoutRequestBody, ok: { status: 201, schema: PayoutDto, description: 'Заявка создана, сумма зарезервирована' },
     errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [409, 'BelowMinimum | BalanceChanged']],
   },
+  {
+    method: 'get', path: '/share/article/{id}', tag: 'profile', summary: 'Превью ссылки на статью (Open Graph)',
+    description: 'HTML с og:/twitter:-тегами для ботов соцсетей; id — из адреса /article/<id>. Людям Caddy отдаёт сайт.',
+    ok: { status: 200, schema: z.string().describe('text/html'), description: 'Страница превью' },
+  },
   // ── импорт из AT-аккаунта
   {
     method: 'post', path: '/me/imports/atproto', tag: 'profile', summary: 'Импортировать посты AT-аккаунта в черновики', auth: 'bearer',

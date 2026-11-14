@@ -208,15 +208,34 @@ async fn articles(State(s): State<AppState>, Query(p): Query<Params>) -> Respons
 
 #[derive(Deserialize)]
 pub struct One {
-    uri: String,
+    uri: Option<String>,
+    /// короткий id страницы статьи: <rkey>-<6 последних символов DID> (для превью ссылок)
+    short: Option<String>,
 }
 
 /// одна статья целиком — для страницы статьи
 async fn one(State(s): State<AppState>, Query(q): Query<One>) -> Response {
-    if !q.uri.starts_with("at://did:") || q.uri.len() > 400 {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-    match index::article(&s.pool, &q.uri).await {
+    let uri = match (q.uri, q.short) {
+        (Some(uri), _) if uri.starts_with("at://did:") && uri.len() <= 400 => uri,
+        (None, Some(short)) if short.len() <= 80 => {
+            let Some((rkey, tail)) = short.rsplit_once('-') else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            if tail.len() != 6 || rkey.is_empty() {
+                return StatusCode::BAD_REQUEST.into_response();
+            }
+            match index::uri_by_short(&s.pool, rkey, tail).await {
+                Ok(Some(uri)) => uri,
+                Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                Err(err) => {
+                    tracing::error!(%err, "article short");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
+        }
+        _ => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    match index::article(&s.pool, &uri).await {
         Ok(Some(row)) => {
             ([(header::CACHE_CONTROL, "public, max-age=30")], Json(row)).into_response()
         }

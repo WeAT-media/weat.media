@@ -205,6 +205,15 @@ pub async fn related(
         .await
 }
 
+/// uri по короткому id из адреса страницы (/article/<rkey>-<6 последних символов DID>)
+pub async fn uri_by_short(pool: &PgPool, rkey: &str, did_tail: &str) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar("SELECT uri FROM articles WHERE rkey = $1 AND right(did, 6) = $2 ORDER BY created_at DESC LIMIT 1")
+        .bind(rkey)
+        .bind(did_tail)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn article(pool: &PgPool, uri: &str) -> sqlx::Result<Option<Row>> {
     sqlx::query_as(
         "SELECT a.uri, a.cid, a.did, h.handle, a.created_at, a.indexed_at, a.record,

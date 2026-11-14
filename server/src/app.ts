@@ -19,6 +19,7 @@ import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
 import { mountPayoutRoutes, type PayoutRepo } from './payouts.js'
+import { mountShareRoutes } from './share.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -283,6 +284,7 @@ export function createApp(deps: Deps) {
   mountMailboxRoutes(app, { mail: d.mail }, { requireStaff, audit })
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
+  mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountArticleRoutes(app, { pds: d.pds }, { bearer })
@@ -290,7 +292,10 @@ export function createApp(deps: Deps) {
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })
 
-  app.get('/geo', (c) => c.json({ ...geoOf(c), providers: ids.loginProviders() }))
+  app.get('/geo', (c) => {
+    const geo = geoOf(c)
+    return c.json({ ...geo, providers: ids.loginProviders(geo.country) })
+  })
 
   /**
    * Пользователь без пароля (Яндекс-регистрация) задал его через сброс и вошёл:

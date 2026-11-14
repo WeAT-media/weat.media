@@ -19,9 +19,10 @@ export const PROVIDER_ORIGIN: Record<Provider, 'ru' | 'foreign'> = {
   atproto: 'foreign',
 }
 
-export function providerAllowed(p: Provider, contour: 'global' | 'ru', signupCountry?: string): boolean {
+/** ipCountry — страна запроса: из России иностранный вход закрыт и в глобальном контуре */
+export function providerAllowed(p: Provider, contour: 'global' | 'ru', signupCountry?: string, ipCountry?: string): boolean {
   if (PROVIDER_ORIGIN[p] === 'ru') return true
-  return contour !== 'ru' && signupCountry !== 'RU'
+  return contour !== 'ru' && signupCountry !== 'RU' && ipCountry !== 'RU'
 }
 
 export function isProvider(v: string): v is Provider {
