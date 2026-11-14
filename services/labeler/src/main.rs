@@ -97,9 +97,18 @@ async fn main() {
     let admin_token = std::env::var("LABELER_ADMIN_TOKEN").expect("LABELER_ADMIN_TOKEN");
     assert!(admin_token.len() >= 32, "LABELER_ADMIN_TOKEN: не короче 32 символов");
     // ключи коллегий: LABELER_KEYS="spam:<hex>,tech:<hex>,…" — 32 байта secp256k1 на коллегию
-    let keys: HashMap<String, String> = env("LABELER_KEYS", "")
+    let pairs = |name: &str| -> HashMap<String, String> {
+        env(name, "")
+            .split(',')
+            .filter_map(|kv| kv.split_once(':').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())))
+            .collect()
+    };
+    let keys = pairs("LABELER_KEYS");
+    // DID коллегии в сети PLC (для Bluesky): LABELER_DIDS="tech=did:plc:…,spam=did:plc:…"; без него — did:web
+    let dids: HashMap<String, String> = env("LABELER_DIDS", "")
         .split(',')
-        .filter_map(|kv| kv.split_once(':').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())))
+        .filter_map(|kv| kv.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())))
+        .filter(|(_, v)| v.starts_with("did:plc:"))
         .collect();
 
     let mut labelers = HashMap::new();
@@ -110,7 +119,8 @@ async fn main() {
         };
         let key = sign::key_from_hex(hex).unwrap_or_else(|e| panic!("LABELER_KEYS {}: {e}", c.id));
         let host = format!("{}.{domain}", c.id);
-        labelers.insert(c.id, Labeler { c, did: format!("did:web:{host}"), host, key });
+        let did = dids.get(c.id).cloned().unwrap_or_else(|| format!("did:web:{host}"));
+        labelers.insert(c.id, Labeler { c, did, host, key });
     }
     assert!(!labelers.is_empty(), "ни одной коллегии: задайте LABELER_KEYS");
 
@@ -123,6 +133,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/.well-known/did.json", get(did_doc))
+        .route("/.well-known/atproto-did", get(atproto_did))
         .route("/xrpc/com.atproto.label.queryLabels", get(query_labels))
         .route("/xrpc/com.atproto.label.subscribeLabels", get(subscribe))
         .route("/xrpc/app.weat.labeler.describe", get(describe))
@@ -147,8 +158,20 @@ fn by_host<'a>(s: &'a AppState, headers: &HeaderMap) -> Option<&'a Labeler> {
     s.labelers.values().find(|l| l.host == host)
 }
 
+/// handle <id>.justice.weat.media → DID коллегии (нужно учётке коллегии на PDS для Bluesky)
+async fn atproto_did(State(s): State<AppState>, headers: HeaderMap) -> Response {
+    match by_host(&s, &headers) {
+        Some(l) => ([("content-type", "text/plain")], l.did.clone()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// did:web-документ; для коллегии на did:plc документ живёт в plc.directory
 async fn did_doc(State(s): State<AppState>, headers: HeaderMap) -> Response {
     let Some(l) = by_host(&s, &headers) else { return StatusCode::NOT_FOUND.into_response() };
+    if !l.did.starts_with("did:web:") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     Json(json!({
         "@context": ["https://www.w3.org/ns/did/v1", "https://w3id.org/security/multikey/v1"],
         "id": l.did,

@@ -77,6 +77,8 @@ services:
     environment:
       PORT: "8791"
       LABELER_DOMAIN: ${LABELER_DOMAIN:-justice.weat.media}
+      # DID коллегий в сети PLC (после регистрации для Bluesky): tech=did:plc:…,spam=did:plc:…
+      LABELER_DIDS: ${LABELER_DIDS:-}
     profiles: ["labeler"]
 
   # открытая аналитика: дневные агрегаты без IP и cookie; своя БД ANALYTICS_DATABASE_URL
