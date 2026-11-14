@@ -110,6 +110,10 @@ function sessionDto(s: PdsSession, user: UserRow) {
   return { accessJwt: s.accessJwt, refreshJwt: s.refreshJwt, user: toSelf(user) }
 }
 
+/** неверных токенов админки подряд с одного IP до бана и длительность бана */
+export const STAFF_MAX_FAILS = 5
+export const STAFF_BAN_MS = 15 * 60_000
+
 function bearer(c: Context): string | undefined {
   const h = c.req.header('authorization')
   return h?.startsWith('Bearer ') ? h.slice(7) : undefined
@@ -199,11 +203,35 @@ export function createApp(deps: Deps) {
   const mfaGate = createMfaGate(d)
 
   /** сотрудник с нужной ролью: JWT Zitadel или аварийный ADMIN_TOKEN (только автоматизация) */
+  /**
+   * Подбор доступа к админке: STAFF_MAX_FAILS неверных токенов подряд с одного IP — бан IP на STAFF_BAN_MS
+   * для всех /admin-маршрутов. Считаются только запросы с токеном: открытая без входа страница — не попытка.
+   * Успешный вход сбрасывает счётчик. В памяти узла: перезапуск AppView снимает баны.
+   */
+  const staffFails = new Map<string, { n: number; bannedUntil: number }>()
   const requireStaff = async (c: Context, role: StaffRole): Promise<Staff | 'break-glass'> => {
+    const ip = clientIp(c)
+    const rec = staffFails.get(ip)
+    if (rec && rec.bannedUntil > Date.now()) {
+      c.header('retry-after', String(Math.ceil((rec.bannedUntil - Date.now()) / 1000)))
+      throw new PdsError(429, 'TooManyAttempts', 'Слишком много неудачных попыток входа в админку. Попробуйте позже.')
+    }
     const token = bearer(c)
-    if (token && d.config.ADMIN_TOKEN && safeEqual(token, d.config.ADMIN_TOKEN)) return 'break-glass'
+    if (token && d.config.ADMIN_TOKEN && safeEqual(token, d.config.ADMIN_TOKEN)) {
+      staffFails.delete(ip)
+      return 'break-glass'
+    }
     const staff = token && d.staff ? await d.staff.verify(token) : null
-    if (!staff) throw new PdsError(401, 'AuthenticationRequired', 'Войдите в админку через weat.media')
+    if (!staff) {
+      if (token) {
+        const n = (rec?.n ?? 0) + 1
+        if (staffFails.size > 50_000) staffFails.clear()
+        staffFails.set(ip, n >= STAFF_MAX_FAILS ? { n: 0, bannedUntil: Date.now() + STAFF_BAN_MS } : { n, bannedUntil: 0 })
+        if (n >= STAFF_MAX_FAILS) await audit('break-glass', 'staff.ip_banned', ip, { minutes: STAFF_BAN_MS / 60_000 }).catch(() => {})
+      }
+      throw new PdsError(401, 'AuthenticationRequired', 'Войдите в админку через weat.media')
+    }
+    staffFails.delete(ip)
     // admin может всё, что могут support и moderator
     if (!staff.roles.has(role) && !staff.roles.has('admin')) throw new PdsError(403, 'Forbidden', `Нужна роль ${role}`)
     return staff

@@ -997,6 +997,22 @@ test('payouts: balance from paid sales with hold, request reserves all available
   assert.equal(back.payouts[0].staffNote, 'Неверная карта')
 })
 
+test('admin: 5 bad staff tokens in a row ban the IP; other IPs and anonymous page views are unaffected', async () => {
+  const app = makeApp()
+  const hit = (ip: string, token?: string) =>
+    app.request('/api/admin/me', { headers: { 'x-forwarded-for': ip, ...(token ? { authorization: `Bearer ${token}` } : {}) } })
+  for (let i = 0; i < 10; i++) assert.equal((await hit('7.7.7.7')).status, 401, 'без токена — не попытка')
+  for (let i = 0; i < 4; i++) assert.equal((await hit('7.7.7.7', 'forged')).status, 401)
+  const good = await staffToken(['support'])
+  assert.equal((await hit('7.7.7.7', good)).status, 200, 'успешный вход сбрасывает счётчик')
+  for (let i = 0; i < 5; i++) assert.equal((await hit('7.7.7.7', 'forged')).status, 401)
+  const banned = await hit('7.7.7.7', good)
+  assert.equal(banned.status, 429, 'IP забанен даже с верным токеном')
+  assert.ok(Number(banned.headers.get('retry-after')) > 800)
+  assert.equal((await hit('8.8.8.8', good)).status, 200, 'другой IP работает')
+  assert.ok(auditLog.some((e) => e.action === 'staff.ip_banned' && e.target === '7.7.7.7'))
+})
+
 test('atproto: ru contour never registers', async () => {
   const app = makeApp({ atproto: true, contour: 'ru', ipCountry: { '95.1.1.1': 'RU' } })
   const start = await app.request('/api/auth/atproto/start?handle=perfscale.su&consent=1')

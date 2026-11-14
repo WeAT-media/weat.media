@@ -176,6 +176,18 @@
 {$AUTH_HOST:auth.weat.media} {
 	import tls_dns
 	import security_headers
+	# подбор пароля сотрудника: попытки входа с одного IP. Вторая линия — блокировка учётки в Zitadel (Lockout policy)
+	rate_limit {
+		zone staff_login {
+			match {
+				method POST
+				path /ui/v2/login/* /zitadel.session.v2.SessionService/* /v2/sessions* /oauth/v2/token
+			}
+			key {client_ip}
+			events 10
+			window 5m
+		}
+	}
 	@login path /ui/v2/login /ui/v2/login/*
 	handle @login {
 		reverse_proxy zitadel-login:3000
