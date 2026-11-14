@@ -26,6 +26,7 @@ import { mountLabelRoutes } from './labels.js'
 import { mountPdsGate } from './pdsGate.js'
 import { mountProfileRoutes, profileOps } from './profile.js'
 import { mountSystemAccountRoutes, type SystemAccountRepo } from './systemAccounts.js'
+import { mountDraftRoutes, type DraftRepo } from './drafts.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -55,6 +56,7 @@ export interface Deps {
   imports: ImportRepo
   payouts: PayoutRepo
   system: SystemAccountRepo
+  drafts: DraftRepo
   /** почта площадки (/admin/email); не задана — ящиков нет */
   mail?: MailboxClient
   /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
@@ -178,7 +180,7 @@ export function createApp(deps: Deps) {
   // тело разбирается до валидации — без лимита гигантский JSON съест память.
   // Тексты статей (до 200 000 символов UTF-8) — до 1 МБ, остальное — 64 КБ
   const tooLarge = (c: Context) => c.json({ error: 'PayloadTooLarge', message: 'Слишком большой запрос' }, 413)
-  const BIG = new Set(['/api/me/articles/paid', '/api/v1/articles', '/api/me/avatar', '/api/v1/me/avatar'])
+  const BIG = new Set(['/api/me/articles/paid', '/api/v1/articles', '/api/me/avatar', '/api/v1/me/avatar', '/api/me/drafts'])
   app.use('*', async (c, next) =>
     bodyLimit({ maxSize: BIG.has(c.req.path) ? 1024 * 1024 : 64 * 1024, onError: tooLarge })(c, next),
   )
@@ -304,6 +306,7 @@ export function createApp(deps: Deps) {
   mountPdsGate(app, { pdsUrl: d.pdsUrl, pds: d.pds, mfa: d.mfa })
   const profiles = profileOps({ pds: d.pds, users: d.users })
   mountProfileRoutes(app, { pds: d.pds, ops: profiles }, { bearer })
+  mountDraftRoutes(app, { pds: d.pds, drafts: d.drafts }, { bearer })
   mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken, hidden: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] }, { requireStaff, audit })
   // РФ-контур: записи с метками nsfw/politics закрыты на сервере (не настройка читателя)
   const restricted = d.restricted ?? createRestrictedFilter({ enabled: d.config.CONTOUR === 'ru', labelerUrl: d.labelerUrl })
@@ -469,6 +472,15 @@ export function createApp(deps: Deps) {
       return c.json({ error: 'PremiumRequired', message: 'Свои блоки доступны в Premium' }, 403)
     }
     return c.json(await d.settings.merge(did, body.data))
+  })
+
+  /** подсказки для @упоминаний: по части handle или имени, только публичное (handle, имя); этот контур */
+  app.get('/users/search', async (c) => {
+    const q = (c.req.query('q') ?? '').trim().replace(/^@/, '')
+    if (!q || q.length > 64) return c.json({ users: [] })
+    const rows = await d.users.search(q, 8)
+    c.header('cache-control', 'public, max-age=30')
+    return c.json({ users: rows.map((u) => ({ handle: u.handle, displayName: u.display_name })) })
   })
 
   app.get('/users/:id', async (c) => {

@@ -103,8 +103,12 @@ export function attachMentions(container: HTMLElement): () => void {
       empty.textContent = `@${query} не найден`
       popup.appendChild(empty)
     }
-    // выбранный пункт — в видимой части списка (длинный список прокручивается стрелками)
-    popup.querySelector<HTMLElement>('.mention-popup__item.is-active')?.scrollIntoView({ block: 'nearest' })
+    // выбранный пункт — в видимой части списка; прокручиваем только сам список (scrollIntoView двигал бы страницу)
+    const act = popup.querySelector<HTMLElement>('.mention-popup__item.is-active')
+    if (act) {
+      if (act.offsetTop < popup.scrollTop) popup.scrollTop = act.offsetTop
+      else if (act.offsetTop + act.offsetHeight > popup.scrollTop + popup.clientHeight) popup.scrollTop = act.offsetTop + act.offsetHeight - popup.clientHeight
+    }
     // позиция под кареткой
     const rect = state.ie.getNativeRange()?.getBoundingClientRect()
     const hostRect = container.getBoundingClientRect()
@@ -140,10 +144,28 @@ export function attachMentions(container: HTMLElement): () => void {
       else if (h.includes(q) || n.includes(q)) contains.push(p)
     }
     const items = [...starts, ...contains].slice(0, MAX_ITEMS)
+    // плюс люди с сервера (не только авторы на этой странице): news.weat.media и др.
+    if (q && items.length < MAX_ITEMS) void searchServer(q)
     // тот же запрос — выбор сохраняется
     const keep = state && state.query === query && state.atIndex === atIndex ? Math.min(state.active, Math.max(0, items.length - 1)) : 0
     state = { rt: found.rt, ie, atIndex, query, items, active: keep }
     render()
+  }
+
+  /** подсказки с сервера: последний ответ на текущий запрос дополняет локальный список */
+  let searchTimer: ReturnType<typeof setTimeout> | undefined
+  const searchServer = (q: string) => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(async () => {
+      const res = await fetch(`/api/users/search?${new URLSearchParams({ q })}`).catch(() => null)
+      if (!res?.ok || !state || state.query !== q) return
+      const { users } = (await res.json()) as { users: { handle: string; displayName: string | null }[] }
+      const have = new Set(state.items.map((p) => p.handle))
+      const extra = users.filter((u) => !have.has(u.handle)).map((u) => ({ handle: u.handle, name: u.displayName ?? u.handle }))
+      if (!extra.length) return
+      state = { ...state, items: [...state.items, ...extra].slice(0, MAX_ITEMS) }
+      render()
+    }, 150)
   }
 
   const onKeyDown = (e: KeyboardEvent) => {

@@ -23,6 +23,7 @@ const FeedSettingsPage = lazy(() => import('@/pages/settings/FeedSettingsPage'))
 const HistorySettingsPage = lazy(() => import('@/pages/settings/HistorySettingsPage'))
 const ImportSettingsPage = lazy(() => import('@/pages/settings/ImportSettingsPage'))
 const ProfileSettingsPage = lazy(() => import('@/pages/settings/ProfileSettingsPage'))
+const DraftsSettingsPage = lazy(() => import('@/pages/settings/DraftsSettingsPage'))
 const AdPinsSettingsPage = lazy(() => import('@/pages/settings/AdPinsSettingsPage'))
 const AppearanceSettingsPage = lazy(() => import('@/pages/settings/AppearanceSettingsPage'))
 const JurySettingsPage = lazy(() => import('@/pages/settings/JurySettingsPage'))
@@ -109,6 +110,7 @@ export default function App() {
             <Route path="/profile/:id/settings" element={<SettingsLayout />}>
               <Route index element={<Navigate to="feed" replace />} />
               <Route path="profile" element={<ProfileSettingsPage />} />
+              <Route path="drafts" element={<DraftsSettingsPage />} />
               <Route path="feed" element={<FeedSettingsPage />} />
               <Route path="appearance" element={<AppearanceSettingsPage />} />
               <Route path="history" element={<HistorySettingsPage />} />

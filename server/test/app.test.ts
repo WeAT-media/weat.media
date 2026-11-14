@@ -20,6 +20,7 @@ import type { ImportDraftRow, ImportRepo, PostSource } from '../src/imports.ts'
 import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
 import type { AdjustmentRow, PayoutRepo, PayoutRow } from '../src/payouts.ts'
 import type { SystemAccountRepo } from '../src/systemAccounts.ts'
+import type { DraftRepo, DraftRow } from '../src/drafts.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
@@ -194,6 +195,23 @@ function memPayouts(): PayoutRepo {
       })
     },
     async recentOrders() { return [] },
+  }
+}
+
+function memDrafts(): DraftRepo {
+  const rows = new Map<string, DraftRow>()
+  return {
+    async list(did) { return [...rows.values()].filter((r) => r.did === did).sort((a, b) => +b.updated_at - +a.updated_at) },
+    async get(did, id) { const r = rows.get(id); return r?.did === did ? r : undefined },
+    async save(did, id, title, text) {
+      const cur = rows.get(id)
+      if (cur && cur.did !== did) throw new Error('foreign')
+      const row = { id, did, title, text, created_at: cur?.created_at ?? new Date(), updated_at: new Date() }
+      rows.set(id, row)
+      return row
+    },
+    async remove(did, id) { const r = rows.get(id); return r?.did === did ? rows.delete(id) : false },
+    async count(did) { return [...rows.values()].filter((r) => r.did === did).length },
   }
 }
 
@@ -727,6 +745,7 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     mail: memMail(),
     payouts: memPayouts(),
     system: memSystem(),
+    drafts: memDrafts(),
     postSource: fakePostSource,
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
@@ -1241,6 +1260,22 @@ test('admin users: search by part of handle or name, @ prefix ok', async () => {
   assert.deepEqual(await find('harad'), ['vitali-haradkou.indie.media'], 'середина handle')
   assert.deepEqual(await find('@VITALI'), ['vitali-haradkou.indie.media'], 'регистр и @')
   assert.deepEqual(await find('nobody'), [])
+})
+
+test('drafts: create, autosave, list, others cannot read; mention search finds users', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'drafter', email: 'd@example.com' }, '5.1.1.1'))).json()
+  const b = await (await app.request('/api/auth/register', json({ ...reg, username: 'other', email: 'o@example.com' }, '5.1.1.1'))).json()
+  const A = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
+  const created = await (await app.request('/api/me/drafts', { method: 'POST', headers: A, body: JSON.stringify({ title: 'Черновик', text: '# Черновик\n\nпервый абзац' }) })).json()
+  assert.match(created.id, /^dr_/)
+  await app.request(`/api/me/drafts/${created.id}`, { method: 'PUT', headers: A, body: JSON.stringify({ title: 'Черновик 2', text: 'обновлён' }) })
+  const list = await (await app.request('/api/me/drafts', { headers: A })).json()
+  assert.deepEqual(list.drafts.map((x: { title: string; excerpt: string }) => [x.title, x.excerpt]), [['Черновик 2', 'обновлён']])
+  assert.equal((await app.request(`/api/me/drafts/${created.id}`, { headers: { authorization: `Bearer ${b.accessJwt}` } })).status, 404, 'чужой не видно')
+  assert.equal((await app.request(`/api/me/drafts/${created.id}`, { method: 'DELETE', headers: A })).status, 200)
+  const found = await (await app.request('/api/users/search?q=draf')).json()
+  assert.deepEqual(found.users.map((u: { handle: string }) => u.handle), ['drafter.indie.media'])
 })
 
 test('atproto: ru contour never registers', async () => {

@@ -31,6 +31,7 @@ import { MailMessageDto, MailSummaryDto, SendMailBody } from './mailbox.js'
 import { AdjustBody, AdjustmentDto } from './finance.js'
 import { LabelBody } from './labels.js'
 import { ProfileBody } from './profile.js'
+import { DraftBody, DraftDto, DraftSummaryDto } from './drafts.js'
 import { SystemAccountBody } from './systemAccounts.js'
 import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutRequestBody, SaleDto } from './payouts.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
@@ -495,6 +496,13 @@ const ops: Op[] = [
   { method: 'delete', path: '/me/avatar', tag: 'profile', summary: 'Убрать фото профиля', auth: 'bearer', ok: { status: 200, schema: z.object({ avatar: z.null() }), description: 'Без фото' } },
   { method: 'post', path: '/v1/me/avatar', tag: 'publicApi', summary: 'Фото профиля по токену', auth: 'pat', description: 'Право profile:update. Тело — PNG/JPEG/WebP до 1 МБ.', ok: { status: 200, schema: z.object({ avatar: z.string().nullable() }), description: 'CID аватара' }, errors: [[401, 'InvalidToken'], [403, 'InsufficientScope'], [413, 'ImageTooLarge'], [415, 'UnsupportedImage']] },
   { method: 'delete', path: '/v1/me/avatar', tag: 'publicApi', summary: 'Убрать фото профиля по токену', auth: 'pat', ok: { status: 200, schema: z.object({ avatar: z.null() }), description: 'Без фото' } },
+  { method: 'get', path: '/users/search', tag: 'profile', summary: 'Подсказки для @упоминаний', query: { q: { description: 'часть handle или имени', required: true } }, ok: { status: 200, schema: z.object({ users: z.array(z.object({ handle: z.string(), displayName: z.string().nullable() })) }), description: 'До 8 человек' } },
+  // ── черновики (личные, в репозиторий не пишутся)
+  { method: 'get', path: '/me/drafts', tag: 'profile', summary: 'Мои черновики', auth: 'bearer', ok: { status: 200, schema: z.object({ drafts: z.array(DraftSummaryDto) }), description: 'Свежие сверху' } },
+  { method: 'post', path: '/me/drafts', tag: 'profile', summary: 'Новый черновик', auth: 'bearer', body: DraftBody, ok: { status: 201, schema: DraftDto, description: 'Создан' }, errors: [[409, 'TooManyDrafts']] },
+  { method: 'get', path: '/me/drafts/{id}', tag: 'profile', summary: 'Черновик', auth: 'bearer', ok: { status: 200, schema: DraftDto, description: 'Черновик' }, errors: [[404, 'NotFound']] },
+  { method: 'put', path: '/me/drafts/{id}', tag: 'profile', summary: 'Сохранить черновик', auth: 'bearer', body: DraftBody, ok: { status: 200, schema: DraftDto, description: 'Сохранён' }, errors: [[404, 'NotFound']] },
+  { method: 'delete', path: '/me/drafts/{id}', tag: 'profile', summary: 'Удалить черновик', auth: 'bearer', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[404, 'NotFound']] },
   // ── импорт из AT-аккаунта
   {
     method: 'post', path: '/me/imports/atproto', tag: 'profile', summary: 'Импортировать посты AT-аккаунта в черновики', auth: 'bearer',

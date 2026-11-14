@@ -368,6 +368,18 @@ export const profile = {
   removeAvatar: () => authed<ProfileView>('/me/avatar', { method: 'DELETE' }),
 }
 
+/** Черновики статей: личные, на сервере (не в публичном репозитории); text — markdown редактора */
+export interface Draft { id: string; title: string; text: string; createdAt: string; updatedAt: string }
+export interface DraftSummary { id: string; title: string; excerpt: string; updatedAt: string }
+
+export const drafts = {
+  list: () => authed<{ drafts: DraftSummary[] }>('/me/drafts'),
+  get: (id: string) => authed<Draft>(`/me/drafts/${encodeURIComponent(id)}`),
+  create: (b: { title: string; text: string }) => authed<Draft>('/me/drafts', post(b)),
+  save: (id: string, b: { title: string; text: string }) => authed<Draft>(`/me/drafts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
+  remove: (id: string) => authed<{ ok: true }>(`/me/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
 export const imports = {
   fromAtproto: () => authed<{ added: number; seen: number; complete: boolean }>('/me/imports/atproto', post({})),
   list: (status?: ImportDraft['status']) => authed<{ drafts: ImportDraft[] }>(`/me/imports${status ? `?status=${status}` : ''}`),

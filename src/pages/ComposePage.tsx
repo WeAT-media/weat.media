@@ -21,7 +21,7 @@ import { LANGUAGES } from '@/data/languages'
 import Reveal from '@/components/Reveal'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
-import { imports } from '@/lib/api'
+import { drafts as draftsApi, hasSession, imports } from '@/lib/api'
 import PeopleAutocomplete, { type PersonCandidate } from '@/components/PeopleAutocomplete'
 import ArticleToc from '@/components/ArticleToc'
 import BlockView from '@/components/ArticleBlock'
@@ -161,9 +161,25 @@ export default function ComposePage() {
   const [bodyText, setBodyText] = useState('')
   const [title, setTitle] = useState('')
   // ?import=<id> — черновик из импорта постов AT-аккаунта: редактор открывается с его текстом
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const importId = searchParams.get('import')
-  const [importReady, setImportReady] = useState(!importId)
+  // ?draft=<id> — свой черновик с сервера; без него первый ввод создаёт новый черновик
+  const draftParam = searchParams.get('draft')
+  const [draftId, setDraftId] = useState<string | null>(draftParam)
+  const [draftSaved, setDraftSaved] = useState<string>('')
+  const [importReady, setImportReady] = useState(!importId && !draftParam)
+  useEffect(() => {
+    if (!draftParam) return
+    draftsApi
+      .get(draftParam)
+      .then((d) => {
+        setTitle(d.title)
+        setBodyText(d.text)
+        setDraftSaved(new Date(d.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+      })
+      .catch(() => setDraftId(null))
+      .finally(() => setImportReady(true))
+  }, [draftParam])
   useEffect(() => {
     if (!importId) return
     imports
@@ -177,6 +193,31 @@ export default function ComposePage() {
       .catch(() => {})
       .finally(() => setImportReady(true))
   }, [importId])
+  // автосохранение черновика: через 2 с после правки, пока пишете; только с аккаунтом и если есть текст
+  useEffect(() => {
+    if (!importReady || !hasSession() || (!title.trim() && !bodyText.trim())) return
+    const t = window.setTimeout(async () => {
+      try {
+        const body = { title: title.trim(), text: bodyText }
+        const d = draftId ? await draftsApi.save(draftId, body) : await draftsApi.create(body)
+        if (!draftId) {
+          setDraftId(d.id)
+          // ссылка на черновик — в адресе: перезагрузка и другое устройство откроют его же
+          setSearchParams((p) => {
+            const n = new URLSearchParams(p)
+            n.set('draft', d.id)
+            return n
+          }, { replace: true })
+        }
+        setDraftSaved(new Date(d.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+      } catch {
+        setDraftSaved('')
+      }
+    }, 2000)
+    return () => window.clearTimeout(t)
+    // draftId/setSearchParams в зависимостях перезапускали бы сохранение после создания
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, bodyText, importReady])
   const [subtitle, setSubtitle] = useState('')
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
@@ -424,6 +465,8 @@ export default function ComposePage() {
     try {
       const uri = await publishArticle({ ...draft, blocks, id, title: title.trim() }, text)
       if (importId) await imports.setStatus(importId, 'published', uri).catch(() => {})
+      // опубликовано — черновик больше не нужен
+      if (draftId) await draftsApi.remove(draftId).catch(() => {})
       navigate(`/article/${id}`)
     } catch (err) {
       // запись не ушла в репозиторий — черновик остаётся в форме, можно повторить
@@ -540,6 +583,7 @@ export default function ComposePage() {
               /> : <p className="meta py-10">Загружаем черновик…</p>}
               <p className="meta mt-2">
                 заголовок — первая строка редактора; карусель и опрос — через «/» в тексте
+                {draftSaved && <> · черновик сохранён {draftSaved} · <Link to="/settings/drafts" className="underline underline-offset-2">все черновики</Link></>}
               </p>
             </div>
             {errors.title && <p className="mt-2 text-sm text-destructive">{errors.title}</p>}

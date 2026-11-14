@@ -1,5 +1,5 @@
 import { Link, Navigate, NavLink, Outlet, useLocation, useParams } from 'react-router'
-import { Code2, Download, UserRound, Gavel, History, LayoutList, Link2, Lock, Palette, PenLine, Pin, ShieldAlert, SlidersHorizontal, Wallet } from 'lucide-react'
+import { Code2, Download, FileText, UserRound, Gavel, History, LayoutList, Link2, Lock, Palette, PenLine, Pin, ShieldAlert, SlidersHorizontal, Wallet } from 'lucide-react'
 import { useStore, type SettingsSyncState } from '@/lib/store'
 
 const syncLabel: Record<SettingsSyncState, string> = {
@@ -11,6 +11,7 @@ const syncLabel: Record<SettingsSyncState, string> = {
 
 const navItems = [
   { to: 'profile', label: 'Профиль', icon: UserRound },
+  { to: 'drafts', label: 'Черновики', icon: FileText },
   { to: 'feed', label: 'Лента', icon: LayoutList },
   { to: 'appearance', label: 'Внешний вид', icon: Palette },
   { to: 'history', label: 'История', icon: History },
