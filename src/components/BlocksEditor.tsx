@@ -201,7 +201,14 @@ export default function BlocksEditor({ value, onChange, compact, roomId, title, 
 
         // editor.doc/specs ДО appendChild: connectedCallback читает doc.slots
         const editor = new PageEditor()
-        editor.specs = [...blocksMod.PageEditorBlockSpecs, ...customBlocksMod.customBlockSpecs]
+        // встроенное меню «@ / [[» BlockSuite — ссылки на документы и «Create doc»; документ у нас один,
+        // а «@» — упоминание людей (lib/mentions.ts): триггеры меню документов выключены
+        const { ConfigExtension } = await import('@blocksuite/block-std')
+        editor.specs = [
+          ...blocksMod.PageEditorBlockSpecs,
+          ...customBlocksMod.customBlockSpecs,
+          ConfigExtension('affine:page', { linkedWidget: { triggerKeys: [] } }),
+        ]
         editor.doc = doc
         el.appendChild(editor)
 

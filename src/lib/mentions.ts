@@ -103,6 +103,8 @@ export function attachMentions(container: HTMLElement): () => void {
       empty.textContent = `@${query} не найден`
       popup.appendChild(empty)
     }
+    // выбранный пункт — в видимой части списка (длинный список прокручивается стрелками)
+    popup.querySelector<HTMLElement>('.mention-popup__item.is-active')?.scrollIntoView({ block: 'nearest' })
     // позиция под кареткой
     const rect = state.ie.getNativeRange()?.getBoundingClientRect()
     const hostRect = container.getBoundingClientRect()
@@ -112,7 +114,10 @@ export function attachMentions(container: HTMLElement): () => void {
     }
   }
 
-  const update = () => {
+  /** клавиши навигации обрабатывает onKeyDown — их keyup не должен пересобирать список и сбрасывать выбор */
+  const NAV_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'])
+  const update = (e?: Event) => {
+    if (e instanceof KeyboardEvent && NAV_KEYS.has(e.key) && state) return
     const found = findRichText()
     if (!found) return close()
     const { ie } = found
@@ -135,7 +140,9 @@ export function attachMentions(container: HTMLElement): () => void {
       else if (h.includes(q) || n.includes(q)) contains.push(p)
     }
     const items = [...starts, ...contains].slice(0, MAX_ITEMS)
-    state = { rt: found.rt, ie, atIndex, query, items, active: 0 }
+    // тот же запрос — выбор сохраняется
+    const keep = state && state.query === query && state.atIndex === atIndex ? Math.min(state.active, Math.max(0, items.length - 1)) : 0
+    state = { rt: found.rt, ie, atIndex, query, items, active: keep }
     render()
   }
 
