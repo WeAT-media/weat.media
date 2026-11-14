@@ -299,7 +299,8 @@ function memRepo(): UserRepo {
     },
     async search(q, limit, opts) {
       const t = q.trim().toLowerCase()
-      return [...rows.values()].filter((r) => (!t || r.did === t || r.handle.startsWith(t)) && (!opts?.service || !!r.service)).slice(0, limit)
+      const term = t.replace(/^@/, '')
+      return [...rows.values()].filter((r) => (!term || r.did === term || r.handle.includes(term) || (r.display_name ?? '').toLowerCase().includes(term)) && (!opts?.service || !!r.service)).slice(0, limit)
     },
     async setService(did, service) {
       const r = rows.get(did)
@@ -1230,6 +1231,16 @@ test('profile: change name, about and avatar on the site; image type by signatur
   assert.equal(pub.avatar, 'bafyavatar11')
   assert.equal((await (await app.request('/api/me/avatar', { method: 'DELETE', headers: auth })).json()).avatar, null)
   assert.equal((await app.request('/api/me/avatar', { method: 'POST', body: png })).status, 401)
+})
+
+test('admin users: search by part of handle or name, @ prefix ok', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  await app.request('/api/auth/register', json({ ...reg, username: 'vitali-haradkou', email: 'v@example.com' }, '5.1.1.1'))
+  const support = { authorization: `Bearer ${await staffToken(['support'])}` }
+  const find = async (q: string) => (await (await app.request(`/api/admin/users?${new URLSearchParams({ q })}`, { headers: support })).json()).map((u: { handle: string }) => u.handle)
+  assert.deepEqual(await find('harad'), ['vitali-haradkou.indie.media'], 'середина handle')
+  assert.deepEqual(await find('@VITALI'), ['vitali-haradkou.indie.media'], 'регистр и @')
+  assert.deepEqual(await find('nobody'), [])
 })
 
 test('atproto: ru contour never registers', async () => {

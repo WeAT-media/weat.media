@@ -156,7 +156,7 @@ export default function AdminUsersPage() {
         }}
         className="mt-6 flex max-w-[520px] gap-2"
       >
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="handle или DID" aria-label="Поиск пользователя" className={input} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="часть handle, имени или DID" aria-label="Поиск пользователя" className={input} />
         <button type="submit" className="btn-ghost shrink-0 !px-3 !py-2"><Search size={14} aria-hidden="true" /> Найти</button>
         <label className="flex shrink-0 items-center gap-1.5 text-sm">
           <input type="checkbox" checked={onlyService} onChange={(e) => setOnlyService(e.target.checked)} /> Служебные

@@ -38,7 +38,7 @@ export interface UserRepo {
   setAvatar(did: string, cid: string | null): Promise<void>
   /** смена страны резидентства — только по заявке, сотрудником поддержки */
   setResidence(did: string, country: string): Promise<UserRow | undefined>
-  /** админка: по началу handle или точному DID; пустой запрос — последние зарегистрированные */
+  /** админка: по части handle или имени, точному DID; только пользователи этого контура; пустой запрос — последние */
   search(q: string, limit: number, opts?: { service?: boolean }): Promise<UserRow[]>
   /** отметить учётку служебной (скрипт настройки коллегий) */
   setService(did: string, service: string | null): Promise<void>
@@ -142,10 +142,17 @@ export function userRepo(sql: Sql): UserRepo {
       await sql`UPDATE users SET display_name = ${name} WHERE did = ${did}`
     },
     search(q, limit, opts) {
-      const term = q.trim().toLowerCase()
+      const term = q.trim().toLowerCase().replace(/^@/, '')
+      // часть handle или имени, без учёта регистра; % и _ — буквально
+      const like = term.replace(/[%_\\]/g, '\\$&')
       const svc = opts?.service ? sql`AND service IS NOT NULL` : sql``
       return term
-        ? sql<UserRow[]>`SELECT * FROM users WHERE (did = ${term} OR lower(handle) LIKE ${term.replace(/[%_\\]/g, '\\$&') + '%'}) ${svc} ORDER BY created_at DESC LIMIT ${limit}`
+        ? sql<UserRow[]>`
+            SELECT * FROM users
+            WHERE (did = ${term} OR lower(handle) LIKE ${'%' + like + '%'} OR lower(coalesce(display_name, '')) LIKE ${'%' + like + '%'}) ${svc}
+            -- точное и с начала — выше, остальные совпадения — ниже
+            ORDER BY (did = ${term} OR lower(handle) = ${term}) DESC, lower(handle) LIKE ${like + '%'} DESC, created_at DESC
+            LIMIT ${limit}`
         : sql<UserRow[]>`SELECT * FROM users WHERE true ${svc} ORDER BY created_at DESC LIMIT ${limit}`
     },
     async setAvatar(did, cid) {
