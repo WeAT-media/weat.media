@@ -30,6 +30,7 @@ import { ImportDraftDto, ImportStatusBody } from './imports.js'
 import { MailMessageDto, MailSummaryDto, SendMailBody } from './mailbox.js'
 import { AdjustBody, AdjustmentDto } from './finance.js'
 import { LabelBody } from './labels.js'
+import { ProfileBody } from './profile.js'
 import { SystemAccountBody } from './systemAccounts.js'
 import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutRequestBody, SaleDto } from './payouts.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
@@ -488,6 +489,12 @@ const ops: Op[] = [
   { method: 'get', path: '/rss/author/{handle}', tag: 'profile', summary: 'RSS автора', description: 'В РФ-контуре без записей с метками nsfw/politics.', ok: { status: 200, schema: z.string().describe('application/rss+xml'), description: 'RSS 2.0' } },
   { method: 'get', path: '/rss/comments/{did}/{rkey}', tag: 'profile', summary: 'RSS комментариев к статье', ok: { status: 200, schema: z.string().describe('application/rss+xml'), description: 'RSS 2.0' } },
   { method: 'post', path: '/me/claims/{id}/transfer', tag: 'profile', summary: 'Забрать статьи по одобренной заявке', auth: 'bearer', description: 'Статьи автора-источника у краулера копируются в ваш репозиторий (claimedFrom — оригинал); оригинал уходит из ленты, его адрес открывает копию. Комментарии и лайки остаются у старой записи.', ok: { status: 200, schema: z.object({ moved: z.number().int(), articles: z.array(z.object({ oldUri: z.string(), newUri: z.string() })) }), description: 'Перенесено' }, errors: [[404, 'NotFound'], [409, 'NotApproved']] },
+  // ── профиль: имя, «О себе», аватар (запись app.bsky.actor.profile — видна и в Bluesky)
+  { method: 'patch', path: '/me/profile', tag: 'profile', summary: 'Имя и «О себе»', auth: 'bearer', body: ProfileBody, ok: { status: 200, schema: z.object({ did: z.string(), displayName: z.string().nullable(), description: z.string().nullable(), avatar: z.string().nullable() }), description: 'Профиль' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']] },
+  { method: 'post', path: '/me/avatar', tag: 'profile', summary: 'Загрузить фото профиля', auth: 'bearer', description: 'Тело — файл PNG, JPEG или WebP до 1 МБ (тип — по сигнатуре файла). Картинка: <PDS>/xrpc/com.atproto.sync.getBlob?did=…&cid=<avatar>.', ok: { status: 200, schema: z.object({ avatar: z.string().nullable() }), description: 'CID аватара' }, errors: [[401, 'AuthenticationRequired'], [413, 'ImageTooLarge'], [415, 'UnsupportedImage']] },
+  { method: 'delete', path: '/me/avatar', tag: 'profile', summary: 'Убрать фото профиля', auth: 'bearer', ok: { status: 200, schema: z.object({ avatar: z.null() }), description: 'Без фото' } },
+  { method: 'post', path: '/v1/me/avatar', tag: 'publicApi', summary: 'Фото профиля по токену', auth: 'pat', description: 'Право profile:update. Тело — PNG/JPEG/WebP до 1 МБ.', ok: { status: 200, schema: z.object({ avatar: z.string().nullable() }), description: 'CID аватара' }, errors: [[401, 'InvalidToken'], [403, 'InsufficientScope'], [413, 'ImageTooLarge'], [415, 'UnsupportedImage']] },
+  { method: 'delete', path: '/v1/me/avatar', tag: 'publicApi', summary: 'Убрать фото профиля по токену', auth: 'pat', ok: { status: 200, schema: z.object({ avatar: z.null() }), description: 'Без фото' } },
   // ── импорт из AT-аккаунта
   {
     method: 'post', path: '/me/imports/atproto', tag: 'profile', summary: 'Импортировать посты AT-аккаунта в черновики', auth: 'bearer',

@@ -305,6 +305,10 @@ function memRepo(): UserRepo {
       const r = rows.get(did)
       if (r) r.service = service
     },
+    async setAvatar(did, cid) {
+      const r = rows.get(did)
+      if (r) r.avatar_cid = cid
+    },
     async setResidence(did, country) {
       const r = rows.get(did)
       if (r) r.residence_country = country
@@ -626,6 +630,9 @@ function fakePds(): PdsClient {
     },
     async deleteSession(refreshJwt) {
       pdsDeleted.push(refreshJwt)
+    },
+    async uploadBlob(_jwt, bytes, mimeType) {
+      return { blob: { $type: 'blob', ref: { $link: `bafyavatar${bytes.byteLength}` }, mimeType, size: bytes.byteLength } }
     },
     async refreshSession(refreshJwt) {
       if (pdsDeleted.includes(refreshJwt)) throw new PdsError(401, 'ExpiredToken', 'revoked')
@@ -1202,6 +1209,27 @@ test('ru contour: articles labeled by nsfw/politics are cut from feed, related, 
   }
   assert.equal(filterRssItems('<item><guid>x</guid></item>', new Set()), '<item><guid>x</guid></item>')
   assert.deepEqual(rssGuids('<guid a="1">at://u</guid>'), ['at://u'])
+})
+
+test('profile: change name, about and avatar on the site; image type by signature, 1 MB limit; public profile shows avatar', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'pic', email: 'pic@example.com' }, '5.1.1.1'))).json()
+  const auth = { authorization: `Bearer ${u.accessJwt}` }
+  const p = await app.request('/api/me/profile', { method: 'PATCH', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Алина', description: 'Пишу про AT' }) })
+  assert.deepEqual(await p.json(), { did: u.user.did, displayName: 'Алина', description: 'Пишу про AT', avatar: null })
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+  const up = await app.request('/api/me/avatar', { method: 'POST', headers: { ...auth, 'content-type': 'image/png' }, body: png })
+  assert.equal(up.status, 200)
+  assert.equal((await up.json()).avatar, 'bafyavatar11')
+  const fake = await app.request('/api/me/avatar', { method: 'POST', headers: { ...auth, 'content-type': 'image/png' }, body: new TextEncoder().encode('<svg onload=alert(1)>') })
+  assert.equal(fake.status, 415, 'не картинка по сигнатуре')
+  const big = new Uint8Array(1_000_001); big.set([0xff, 0xd8, 0xff])
+  assert.equal((await app.request('/api/me/avatar', { method: 'POST', headers: { ...auth, 'content-type': 'image/jpeg' }, body: big })).status, 413)
+  const pub = await (await app.request(`/api/users/${u.user.handle}`)).json()
+  assert.equal(pub.displayName, 'Алина')
+  assert.equal(pub.avatar, 'bafyavatar11')
+  assert.equal((await (await app.request('/api/me/avatar', { method: 'DELETE', headers: auth })).json()).avatar, null)
+  assert.equal((await app.request('/api/me/avatar', { method: 'POST', body: png })).status, 401)
 })
 
 test('atproto: ru contour never registers', async () => {

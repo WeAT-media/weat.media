@@ -1,3 +1,4 @@
+import { PDS_URL } from '@/config/site'
 import { firstTouchUtm, lastTouchUtm } from '@/lib/utm'
 import type { BlockDef } from '@/lib/userBlocks'
 import type { EditorPreferences, LabelerSettings, Preferences, SubscriptionTier, User, ReadEntry, VideoProgressEntry } from '@/types/types'
@@ -12,6 +13,8 @@ export interface ApiUser {
   did: string
   handle: string
   displayName: string | null
+  /** CID фото профиля (blob на PDS) — адрес картинки: avatarUrl(did, cid) */
+  avatar?: string | null
   tier: 'free' | 'premium'
   premiumSince: string | null
   createdAt: string
@@ -339,6 +342,29 @@ export interface Earnings {
 export const payouts = {
   earnings: () => authed<Earnings>('/me/earnings'),
   request: (b: { currency: 'RUB' | 'USD' | 'EUR'; method: 'fiat' | 'crypto'; destination: string }) => authed<Earnings['payouts'][number]>('/me/payouts', post(b)),
+}
+
+/** картинка аватара: blob в репозитории пользователя на PDS */
+export const avatarUrl = (did: string, cid: string) => `${PDS_URL}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`
+
+export interface ProfileView {
+  did: string
+  displayName: string | null
+  description: string | null
+  avatar: string | null
+}
+
+/** имя, «О себе», фото — запись app.bsky.actor.profile (видна и в Bluesky) */
+export const profile = {
+  /** текущая запись профиля — публично с PDS */
+  async get(did: string): Promise<{ displayName: string | null; description: string | null }> {
+    const res = await fetch(`${PDS_URL}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`).catch(() => null)
+    const v = res?.ok ? ((await res.json()) as { value?: { displayName?: string; description?: string } }).value : undefined
+    return { displayName: v?.displayName ?? null, description: v?.description ?? null }
+  },
+  update: (b: { displayName?: string | null; description?: string | null }) => authed<ProfileView>('/me/profile', { method: 'PATCH', body: JSON.stringify(b) }),
+  setAvatar: (file: File) => authed<ProfileView>('/me/avatar', { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } }),
+  removeAvatar: () => authed<ProfileView>('/me/avatar', { method: 'DELETE' }),
 }
 
 export const imports = {

@@ -39,6 +39,8 @@ export interface PdsClient {
   createRecord(accessJwt: string, repo: string, collection: string, record: Record<string, unknown>): Promise<{ uri: string; cid: string }>
   deleteRecord(accessJwt: string, repo: string, collection: string, rkey: string): Promise<void>
   putRecord(accessJwt: string, repo: string, collection: string, rkey: string, record: Record<string, unknown>): Promise<{ uri: string; cid: string }>
+  /** файл в репозиторий (аватар): ссылка на blob для записи */
+  uploadBlob(accessJwt: string, bytes: Uint8Array, mimeType: string): Promise<{ blob: Record<string, unknown> }>
   /** публичное чтение репозитория; undefined — записи нет */
   getRecord(repo: string, collection: string, rkey: string): Promise<Record<string, unknown> | undefined>
   /** все репозитории этого PDS (публично) */
@@ -109,6 +111,16 @@ export function createPdsClient(baseUrl: string, adminPassword: string): PdsClie
     },
     getSession(accessJwt) {
       return xrpc('GET', 'com.atproto.server.getSession', { auth: `Bearer ${accessJwt}` })
+    },
+    async uploadBlob(accessJwt, bytes, mimeType) {
+      const res = await fetch(new URL('/xrpc/com.atproto.repo.uploadBlob', baseUrl), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${accessJwt}`, 'content-type': mimeType },
+        body: new Blob([new Uint8Array(bytes)], { type: mimeType }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { blob?: Record<string, unknown>; error?: string; message?: string }
+      if (!res.ok || !data.blob) throw new PdsError(res.status, String(data.error ?? 'PdsError'), String(data.message ?? res.statusText))
+      return { blob: data.blob }
     },
     async deleteSession(refreshJwt) {
       await xrpc<unknown>('POST', 'com.atproto.server.deleteSession', { auth: `Bearer ${refreshJwt}` })

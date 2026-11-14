@@ -9,7 +9,7 @@ import Reveal from '@/components/Reveal'
 import ReportDialog from '@/components/ReportDialog'
 import RssButton from '@/components/RssButton'
 import { buildAuthorFeed } from '@/lib/rss'
-import { api, comments as commentsApi, countryLabel, type ApiUser, type AuthorComment } from '@/lib/api'
+import { api, comments as commentsApi, countryLabel, type ApiUser, type AuthorComment, avatarUrl } from '@/lib/api'
 import { commentAnchor, remoteId } from '@/lib/remoteFeed'
 import type { Author } from '@/types/types'
 import { PDS_URL } from '@/config/site'
@@ -157,9 +157,13 @@ export default function ProfilePage() {
       <Reveal className="mt-8 border border-border bg-secondary/40 p-6 md:p-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
-            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary font-mono text-xl font-bold text-primary-foreground" aria-hidden="true">
-              {author.name.slice(0, 1)}
-            </span>
+            {remoteProfile?.avatar && remoteProfile.did === author.did ? (
+              <img src={avatarUrl(author.did, remoteProfile.avatar)} alt="" className="h-16 w-16 shrink-0 rounded-full border border-border object-cover" />
+            ) : (
+              <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary font-mono text-xl font-bold text-primary-foreground" aria-hidden="true">
+                {author.name.slice(0, 1)}
+              </span>
+            )}
             <div className="min-w-0">
               <h1 className="flex flex-wrap items-center gap-2 text-2xl font-extrabold tracking-tight md:text-3xl">
                 {author.name}

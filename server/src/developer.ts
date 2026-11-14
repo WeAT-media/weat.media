@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { profileOps } from './profile.js'
 import type { Sql, UserRepo, UserRow } from './db.js'
 import { PdsError, type PdsClient } from './pds.js'
 import type { SecretBox } from './secretbox.js'
@@ -383,6 +384,21 @@ export function mountDeveloperRoutes(app: Hono, d: DeveloperDeps, h: { bearer(c:
     await d.pds.putRecord(s.accessJwt, user.did, PROFILE_COLLECTION, 'self', next)
     if (b.displayName !== undefined) await d.users.setDisplayName(user.did, b.displayName)
     return c.json({ did: user.did, handle: user.handle, displayName: (next.displayName as string | undefined) ?? null, description: (next.description as string | undefined) ?? null })
+  })
+
+  /** аватар по API: тело — файл PNG/JPEG/WebP до 1 МБ (profile.ts) */
+  app.post('/v1/me/avatar', async (c) => {
+    const { row, user } = await byToken(c, 'profile:update')
+    const file = new Uint8Array(await c.req.arrayBuffer())
+    if (!file.byteLength) throw fail('InvalidRequest', 'Тело запроса — файл картинки', 400)
+    const s = await pdsSession(row, user)
+    return c.json(await profileOps({ pds: d.pds, users: d.users }).setAvatar(s.accessJwt, user.did, file))
+  })
+
+  app.delete('/v1/me/avatar', async (c) => {
+    const { row, user } = await byToken(c, 'profile:update')
+    const s = await pdsSession(row, user)
+    return c.json(await profileOps({ pds: d.pds, users: d.users }).setAvatar(s.accessJwt, user.did, null))
   })
 
   /** свои комментарии из репозитория (индекса чужих комментариев пока нет) */

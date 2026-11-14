@@ -24,6 +24,7 @@ import { createRestrictedFilter, RESTRICTED_COLLEGIA } from './restricted.js'
 import { mountFinanceRoutes } from './finance.js'
 import { mountLabelRoutes } from './labels.js'
 import { mountPdsGate } from './pdsGate.js'
+import { mountProfileRoutes, profileOps } from './profile.js'
 import { mountSystemAccountRoutes, type SystemAccountRepo } from './systemAccounts.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
@@ -94,6 +95,8 @@ export interface PublicUser {
   did: string
   handle: string
   displayName: string | null
+  /** CID аватара; картинка — ${PDS_URL}/xrpc/com.atproto.sync.getBlob?did=…&cid=… */
+  avatar: string | null
   tier: Tier
   premiumSince: string | null
   createdAt: string
@@ -107,6 +110,7 @@ export function toPublic(u: UserRow): PublicUser {
     did: u.did,
     handle: u.handle,
     displayName: u.display_name,
+    avatar: u.avatar_cid ?? null,
     tier: u.tier,
     premiumSince: u.premium_since?.toISOString() ?? null,
     createdAt: u.created_at.toISOString(),
@@ -174,7 +178,7 @@ export function createApp(deps: Deps) {
   // тело разбирается до валидации — без лимита гигантский JSON съест память.
   // Тексты статей (до 200 000 символов UTF-8) — до 1 МБ, остальное — 64 КБ
   const tooLarge = (c: Context) => c.json({ error: 'PayloadTooLarge', message: 'Слишком большой запрос' }, 413)
-  const BIG = new Set(['/api/me/articles/paid', '/api/v1/articles'])
+  const BIG = new Set(['/api/me/articles/paid', '/api/v1/articles', '/api/me/avatar', '/api/v1/me/avatar'])
   app.use('*', async (c, next) =>
     bodyLimit({ maxSize: BIG.has(c.req.path) ? 1024 * 1024 : 64 * 1024, onError: tooLarge })(c, next),
   )
@@ -201,7 +205,7 @@ export function createApp(deps: Deps) {
     if (err instanceof PdsError) {
       const status = ['HandleNotAvailable', 'HandleTaken', 'EmailTaken', 'InvalidHandle'].includes(err.code) ? 409
         : err.status === 401 || ['AuthenticationRequired', 'ExpiredToken', 'InvalidToken'].includes(err.code) ? 401
-        : [400, 402, 403, 404, 409, 429, 502, 503].includes(err.status) ? (err.status as 400 | 402 | 403 | 404 | 409 | 429 | 502 | 503)
+        : [400, 402, 403, 404, 409, 413, 415, 429, 502, 503].includes(err.status) ? (err.status as 400 | 402 | 403 | 404 | 409 | 413 | 415 | 429 | 502 | 503)
         : 502
       return c.json({ error: err.code, message: err.message }, status)
     }
@@ -298,6 +302,8 @@ export function createApp(deps: Deps) {
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountFinanceRoutes(app, { payouts: d.payouts, users: d.users }, { requireStaff, audit })
   mountPdsGate(app, { pdsUrl: d.pdsUrl, pds: d.pds, mfa: d.mfa })
+  const profiles = profileOps({ pds: d.pds, users: d.users })
+  mountProfileRoutes(app, { pds: d.pds, ops: profiles }, { bearer })
   mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken, hidden: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] }, { requireStaff, audit })
   // РФ-контур: записи с метками nsfw/politics закрыты на сервере (не настройка читателя)
   const restricted = d.restricted ?? createRestrictedFilter({ enabled: d.config.CONTOUR === 'ru', labelerUrl: d.labelerUrl })

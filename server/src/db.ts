@@ -18,6 +18,8 @@ export interface UserRow {
   created_at: Date
   /** пользователь знает пароль PDS (регистрация по email) */
   password_login: boolean
+  /** CID аватара (blob на PDS); null — без фото */
+  avatar_cid?: string | null
   /** служебная учётка (labeler — коллегия присяжных); null/undefined — человек */
   service?: string | null
 }
@@ -33,6 +35,7 @@ export interface UserRepo {
   setTier(did: string, tier: Tier): Promise<UserRow | undefined>
   setPasswordLogin(did: string, value: boolean): Promise<void>
   setDisplayName(did: string, name: string | null): Promise<void>
+  setAvatar(did: string, cid: string | null): Promise<void>
   /** смена страны резидентства — только по заявке, сотрудником поддержки */
   setResidence(did: string, country: string): Promise<UserRow | undefined>
   /** админка: по началу handle или точному DID; пустой запрос — последние зарегистрированные */
@@ -144,6 +147,9 @@ export function userRepo(sql: Sql): UserRepo {
       return term
         ? sql<UserRow[]>`SELECT * FROM users WHERE (did = ${term} OR lower(handle) LIKE ${term.replace(/[%_\\]/g, '\\$&') + '%'}) ${svc} ORDER BY created_at DESC LIMIT ${limit}`
         : sql<UserRow[]>`SELECT * FROM users WHERE true ${svc} ORDER BY created_at DESC LIMIT ${limit}`
+    },
+    async setAvatar(did, cid) {
+      await sql`UPDATE users SET avatar_cid = ${cid} WHERE did = ${did}`
     },
     async setService(did, service) {
       await sql`UPDATE users SET service = ${service} WHERE did = ${did}`
