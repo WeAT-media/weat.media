@@ -368,6 +368,10 @@ export const profile = {
   removeAvatar: () => authed<ProfileView>('/me/avatar', { method: 'DELETE' }),
 }
 
+/** превью ссылки для карточки «/link» в редакторе — страницу грузит AppView (из браузера CORS не пустит) */
+export interface LinkPreview { url: string; title: string | null; description: string | null; image: string | null; icon: string | null }
+export const linkPreview = (url: string, signal?: AbortSignal) => authed<LinkPreview>('/link-preview', { ...post({ url }), signal })
+
 /** Черновики статей: личные, на сервере (не в публичном репозитории); text — markdown редактора */
 export interface Draft { id: string; title: string; text: string; createdAt: string; updatedAt: string }
 export interface DraftSummary { id: string; title: string; excerpt: string; updatedAt: string }

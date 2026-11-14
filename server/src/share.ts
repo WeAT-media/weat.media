@@ -1,4 +1,6 @@
 import type { Hono } from 'hono'
+import { resolvePds } from './imports.js'
+import { avatarDataUri, renderArticleCard } from './ogImage.js'
 
 /**
  * Превью ссылок (Open Graph / Twitter Card) для ботов соцсетей и мессенджеров: они не выполняют JS,
@@ -54,24 +56,76 @@ ${o.publishedAt ? `<meta property="article:published_time" content="${esc(o.publ
 </body></html>`
 }
 
-export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
+interface FeedArticle {
+  uri?: string
+  did?: string
+  handle?: string | null
+  created_at?: string
+  record?: { title?: string; subtitle?: string; excerpt?: string; text?: string; noindex?: boolean; source?: { site?: string; author?: string } }
+}
+
+/** имя и фото автора из его профиля AT (app.bsky.actor.profile на его PDS) */
+async function authorProfile(did: string, plcUrl: string): Promise<{ name: string | null; avatar: string | null }> {
+  const pds = await resolvePds(did, plcUrl).catch(() => null)
+  if (!pds) return { name: null, avatar: null }
+  const res = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+  const v = res?.ok ? ((await res.json()) as { value?: { displayName?: string; avatar?: { ref?: { $link?: string } } } }).value : undefined
+  const cid = v?.avatar?.ref?.$link
+  const avatar = cid ? await avatarDataUri(`${pds}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`) : null
+  return { name: v?.displayName?.trim() || null, avatar }
+}
+
+export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
   const siteName = d.siteName ?? 'weAT.media'
   const image = `${d.siteUrl}/og-image.png`
+  const plcUrl = d.plcUrl ?? 'https://plc.directory'
+
+  /** публичная статья из индекса ленты; null — нет, недоступна или закрыта в этом контуре */
+  const article = async (id: string): Promise<FeedArticle | null> => {
+    if (!SHORT_ID.test(id) || !d.feedUrl) return null
+    const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ short: id })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+    if (!res?.ok) return null
+    const a = (await res.json()) as FeedArticle
+    // РФ-контур: закрытая запись — без заголовка и текста, общая карточка
+    if (a.uri && d.restricted?.enabled && (await d.restricted.blocked([a.uri])).has(a.uri)) return null
+    return a
+  }
+
+  // картинка превью статьи: название и автор; готовые PNG — в памяти на час
+  const cards = new Map<string, { at: number; png: Buffer }>()
+  app.get('/og/article/:file', async (c) => {
+    const id = c.req.param('file').replace(/\.png$/, '')
+    const hit = cards.get(id)
+    if (hit && Date.now() - hit.at < 3_600_000) return c.body(new Uint8Array(hit.png), 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' })
+    const a = await article(id)
+    const r = a?.record
+    if (!a || !r?.title?.trim()) return c.redirect(image, 302)
+    const did = a.did ?? a.uri?.split('/')[2]
+    const crawled = r.source?.author?.trim()
+    const p = !crawled && did ? await authorProfile(did, plcUrl) : { name: null, avatar: null }
+    const png = await renderArticleCard({
+      title: r.title,
+      author: crawled || p.name || a.handle || siteName,
+      handle: crawled ? (r.source?.site ?? null) : (a.handle ?? null),
+      avatar: p.avatar,
+      siteName,
+    }).catch(() => null)
+    if (!png) return c.redirect(image, 302)
+    if (cards.size > 500) cards.delete(cards.keys().next().value!)
+    cards.set(id, { at: Date.now(), png })
+    return c.body(new Uint8Array(png), 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' })
+  })
 
   app.get('/share/article/:id', async (c) => {
     const id = c.req.param('id')
     const url = `${d.siteUrl}/article/${encodeURIComponent(id)}`
     const fallback = () => c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: siteName, description: 'Медиа на открытом протоколе AT: ваш аккаунт и тексты принадлежат вам.', image }))
-    if (!SHORT_ID.test(id) || !d.feedUrl) return fallback()
-    const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ short: id })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
-    if (!res?.ok) return fallback()
-    const a = (await res.json()) as { uri?: string; handle?: string | null; created_at?: string; record?: { title?: string; subtitle?: string; excerpt?: string; text?: string; noindex?: boolean } }
-    // РФ-контур: закрытая запись — без заголовка и текста, общая карточка
-    if (a.uri && d.restricted?.enabled && (await d.restricted.blocked([a.uri])).has(a.uri)) return fallback()
+    const a = await article(id)
+    if (!a) return fallback()
     const r = a.record ?? {}
     const title = (r.title ?? '').trim() || siteName
     const description = (r.subtitle ?? '').trim() || (r.excerpt ?? '').trim() || plainExcerpt(r.text ?? '') || siteName
     c.header('cache-control', 'public, max-age=300')
-    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: title.slice(0, 200), description: description.slice(0, 300), author: a.handle ? `@${a.handle}` : undefined, image, publishedAt: a.created_at, noindex: r.noindex === true }))
+    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: title.slice(0, 200), description: description.slice(0, 300), author: a.handle ? `@${a.handle}` : undefined, image: r.title?.trim() ? `${d.siteUrl}/api/og/article/${encodeURIComponent(id)}.png` : image, publishedAt: a.created_at, noindex: r.noindex === true }))
   })
 }

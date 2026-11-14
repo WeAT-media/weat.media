@@ -199,6 +199,17 @@ export default function BlocksEditor({ value, onChange, compact, roomId, title, 
         const detachGuard = customBlocksMod.attachPremiumGuard(doc as never, storeMod.Text as never)
         guardRef.current = detachGuard
 
+        // карточки ссылок («/link», вставка URL): по умолчанию BlockSuite спрашивает превью у сервиса AFFiNE —
+        // он нам недоступен («Failed to retrieve link information»); берём у своего AppView
+        const { linkPreview } = await import('@/lib/api')
+        const query = async (url: string, signal?: AbortSignal) => {
+          const p = await linkPreview(url, signal).catch(() => null)
+          return p ? { title: p.title, description: p.description, image: p.image, icon: p.icon } : {}
+        }
+        for (const svc of [blocksMod.BookmarkBlockService, blocksMod.EmbedGithubBlockService, blocksMod.EmbedYoutubeBlockService, blocksMod.EmbedLoomBlockService] as unknown as { linkPreviewer?: { query: typeof query } }[]) {
+          if (svc?.linkPreviewer) svc.linkPreviewer.query = query
+        }
+
         // editor.doc/specs ДО appendChild: connectedCallback читает doc.slots
         const editor = new PageEditor()
         // встроенное меню «@ / [[» BlockSuite — ссылки на документы и «Create doc»; документ у нас один,

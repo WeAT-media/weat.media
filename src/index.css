@@ -534,3 +534,12 @@ affine-slash-menu {
   color: hsl(var(--muted-foreground));
   font-size: 12px;
 }
+
+/* Окна «/link» и правки карточки BlockSuite добавляются в <body> с position:absolute — то есть в верх
+   документа, и focus() поля прокручивал страницу туда. Фиксируем их во вьюпорте: страница не прыгает. */
+embed-card-create-modal,
+embed-card-edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}

@@ -78,7 +78,7 @@ export interface PostSource {
 }
 
 /** PDS из DID-документа: did:plc — через plc.directory, did:web — /.well-known/did.json */
-async function resolvePds(did: string, plcUrl: string): Promise<string> {
+export async function resolvePds(did: string, plcUrl: string): Promise<string> {
   const docUrl = did.startsWith('did:plc:')
     ? `${plcUrl}/${did}`
     : did.startsWith('did:web:')

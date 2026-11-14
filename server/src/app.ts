@@ -20,6 +20,7 @@ import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
 import { mountPayoutRoutes, type PayoutRepo } from './payouts.js'
 import { mountShareRoutes } from './share.js'
+import { mountLinkPreviewRoutes } from './linkPreview.js'
 import { createRestrictedFilter, RESTRICTED_COLLEGIA } from './restricted.js'
 import { mountFinanceRoutes } from './finance.js'
 import { mountLabelRoutes } from './labels.js'
@@ -443,6 +444,7 @@ export function createApp(deps: Deps) {
     if (!token) return null
     return (await d.pds.getSession(token)).did
   }
+  mountLinkPreviewRoutes(app, { authDid })
   const unauthorized = (c: Context) =>
     c.json({ error: 'AuthenticationRequired', message: 'Нужен Bearer-токен' }, 401)
 

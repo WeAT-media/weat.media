@@ -32,6 +32,10 @@ export const RULES: RateRule[] = [
   // обращения в поддержку и запросы органов: пишет и гость — без лимита это спам очереди
   { name: 'tickets', limit: 5, windowMs: 10 * 60_000, match: (m, p) => m === 'POST' && (p === '/support/tickets' || /^\/me\/tickets\/[^/]+\/messages$/.test(p)) },
   // публичный API по персональному токену
+  // превью ссылок: AppView ходит на чужие сайты — не даём сделать из него качалку
+  { name: 'link-preview', limit: 30, windowMs: 60_000, match: (m, p) => m === 'POST' && p === '/link-preview' },
+  // картинки превью статей: рендер ~0.3 с CPU (кэш — час)
+  { name: 'og', limit: 60, windowMs: 60_000, match: (m, p) => m === 'GET' && p.startsWith('/og/') },
   { name: 'public-api', limit: 120, windowMs: 60_000, match: (_m, p) => p.startsWith('/v1/') },
   // всё остальное
   { name: 'default', limit: 600, windowMs: 60_000, match: () => true },
