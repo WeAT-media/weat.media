@@ -27,7 +27,7 @@ import { sharedRepo } from './shared.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
-await migrate(sql)
+await migrate(sql, { standby: config.NODE_ROLE === 'standby' })
 
 const app = createApp({
   config,
