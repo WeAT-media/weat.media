@@ -253,11 +253,12 @@ export function mountTicketRoutes(
     createdAt: u.created_at.toISOString(),
     signupCountry: u.signup_country,
     residenceCountry: u.residence_country ?? u.signup_country,
+    service: u.service ?? null,
   })
 
   app.get('/admin/users', async (c) => {
     await h.requireStaff(c, 'support')
-    const rows = await d.users.search(c.req.query('q') ?? '', 100)
+    const rows = await d.users.search(c.req.query('q') ?? '', 100, { service: c.req.query('service') === '1' })
     c.header('cache-control', 'private, no-store')
     return c.json(rows.map(adminUser))
   })

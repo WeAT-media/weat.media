@@ -18,6 +18,8 @@ export interface UserRow {
   created_at: Date
   /** пользователь знает пароль PDS (регистрация по email) */
   password_login: boolean
+  /** служебная учётка (labeler — коллегия присяжных); null/undefined — человек */
+  service?: string | null
 }
 
 export function createDb(url: string): Sql {
@@ -34,7 +36,9 @@ export interface UserRepo {
   /** смена страны резидентства — только по заявке, сотрудником поддержки */
   setResidence(did: string, country: string): Promise<UserRow | undefined>
   /** админка: по началу handle или точному DID; пустой запрос — последние зарегистрированные */
-  search(q: string, limit: number): Promise<UserRow[]>
+  search(q: string, limit: number, opts?: { service?: boolean }): Promise<UserRow[]>
+  /** отметить учётку служебной (скрипт настройки коллегий) */
+  setService(did: string, service: string | null): Promise<void>
 }
 
 export interface Identity {
@@ -134,11 +138,15 @@ export function userRepo(sql: Sql): UserRepo {
     async setDisplayName(did, name) {
       await sql`UPDATE users SET display_name = ${name} WHERE did = ${did}`
     },
-    search(q, limit) {
+    search(q, limit, opts) {
       const term = q.trim().toLowerCase()
+      const svc = opts?.service ? sql`AND service IS NOT NULL` : sql``
       return term
-        ? sql<UserRow[]>`SELECT * FROM users WHERE did = ${term} OR lower(handle) LIKE ${term.replace(/[%_\\]/g, '\\$&') + '%'} ORDER BY created_at DESC LIMIT ${limit}`
-        : sql<UserRow[]>`SELECT * FROM users ORDER BY created_at DESC LIMIT ${limit}`
+        ? sql<UserRow[]>`SELECT * FROM users WHERE (did = ${term} OR lower(handle) LIKE ${term.replace(/[%_\\]/g, '\\$&') + '%'}) ${svc} ORDER BY created_at DESC LIMIT ${limit}`
+        : sql<UserRow[]>`SELECT * FROM users WHERE true ${svc} ORDER BY created_at DESC LIMIT ${limit}`
+    },
+    async setService(did, service) {
+      await sql`UPDATE users SET service = ${service} WHERE did = ${did}`
     },
     async setResidence(did, country) {
       const [row] = await sql<UserRow[]>`UPDATE users SET residence_country = ${country} WHERE did = ${did} RETURNING *`

@@ -17,6 +17,8 @@ interface AdminUser {
   createdAt: string
   signupCountry: string
   residenceCountry: string
+  /** служебная учётка (labeler — коллегия присяжных) */
+  service: string | null
 }
 interface UserCard extends AdminUser {
   tickets: { id: string; subject: string; status: string; createdAt: string; category: string }[]
@@ -46,9 +48,11 @@ export default function AdminUsersPage() {
     },
     [token],
   )
+  const [onlyService, setOnlyService] = useState(false)
   const search = useCallback(
-    (term: string) => call<AdminUser[]>(`/admin/users?${new URLSearchParams({ q: term })}`).then(setRows, (e) => setError(e.message)),
-    [call],
+    (term: string) =>
+      call<AdminUser[]>(`/admin/users?${new URLSearchParams({ q: term, ...(onlyService ? { service: '1' } : {}) })}`).then(setRows, (e) => setError(e.message)),
+    [call, onlyService],
   )
   useEffect(() => {
     if (token) void search('')
@@ -153,6 +157,9 @@ export default function AdminUsersPage() {
       >
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="handle или DID" aria-label="Поиск пользователя" className={input} />
         <button type="submit" className="btn-ghost shrink-0 !px-3 !py-2"><Search size={14} aria-hidden="true" /> Найти</button>
+        <label className="flex shrink-0 items-center gap-1.5 text-sm">
+          <input type="checkbox" checked={onlyService} onChange={(e) => setOnlyService(e.target.checked)} /> Служебные
+        </label>
       </form>
       {error && <p role="alert" className="mt-4 border border-destructive/60 bg-destructive/5 p-3 text-sm">{error}</p>}
       {done && <p role="status" className="mt-4 text-sm text-accent">{done}</p>}
@@ -165,6 +172,7 @@ export default function AdminUsersPage() {
               <button type="button" onClick={() => void open(u.did)} className={`w-full cursor-pointer p-3 text-left text-sm hover:bg-secondary/60 ${card?.did === u.did ? 'bg-secondary/60' : ''}`}>
                 <span className="font-semibold">@{u.handle}</span>
                 {u.tier === 'premium' && <span className="meta ml-2 text-accent">premium</span>}
+                {u.service && <span className="meta ml-2">служебная · {u.service === 'labeler' ? 'коллегия' : u.service}</span>}
                 <span className="meta block !normal-case tracking-normal">{countryLabel(u.residenceCountry)} · с {when(u.createdAt)}</span>
               </button>
             </li>

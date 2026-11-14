@@ -284,9 +284,13 @@ function memRepo(): UserRepo {
       const r = rows.get(did)
       if (r) r.display_name = name
     },
-    async search(q, limit) {
+    async search(q, limit, opts) {
       const t = q.trim().toLowerCase()
-      return [...rows.values()].filter((r) => !t || r.did === t || r.handle.startsWith(t)).slice(0, limit)
+      return [...rows.values()].filter((r) => (!t || r.did === t || r.handle.startsWith(t)) && (!opts?.service || !!r.service)).slice(0, limit)
+    },
+    async setService(did, service) {
+      const r = rows.get(did)
+      if (r) r.service = service
     },
     async setResidence(did, country) {
       const r = rows.get(did)
