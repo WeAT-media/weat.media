@@ -39,15 +39,15 @@ for t, c in parts:
     x += d.textlength(t, font=big)
 
 tag = font('Inter.ttf', 58, 700)
-d.text((X, 330 * S), 'Свобода как цель', font=tag, fill=FG)
+d.text((X, 330 * S), 'Свободное медиа', font=tag, fill=FG)
 
 sub = font('Inter.ttf', 27, 500)
 d.text((X, 412 * S), 'Медиа на открытом протоколе: ваш аккаунт и тексты', font=sub, fill=MUTED)
-d.text((X, 450 * S), 'принадлежат вам, а не площадке.', font=sub, fill=MUTED)
+d.text((X, 450 * S), 'принадлежат вам.', font=sub, fill=MUTED)
 
 chip = font('JBMono.ttf', 20, 600)
 cx0 = X
-for label in ('90/10 · 99/1 автору', 'суд присяжных', 'без алгоритма ленты'):
+for label in ('открытый протокол', 'гибкая настройка', 'без рекламных алгоритмов'):
     tw = d.textlength(label, font=chip)
     pad = 18 * S
     d.rounded_rectangle([cx0, 528 * S, cx0 + tw + pad * 2, 572 * S], radius=22 * S, outline=LINE, width=2 * S, fill=BG)
