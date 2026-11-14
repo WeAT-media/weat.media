@@ -103,8 +103,8 @@ export default function SupportLegalPage() {
         </p>
         <p className="mt-4 inline-flex max-w-[64ch] items-start gap-2 border border-dashed border-border bg-secondary/40 p-4 text-sm leading-relaxed text-muted-foreground">
           <ShieldAlert size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
-          Не прикладывайте служебные документы и секреты: прототип хранит форму локально. Для реальных запросов
-          потребуется защищённый канал с верификацией подписи и полномочий.
+          Документы к форме не прикладываются. После проверки полномочий мы запросим их с адреса legal@weat.media —
+          туда же можно сразу направить официальный запрос.
         </p>
       </div>
 
