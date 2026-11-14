@@ -204,7 +204,10 @@ export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context):
    */
   app.post('/webhooks/payment', async (c) => {
     const key = c.req.header('x-api-key') ?? ''
-    const ok = !!d.webhookSecret && key.length === d.webhookSecret.length && timingSafeEqual(Buffer.from(key), Buffer.from(d.webhookSecret))
+    // длины — в байтах: ключ с не-ASCII символами той же длины в символах не должен ронять timingSafeEqual
+    const kb = Buffer.from(key)
+    const sb = Buffer.from(d.webhookSecret ?? '')
+    const ok = !!d.webhookSecret && kb.length === sb.length && timingSafeEqual(kb, sb)
     if (!ok) return c.json({ error: 'Unauthorized' }, 401)
     const raw = await c.req.json().catch(() => null)
     const ev = PurchaseWebhook.safeParse(raw)
@@ -225,7 +228,7 @@ export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context):
     // перепроверка у lava.top: статус и сумма
     const inv = await d.lava!.getInvoice(order.contract_id!)
     const paidAmount = inv.receipt?.amount
-    if (inv.status !== 'COMPLETED' || paidAmount === undefined || Math.round(paidAmount * 100) < order.amount || (inv.receipt?.currency && inv.receipt.currency !== order.currency)) {
+    if (inv.status !== 'COMPLETED' || paidAmount === undefined || Math.round(paidAmount * 100) < order.amount || inv.receipt?.currency !== order.currency.trim()) {
       console.warn('lava payment not confirmed', order.id, inv.status, paidAmount)
       // 5xx — lava.top повторит позже, когда счёт дойдёт до COMPLETED
       return c.json({ error: 'NotConfirmed' }, 503)

@@ -18,7 +18,8 @@ services:
       - ssl_key_file=/tls/server.key
       - -c
       - hba_file=/etc/postgresql/pg_hba.conf
-    ports: ["5433:5432"]
+    # только IPv4: резерв (RU-1) ходит по IPv4, а IPv6 через docker-proxy пришёл бы с адреса шлюза
+    ports: ["0.0.0.0:5433:5432"]
     volumes:
       # сертификат узла — тот же, что у Postgres AppView (deploy/node/pg-tls)
       - ../node/pg-tls:/tls:ro

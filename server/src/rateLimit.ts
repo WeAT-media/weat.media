@@ -29,6 +29,8 @@ export const RULES: RateRule[] = [
   { name: 'oauth-start', limit: 20, windowMs: 60_000, match: (m, p) => m === 'GET' && /^\/auth\/[a-z]+\/start$/.test(p) },
   // счета lava.top и выпуск токенов
   { name: 'purchase', limit: 10, windowMs: 60_000, match: (m, p) => m === 'POST' && (p === '/me/purchases' || p === '/me/tokens' || p === '/me/oauth-apps') },
+  // обращения в поддержку и запросы органов: пишет и гость — без лимита это спам очереди
+  { name: 'tickets', limit: 5, windowMs: 10 * 60_000, match: (m, p) => m === 'POST' && (p === '/support/tickets' || /^\/me\/tickets\/[^/]+\/messages$/.test(p)) },
   // публичный API по персональному токену
   { name: 'public-api', limit: 120, windowMs: 60_000, match: (_m, p) => p.startsWith('/v1/') },
   // всё остальное
