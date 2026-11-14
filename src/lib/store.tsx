@@ -703,6 +703,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             tags: article.tags,
             langs: article.language ? [article.language] : [],
             kind: video ? 'video' : 'text',
+            ...(article.noindex ? { noindex: true } : {}),
             videos: clip
               ? [
                   {

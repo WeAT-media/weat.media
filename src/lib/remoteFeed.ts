@@ -28,6 +28,7 @@ interface FeedItem {
     source?: { url?: string; site?: string; author?: string; publishedAt?: string }
     kind?: string
     videos?: RecordVideo[]
+    noindex?: boolean
   }
 }
 
@@ -142,6 +143,7 @@ export function toArticle(i: FeedItem): Article | null {
     comments: [],
     atUri: i.uri,
     fromIndex: true,
+    ...(r.noindex ? { noindex: true } : {}),
     ...(r.kind === 'video' || videos.length
       ? {
           kind: 'video' as const,

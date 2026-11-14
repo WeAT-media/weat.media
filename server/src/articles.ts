@@ -40,6 +40,8 @@ export const PublishArticleBody = z
     langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),
     kind: z.enum(['text', 'video']).default('text'),
     videos: z.array(ArticleVideo).max(10).default([]),
+    /** не индексировать поисковиками: страница статьи отдаёт robots noindex */
+    noindex: z.boolean().optional(),
   })
   .refine((b) => b.kind === 'text' || b.videos.length > 0, 'у видео-записи нужен хотя бы один ролик')
   .refine((b) => b.kind === 'video' || b.text.trim().length > 0, 'text: напишите хотя бы абзац')
@@ -56,6 +58,7 @@ export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new D
     tags: b.tags,
     ...(b.langs.length ? { langs: b.langs } : {}),
     ...(b.kind === 'video' ? { kind: 'video', videos: b.videos } : {}),
+    ...(b.noindex ? { noindex: true } : {}),
     createdAt: now.toISOString(),
   }
 }

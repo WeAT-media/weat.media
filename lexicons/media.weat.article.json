@@ -24,6 +24,10 @@
             "maxLength": 3000,
             "maxGraphemes": 300
           },
+          "noindex": {
+            "type": "boolean",
+            "description": "Автор просит поисковики не индексировать статью (robots: noindex). Статья остаётся в ленте и по ссылке"
+          },
           "text": {
             "type": "string",
             "maxLength": 200000,

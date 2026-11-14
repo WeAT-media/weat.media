@@ -24,7 +24,7 @@ export function plainExcerpt(md: string, max = 200): string {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t
 }
 
-export function sharePage(o: { siteName: string; siteUrl: string; url: string; title: string; description: string; author?: string; image: string; publishedAt?: string }): string {
+export function sharePage(o: { siteName: string; siteUrl: string; url: string; title: string; description: string; author?: string; image: string; publishedAt?: string; noindex?: boolean }): string {
   const title = esc(o.title)
   const desc = esc(o.description)
   return `<!doctype html>
@@ -32,6 +32,7 @@ export function sharePage(o: { siteName: string; siteUrl: string; url: string; t
 <meta charset="utf-8">
 <title>${title} — ${esc(o.siteName)}</title>
 <meta name="description" content="${desc}">
+${o.noindex ? '<meta name="robots" content="noindex">\n' : ''}
 <link rel="canonical" href="${esc(o.url)}">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="${esc(o.siteName)}">
@@ -64,13 +65,13 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     if (!SHORT_ID.test(id) || !d.feedUrl) return fallback()
     const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ short: id })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
     if (!res?.ok) return fallback()
-    const a = (await res.json()) as { uri?: string; handle?: string | null; created_at?: string; record?: { title?: string; subtitle?: string; excerpt?: string; text?: string } }
+    const a = (await res.json()) as { uri?: string; handle?: string | null; created_at?: string; record?: { title?: string; subtitle?: string; excerpt?: string; text?: string; noindex?: boolean } }
     // РФ-контур: закрытая запись — без заголовка и текста, общая карточка
     if (a.uri && d.restricted?.enabled && (await d.restricted.blocked([a.uri])).has(a.uri)) return fallback()
     const r = a.record ?? {}
     const title = (r.title ?? '').trim() || siteName
     const description = (r.subtitle ?? '').trim() || (r.excerpt ?? '').trim() || plainExcerpt(r.text ?? '') || siteName
     c.header('cache-control', 'public, max-age=300')
-    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: title.slice(0, 200), description: description.slice(0, 300), author: a.handle ? `@${a.handle}` : undefined, image, publishedAt: a.created_at }))
+    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: title.slice(0, 200), description: description.slice(0, 300), author: a.handle ? `@${a.handle}` : undefined, image, publishedAt: a.created_at, noindex: r.noindex === true }))
   })
 }

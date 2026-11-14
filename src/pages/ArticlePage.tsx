@@ -166,6 +166,14 @@ export default function ArticlePage() {
   const paidBlocks = paid && paid.id === privateId ? paid.blocks : null
   const article = loaded && paidBlocks ? { ...loaded, blocks: paidBlocks } : loaded
   const liveLabels = useLiveLabels(article?.atUri)
+  // автор закрыл статью от поисковиков: <meta name="robots" content="noindex"> на время показа страницы
+  const noindex = !!article?.noindex
+  useEffect(() => {
+    if (!noindex) return
+    const tag = Object.assign(document.createElement('meta'), { name: 'robots', content: 'noindex' })
+    document.head.appendChild(tag)
+    return () => tag.remove()
+  }, [noindex])
   const bodyLoading = !!article?.bodyPending
   // тред статьи из индекса: комментарии всех читателей, не только свои
   const [thread, setThread] = useState<{ uri: string; comments: Comment[] } | null>(null)

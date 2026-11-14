@@ -275,6 +275,7 @@ export default function ComposePage() {
   const [previewEnd, setPreviewEnd] = useState('30')
   const [step, setStep] = useState<1 | 2>(1)
   const [collectionId, setCollectionId] = useState('')
+  const [noindex, setNoindex] = useState(false)
   const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now')
   const [publishAtInput, setPublishAtInput] = useState('')
   // min для datetime-local вычисляется один раз при монтировании шага
@@ -314,6 +315,7 @@ export default function ComposePage() {
       comments: [],
       kind,
       collectionId: collectionId || undefined,
+      noindex: noindex || undefined,
       publishAt:
         scheduleMode === 'later' && publishAtInput ? new Date(publishAtInput).toISOString() : undefined,
       videoUrl: kind === 'video' && videoMode === 'link' ? videoUrl : undefined,
@@ -339,7 +341,7 @@ export default function ComposePage() {
         return { price: Number(price) || 0, currency, period, accessType }
       })(),
     }),
-    [title, subtitle, tags, language, fullText, kind, collectionId, scheduleMode, publishAtInput, videoMode, videoUrl, videoDesc, videoPreview, isPaid, accessType, tierId, tiers, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, user],
+    [title, subtitle, tags, language, fullText, kind, collectionId, noindex, scheduleMode, publishAtInput, videoMode, videoUrl, videoDesc, videoPreview, isPaid, accessType, tierId, tiers, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, user],
   )
 
 
@@ -1097,6 +1099,16 @@ export default function ComposePage() {
                 </div>
               )}
             </div>
+
+            <label className="flex items-start gap-2.5 text-sm">
+              <input type="checkbox" checked={noindex} onChange={(e) => setNoindex(e.target.checked)} className="mt-0.5" />
+              <span>
+                Не индексировать поисковиками
+                <span className="meta mt-0.5 block !normal-case tracking-normal">
+                  статья останется в ленте и по ссылке, но Google и Яндекс не покажут её в поиске (robots: noindex)
+                </span>
+              </span>
+            </label>
 
             <div className="rule pt-6">
               <p className="meta mb-3">Предпросмотр всей статьи</p>

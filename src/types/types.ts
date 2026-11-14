@@ -138,6 +138,8 @@ export interface Article {
   paywall?: Paywall
   source?: SourceRef
   collectionId?: string
+  /** автор попросил поисковики не индексировать статью (robots noindex) */
+  noindex?: boolean
   geoBlock?: GeoBlock
   /** пришла из индекса ленты (настоящая запись PDS), а не из демо-данных */
   fromIndex?: boolean

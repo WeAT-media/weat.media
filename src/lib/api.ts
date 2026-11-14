@@ -317,6 +317,7 @@ export const articles = {
     langs: string[]
     kind: 'text' | 'video'
     videos: RecordVideo[]
+    noindex?: boolean
   }) => authed<{ uri: string; cid: string }>('/me/articles', post(b)),
 }
 

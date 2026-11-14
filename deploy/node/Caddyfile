@@ -98,6 +98,10 @@
 	import edge_limits
 	encode zstd gzip
 
+	# служебные страницы не индексировать, даже если на них где-то есть ссылка (robots.txt — только просьба не обходить)
+	@noindex path /admin /admin/* /api/* /crawler-api/* /analytics-api/* /settings /settings/* /profile/*/settings* /login /login/* /auth/* /compose /shared-draft/* /ads/dashboard /support/tickets /purchase/*
+	header @noindex X-Robots-Tag "noindex, nofollow"
+
 	# какой контур ответил — для отладки GeoDNS и мониторинга
 	header X-Indie-Contour {$CONTOUR}
 

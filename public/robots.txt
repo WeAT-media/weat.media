@@ -1,0 +1,19 @@
+# weAT.media — что не нужно поисковикам: служебные страницы, настройки, вход и черновики.
+# Статьи и профили открыты; автор может закрыть свою статью от индекса в её настройках (noindex).
+User-agent: *
+Disallow: /admin
+Disallow: /api/
+Disallow: /crawler-api/
+Disallow: /analytics-api/
+Disallow: /settings
+Disallow: /profile/*/settings
+Disallow: /login
+Disallow: /auth/
+Disallow: /compose
+Disallow: /shared-draft/
+Disallow: /ads/dashboard
+Disallow: /support/tickets
+Disallow: /purchase/
+Allow: /
+
+Host: https://weat.media
