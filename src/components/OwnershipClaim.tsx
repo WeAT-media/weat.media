@@ -17,6 +17,7 @@ export default function OwnershipClaim({ article }: { article: Article }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [moved, setMoved] = useState<number | null>(null)
   const site = article.source?.label ?? 'сайте-источнике'
   const logged = hasSession()
 
@@ -97,6 +98,37 @@ export default function OwnershipClaim({ article }: { article: Article }) {
             )}
           </div>
         </>
+      )}
+      {claim.status === 'approved' && (
+        <div className="mt-2">
+          <p className="text-muted-foreground">Авторство подтверждено. Заберите статьи — они перейдут в ваш аккаунт со ссылкой на оригинал.</p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true)
+              setError('')
+              try {
+                const r = await claims.transfer(claim.id)
+                setClaim({ ...claim, status: 'transferred' })
+                setMoved(r.moved)
+              } catch (err) {
+                setError(err instanceof Error ? err.message : 'Не удалось перенести')
+              } finally {
+                setBusy(false)
+              }
+            }}
+            className="btn-primary mt-2 !px-3 !py-1.5 !text-[11px]"
+          >
+            <BadgeCheck size={12} aria-hidden="true" /> {busy ? 'Переносим…' : 'Забрать статьи'}
+          </button>
+          {error && <p role="alert" className="mt-1 text-xs text-destructive">{error}</p>}
+        </div>
+      )}
+      {claim.status === 'transferred' && (
+        <p className="mt-1 text-muted-foreground">
+          {moved !== null ? `Перенесено статей: ${moved}. ` : ''}Статьи — в вашем профиле, старые адреса открывают их.
+        </p>
       )}
       {claim.status === 'rejected' && claim.decisionNote && <p className="mt-1 text-muted-foreground">Причина: {claim.decisionNote}</p>}
     </div>

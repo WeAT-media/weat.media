@@ -39,6 +39,10 @@ export interface ClaimRepo {
   list(status: ClaimStatus | null, limit: number): Promise<ClaimRow[]>
   /** переход только из pending */
   decide(id: string, status: 'approved' | 'rejected', by: string, note: string | null): Promise<ClaimRow | undefined>
+  /** перенос выполнен: approved → transferred и соответствия старых записей новым */
+  transferred(id: string, moves: { oldUri: string; newUri: string }[]): Promise<void>
+  /** из этих uri — перенесённые автору: old → new */
+  movedTo(uris: string[]): Promise<Map<string, string>>
 }
 
 export function claimRepo(sql: Sql): ClaimRepo {
@@ -67,6 +71,19 @@ export function claimRepo(sql: Sql): ClaimRepo {
         UPDATE ownership_claims SET status = ${status}, decided_by = ${by}, decision_note = ${note}, decided_at = now()
         WHERE id = ${id} AND status = 'pending' RETURNING *`
       return r
+    },
+    async transferred(id, moves) {
+      await sql.begin(async (tx) => {
+        for (const m of moves) {
+          await tx`INSERT INTO claim_transfers (old_uri, new_uri, claim_id) VALUES (${m.oldUri}, ${m.newUri}, ${id}) ON CONFLICT (old_uri) DO NOTHING`
+        }
+        await tx`UPDATE ownership_claims SET status = 'transferred' WHERE id = ${id} AND status = 'approved'`
+      })
+    },
+    async movedTo(uris) {
+      if (!uris.length) return new Map()
+      const rows = await sql<{ old_uri: string; new_uri: string }[]>`SELECT old_uri, new_uri FROM claim_transfers WHERE old_uri = ANY(${uris})`
+      return new Map(rows.map((r) => [r.old_uri, r.new_uri]))
     },
   }
 }
@@ -158,6 +175,41 @@ export function mountClaimRoutes(
       throw fail('AlreadyClaimed', 'На этого автора уже подана заявка. Если это вы — напишите в поддержку.', 409)
     }
     return c.json(dto(claim), 201)
+  })
+
+  /**
+   * Перенос по одобренной заявке — сессией самого автора: статьи краулера этого автора (или одна статья)
+   * копируются в его репозиторий с ссылкой на оригинал; у краулера они скрываются из ленты,
+   * а старый адрес открывает копию. Комментарии и лайки остаются у старой записи — их адреса в сети неизменны.
+   */
+  app.post('/me/claims/:id/transfer', async (c) => {
+    const user = await me(c)
+    const token = h.bearer(c)!
+    const claim = await d.claims.get(c.req.param('id'))
+    if (!claim || claim.claimant_did !== user.did) throw fail('NotFound', 'Заявка не найдена', 404)
+    if (claim.status !== 'approved') throw fail('NotApproved', claim.status === 'transferred' ? 'Статьи уже перенесены' : 'Заявка ещё не одобрена', 409)
+    const single = claim.source_author.startsWith('article:')
+    const picked: { uri: string; value: Record<string, unknown> }[] = []
+    let cursor: string | undefined
+    for (let i = 0; i < 20; i++) {
+      const page = await d.pds.listRecords(claim.crawler_did, ARTICLE_COLLECTION, 100, cursor)
+      for (const r of page.records) {
+        const src = r.value.source as { site?: string; author?: string } | undefined
+        const mine = single ? r.uri === claim.article_uri : src?.site === claim.source_site && src?.author?.trim().toLowerCase() === claim.source_author.toLowerCase()
+        if (mine) picked.push(r)
+      }
+      cursor = page.cursor
+      if (!cursor || !page.records.length) break
+    }
+    const already = await d.claims.movedTo(picked.map((p) => p.uri))
+    const moves: { oldUri: string; newUri: string }[] = []
+    for (const r of picked) {
+      if (already.has(r.uri)) continue
+      const { uri } = await d.pds.createRecord(token, user.did, ARTICLE_COLLECTION, { ...r.value, $type: ARTICLE_COLLECTION, claimedFrom: r.uri })
+      moves.push({ oldUri: r.uri, newUri: uri })
+    }
+    await d.claims.transferred(claim.id, moves)
+    return c.json({ moved: moves.length, articles: moves })
   })
 
   app.get('/me/claims', async (c) => {

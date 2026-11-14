@@ -22,12 +22,17 @@ const PER_REPO = 50
 const MAX_REPOS = 500
 
 /** feedUrl — сервис ленты (services/feed); недоступен — временный обход PDS */
-export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; restricted?: RestrictedFilter }) {
+export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; restricted?: RestrictedFilter; moved?: (uris: string[]) => Promise<Map<string, string>> }) {
   /** РФ-контур: вырезать записи с метками nsfw/politics (restricted.ts) */
+  // и перенесённые автору статьи краулера (claims.ts): оригинал из ленты уходит, в ней — копия автора
   const strip = async <T extends { uri: string }>(items: T[]): Promise<T[]> => {
-    if (!d.restricted?.enabled || !items.length) return items
-    const blocked = await d.restricted.blocked(items.map((i) => i.uri))
-    return blocked.size ? items.filter((i) => !blocked.has(i.uri)) : items
+    if (!items.length) return items
+    const uris = items.map((i) => i.uri)
+    const [blocked, moved] = await Promise.all([
+      d.restricted?.enabled ? d.restricted.blocked(uris) : Promise.resolve(new Set<string>()),
+      d.moved ? d.moved(uris).catch(() => new Map<string, string>()) : Promise.resolve(new Map<string, string>()),
+    ])
+    return blocked.size || moved.size ? items.filter((i) => !blocked.has(i.uri) && !moved.has(i.uri)) : items
   }
   const stripBody = async (body: unknown) => {
     const b = body as { articles?: { uri: string }[] }
@@ -98,10 +103,13 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
   })
 
   app.get('/feed/article', async (c) => {
-    const uri = c.req.query('uri') ?? ''
+    let uri = c.req.query('uri') ?? ''
     if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/.test(uri)) {
       return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey' }, 400)
     }
+    // перенесённая автору статья краулера: по старому адресу — копия автора
+    const movedTo = d.moved ? (await d.moved([uri]).catch(() => new Map<string, string>())).get(uri) : undefined
+    if (movedTo) uri = movedTo
     if (await closed(uri)) return c.json(unavailable, 451)
     if (d.feedUrl) {
       const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ uri })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)

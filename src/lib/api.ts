@@ -464,6 +464,8 @@ export interface OwnershipClaim {
 export const claims = {
   create: (articleUri: string, note?: string) => authed<OwnershipClaim>('/me/claims', post({ articleUri, note })),
   mine: () => authed<OwnershipClaim[]>('/me/claims'),
+  /** одобренная заявка: статьи переходят в ваш репозиторий */
+  transfer: (id: string) => authed<{ moved: number; articles: { oldUri: string; newUri: string }[] }>(`/me/claims/${encodeURIComponent(id)}/transfer`, post({})),
 }
 
 export const api = {

@@ -38,6 +38,7 @@ const staffToken = (roles: string[], o: { iss?: string; aud?: string; exp?: stri
     .sign(zKeys.privateKey)
 function memClaims(): ClaimRepo {
   const rows: ClaimRow[] = []
+  const moves = new Map<string, string>()
   const active = (r: ClaimRow) => r.status !== 'rejected'
   return {
     async insert(c) {
@@ -54,6 +55,12 @@ function memClaims(): ClaimRepo {
       if (r) Object.assign(r, { status, decided_by: by, decision_note: note, decided_at: new Date() })
       return r
     },
+    async transferred(id, m) {
+      for (const x of m) moves.set(x.oldUri, x.newUri)
+      const r = rows.find((x) => x.id === id && x.status === 'approved')
+      if (r) r.status = 'transferred'
+    },
+    async movedTo(uris) { return new Map(uris.filter((u) => moves.has(u)).map((u) => [u, moves.get(u)!])) },
   }
 }
 
@@ -2152,6 +2159,17 @@ test('ownership claims: per source author, one claimant, code issued, support de
   assert.equal((await app.request(`/api/admin/claims/${c1.id}/approve`, { method: 'POST', headers: auth(support), body: '{}' })).status, 404, 'повторно не решить')
   assert.equal(auditLog.at(-1)!.action, 'claim.approve')
   assert.equal((await app.request('/api/admin/claims', { headers: auth(alice.accessJwt) })).status, 401, 'читатель не видит заявки')
+
+  // перенос — сессией автора: статьи этого автора у краулера копируются ему, оригинал ведёт на копию
+  assert.equal((await app.request(`/api/me/claims/${c1.id}/transfer`, { method: 'POST', headers: auth(bob.accessJwt) })).status, 404, 'чужую заявку не забрать')
+  assert.equal((await app.request(`/api/me/claims/${solo.id}/transfer`, { method: 'POST', headers: auth(bob.accessJwt) })).status, 409, 'не одобрена')
+  const tr = await (await app.request(`/api/me/claims/${c1.id}/transfer`, { method: 'POST', headers: auth(alice.accessJwt) })).json()
+  assert.equal(tr.moved, 1, 'только статьи ilya_bashkirov с habr.com')
+  assert.equal(tr.articles[0].oldUri, byIlya)
+  assert.ok(tr.articles[0].newUri.startsWith(`at://${alice.user.did}/`))
+  const copy = published.find((p) => p.repo === alice.user.did)!
+  assert.equal(copy.record.claimedFrom, byIlya)
+  assert.equal((await app.request(`/api/me/claims/${c1.id}/transfer`, { method: 'POST', headers: auth(alice.accessJwt) })).status, 409, 'повторно не переносится')
 })
 
 test('personal token: rotate keeps identity, old value dies; token can revoke itself', async () => {

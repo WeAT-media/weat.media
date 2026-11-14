@@ -120,6 +120,48 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Переезд: свой блог из ATmosphere и статьи, которые собрал краулер */}
+      <section className="mt-20" aria-labelledby="move-title">
+        <p className="meta">Переезд без потерь</p>
+        <h2 id="move-title" className="mt-3 max-w-[24ch] text-3xl font-extrabold tracking-tight md:text-4xl">
+          Переезжайте со своим блогом — тексты и читатели остаются с вами
+        </h2>
+        <div className="mt-8 grid gap-6 md:grid-cols-2">
+          <Reveal className="border border-border p-6 md:p-7">
+            <p className="meta text-accent">Из Bluesky и других приложений AT</p>
+            <h3 className="mt-3 text-xl font-extrabold tracking-tight">Импорт постов в черновики</h3>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+              Войдите своим AT-аккаунтом (bsky.social или собственный сервер) — аккаунт останется тем же. В настройках →
+              «Импорт постов» ваши посты станут черновиками: первый абзац — заголовок, ссылки и картинки на месте.
+              Ничего не публикуется само: вы просматриваете каждый пост, правите и выпускаете.
+            </p>
+            <Link to="/login" className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
+              Войти через AT-аккаунт <ArrowRight size={13} aria-hidden="true" />
+            </Link>
+          </Reveal>
+          <Reveal delay={0.12} className="border border-accent/50 bg-secondary/40 p-6 md:p-7">
+            <p className="meta text-accent">Ваши статьи уже здесь</p>
+            <h3 className="mt-3 text-xl font-extrabold tracking-tight">Заберите статьи у краулера</h3>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+              Краулер {SITE_NAME} собирает открытые публикации со ссылкой на источник и хранит их в служебном аккаунте
+              <span className="font-mono text-foreground"> crawler.weat.media</span>. Если статья ваша, права на неё
+              переходят к вам:
+            </p>
+            <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-[15px] leading-relaxed text-muted-foreground">
+              <li>
+                на странице статьи нажмите <b className="text-foreground">«Я автор оригинала»</b> — или напишите в{' '}
+                <Link to="/support/contact" className="text-accent underline underline-offset-4">поддержку</Link>;
+              </li>
+              <li>подтвердите, что это вы: разместите выданный код в своём профиле на исходном сайте;</li>
+              <li>после проверки нажмите «Забрать статьи» — они перейдут в ваш аккаунт со ссылкой на оригинал, а старые адреса откроют их у вас.</li>
+            </ol>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Подтвердили автора — к вам переходят все его статьи, которые собрал краулер, а не только одна.
+            </p>
+          </Reveal>
+        </div>
+      </section>
+
       {/* Преимущества */}
       <section className="mt-20" aria-label="Преимущества">
         <p className="meta">Почему так устроено</p>
