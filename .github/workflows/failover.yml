@@ -74,6 +74,16 @@ jobs:
           D: ${{ secrets.PAID_CONTENT_KEY }}
         run: echo "hash=$(printf '%s|%s|%s|%s' "$A" "$B" "$C" "$D" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
+      - name: Gcore API доступен (только чтение)
+        if: inputs.mode != 'fence-ru1'
+        env:
+          TOKEN: ${{ secrets.GCORE_API_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || { echo "❌ нет секрета GCORE_API_TOKEN" | tee -a "$GITHUB_STEP_SUMMARY" >&2; exit 1; }
+          n=$(curl -fsS -m 30 -H "Authorization: APIKey $TOKEN" "https://api.gcore.com/dns/v2/zones/weat.media/rrsets?all=true&limit=1000" \
+            | jq --arg a "$RU1_IP" '[.rrsets[] | select(.type == "A") | select([.resource_records[].content[]] | index($a))] | length')
+          echo "✅ Gcore DNS: записей с RU-1, которые переедут: $n" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Не переключаем живой узел
         if: inputs.mode == 'failover' && steps.probe.outputs.alive == 'true' && !inputs.force
         run: |
