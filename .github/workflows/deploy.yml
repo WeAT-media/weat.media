@@ -260,8 +260,9 @@ jobs:
           if grep -q '^COMPOSE_PROFILES=.*labeler' .env; then
             compose pull --quiet labeler
             if compose ps --services --status running | grep -qx postgres; then
-              compose exec -T postgres psql -U indie -d indie -tAc "SELECT 1 FROM pg_database WHERE datname='labeler'" | grep -q 1 \
-                || compose exec -T postgres psql -U indie -d indie -qc 'CREATE DATABASE labeler OWNER indie'
+              # </dev/null: иначе exec съест остаток этого скрипта со stdin (bash -s) и up не выполнится
+              compose exec -T postgres psql -U indie -d indie -tAc "SELECT 1 FROM pg_database WHERE datname='labeler'" </dev/null | grep -q 1 \
+                || compose exec -T postgres psql -U indie -d indie -qc 'CREATE DATABASE labeler OWNER indie' </dev/null
             fi
           fi
           compose up -d --remove-orphans
