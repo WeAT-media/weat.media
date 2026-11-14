@@ -24,9 +24,11 @@ export function createQueues(redisUrl: string) {
       const existing = await article.getJob(jobId)
       if (existing) {
         const state = await existing.getState()
-        if (state === 'failed') return existing.retry('failed')
-        if (state === 'completed') await existing.remove()
-        else return // уже в очереди или выполняется — идемпотентно
+        // без новой отсрочки упавшую — повторить; иначе пересоздаём: отсрочку задаёт «Написал автору»,
+        // а задача без очереди (unknown) или отложенная по старой логике не должна молча мешать
+        if (state === 'failed' && !delayMs) return existing.retry('failed')
+        if (state === 'active' || (state === 'waiting' && !delayMs)) return // уже выполняется / ждёт — идемпотентно
+        await existing.remove()
       }
       await article.add(
         'article',
