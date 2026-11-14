@@ -327,7 +327,7 @@ export default function ProfilePage() {
       <div
         role="tablist"
         aria-label="Разделы профиля"
-        className="mt-10 inline-flex rounded-full border border-border bg-secondary/60 p-1"
+        className="mt-10 inline-flex max-w-full overflow-x-auto rounded-full border border-border bg-secondary/60 p-1 [scrollbar-width:none]"
       >
         {(
           [
@@ -344,7 +344,7 @@ export default function ProfilePage() {
             role="tab"
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`cursor-pointer rounded-full px-4 py-1.5 font-mono text-[12px] font-semibold uppercase tracking-[0.05em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            className={`shrink-0 cursor-pointer whitespace-nowrap rounded-full px-4 py-1.5 font-mono text-[12px] font-semibold uppercase tracking-[0.05em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               tab === t.key ? 'bg-primary text-primary-foreground' : 'text-foreground hover:text-accent'
             }`}
           >

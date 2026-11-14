@@ -543,3 +543,21 @@ embed-card-edit-modal {
   inset: 0;
   z-index: 1000;
 }
+
+/* Мобильные (iPhone 15 Pro — 393 px): элементы grid/flex по умолчанию не сжимаются уже своего самого
+   широкого содержимого (код, handle, длинная ссылка) — страница уезжала вбок. Разрешаем сжиматься,
+   длинные слова переносим, код и таблицы прокручиваются внутри себя. */
+.grid > * {
+  min-width: 0;
+}
+body {
+  overflow-wrap: break-word;
+}
+main pre,
+main table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.meta {
+  overflow-wrap: anywhere;
+}

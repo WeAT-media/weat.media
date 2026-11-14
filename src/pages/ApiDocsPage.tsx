@@ -364,7 +364,7 @@ export default function ApiDocsPage() {
       {!spec && !error && <p className="meta mt-10" role="status">загружаем спецификацию…</p>}
 
       {spec && (
-        <div className="mt-10 grid gap-10 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="mt-10 grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[220px_minmax(0,1fr)]">
           <nav aria-label="Разделы API" className="lg:sticky lg:top-24 lg:self-start">
             <input
               value={query}

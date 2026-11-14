@@ -518,7 +518,7 @@ export default function ArticlePage() {
           )}
           {article.source && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-border bg-secondary/40 p-4">
-              <p className="meta inline-flex items-center gap-1.5">
+              <p className="meta inline-flex min-w-0 flex-wrap items-center gap-1.5">
                 <Rss size={11} aria-hidden="true" /> Импортировано с{' '}
                 <a href={safeHref(article.source.url)} target="_blank" rel="noreferrer" className="text-accent underline-offset-4 hover:underline">
                   {article.source.label}
