@@ -123,6 +123,21 @@ services:
       - pds-backup-cache:/cache
     profiles: ["primary"]
 
+  # Сторож соседних узлов (профиль watchdog, включён на NL-1): тревога почтой и в Telegram, без переключения
+  watchdog:
+    build: ../watchdog
+    restart: unless-stopped
+    environment:
+      WATCH_FROM: ${WATCH_FROM:-node}
+      WATCH_TARGETS: ${WATCH_TARGETS:-ru-1=192.144.59.201}
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      ALERT_TELEGRAM_TOKEN: ${ALERT_TELEGRAM_TOKEN:-}
+      ALERT_TELEGRAM_CHAT: ${ALERT_TELEGRAM_CHAT:-}
+      SMTP_URL: smtps://${MAIL_HOST:-mail.weat.media}:465
+      SMTP_USER: noreply@weat.media
+      SMTP_PASSWORD: ${MAILBOX_NOREPLY_PASSWORD:-}
+    profiles: ["watchdog"]
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped

@@ -1,0 +1,249 @@
+# Переключение контура RU на резерв (RU-1 → RU-2). Запускает человек — по тревоге сторожа (deploy/watchdog).
+#
+#   mode=check      ничего не меняет: жив ли RU-1, готов ли RU-2 (ключи совпадают, репликация, свежесть снимка PDS)
+#   mode=failover   RU-1 огородить (если доступен) → RU-2 основной (Postgres promote, PDS из снимка) → DNS на RU-2
+#   mode=fence-ru1  RU-1 вернулся после переключения: сделать его standby, чтобы не было двух основных
+#
+# Роль после переключения пишется на узел в deploy/node/.env.override — обычный деплой её не затрёт.
+# Переменные окружений в GitHub (NODE_ROLE и др.) после этого поменяйте руками, как подскажет итог.
+#
+# Секреты: окружений RU-1/RU-2 — как у deploy.yml; репозитория — GCORE_API_TOKEN (DNS, только failover).
+name: Failover RU
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Режим
+        type: choice
+        options: [check, failover, fence-ru1]
+        default: check
+      confirm:
+        description: Для failover впишите RU-2
+        type: string
+        default: ''
+      force:
+        description: Переключать, даже если RU-1 отвечает (только если он отвечает, но сломан)
+        type: boolean
+        default: false
+
+concurrency:
+  group: failover-ru
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  RU1_IP: 192.144.59.201
+  RU2_IP: 84.201.172.224
+  HOST_NAME: weat.media
+
+jobs:
+  ru1:
+    name: RU-1 · состояние и ограждение
+    runs-on: ubuntu-latest
+    environment: Production (RU-1)
+    outputs:
+      alive: ${{ steps.probe.outputs.alive }}
+      keys: ${{ steps.keys.outputs.hash }}
+    steps:
+      - name: Проверка ввода
+        if: inputs.mode == 'failover' && inputs.confirm != 'RU-2'
+        run: |
+          echo "Для failover впишите confirm=RU-2" >&2
+          exit 1
+
+      - name: Жив ли RU-1 (снаружи, мимо GeoDNS)
+        id: probe
+        run: |
+          alive=false
+          for i in 1 2 3; do
+            if curl -fsS -m 10 -o /dev/null --resolve "$HOST_NAME:443:$RU1_IP" "https://$HOST_NAME/api/health"; then alive=true; break; fi
+            sleep 5
+          done
+          echo "alive=$alive" >> "$GITHUB_OUTPUT"
+          echo "RU-1 /api/health: $alive" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Отпечаток ключей (сравнение с RU-2, сами ключи не выводятся)
+        id: keys
+        env:
+          A: ${{ secrets.SECRETS_KEY }}
+          B: ${{ secrets.PDS_JWT_SECRET }}
+          C: ${{ secrets.PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX }}
+          D: ${{ secrets.PAID_CONTENT_KEY }}
+        run: echo "hash=$(printf '%s|%s|%s|%s' "$A" "$B" "$C" "$D" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Не переключаем живой узел
+        if: inputs.mode == 'failover' && steps.probe.outputs.alive == 'true' && !inputs.force
+        run: |
+          echo "RU-1 отвечает — переключение отменено. Если он отвечает, но сломан: force=true." >&2
+          exit 1
+
+      - name: SSH
+        if: inputs.mode != 'check'
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy
+
+      - name: Огородить RU-1 (standby, PDS и копии остановлены)
+        if: inputs.mode != 'check'
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          # failover: RU-1 может быть недоступен — это нормально, тогда огородим позже (fence-ru1)
+          if ssh -i ~/.ssh/deploy -o BatchMode=yes -o ConnectTimeout=15 "root@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/weat/deploy/node
+          printf 'NODE_ROLE=standby\nCOMPOSE_PROFILES=selfhosted-db\n' > .env.override && chmod 600 .env.override
+          awk -F= 'NR==FNR{o[$1]=1;next} !($1 in o)' .env.override .env > .env.tmp
+          cat .env.override >> .env.tmp && chmod 600 .env.tmp && mv .env.tmp .env
+          compose() { docker compose --env-file .env --env-file .env.images "$@"; }
+          compose stop pds-backup pds </dev/null || true
+          compose rm -f pds-backup </dev/null || true
+          compose up -d --no-deps appview edge </dev/null
+          compose ps --format '{{.Service}}: {{.Status}}' </dev/null
+          REMOTE
+          then echo "RU-1 огорожен: standby, PDS остановлен" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ inputs.mode }}" = fence-ru1 ]; then echo "RU-1 недоступен по SSH" >&2; exit 1
+          else echo "⚠️ RU-1 недоступен по SSH — когда вернётся, запустите mode=fence-ru1" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  ru2:
+    name: RU-2 · готовность и переключение
+    needs: ru1
+    if: inputs.mode != 'fence-ru1'
+    runs-on: ubuntu-latest
+    environment: Production (RU-2)
+    steps:
+      - name: Ключи совпадают с RU-1
+        env:
+          A: ${{ secrets.SECRETS_KEY }}
+          B: ${{ secrets.PDS_JWT_SECRET }}
+          C: ${{ secrets.PDS_PLC_ROTATION_KEY_K256_PRIVATE_KEY_HEX }}
+          D: ${{ secrets.PAID_CONTENT_KEY }}
+          RU1: ${{ needs.ru1.outputs.keys }}
+        run: |
+          mine=$(printf '%s|%s|%s|%s' "$A" "$B" "$C" "$D" | sha256sum | cut -c1-16)
+          if [ "$mine" != "$RU1" ]; then
+            echo "❌ SECRETS_KEY / PDS_JWT_SECRET / PDS_PLC_ROTATION_KEY / PAID_CONTENT_KEY у RU-2 не такие, как у RU-1 — после переключения не расшифруются аккаунты и не подпишутся записи" | tee -a "$GITHUB_STEP_SUMMARY" >&2
+            exit 1
+          fi
+          echo "✅ ключи RU-2 совпадают с RU-1" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > ~/.ssh/deploy
+          printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy
+
+      - name: Состояние резерва
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'bash -s' <<'REMOTE' | tee -a "$GITHUB_STEP_SUMMARY"
+          set -uo pipefail
+          cd /opt/weat/deploy/node
+          compose() { docker compose --env-file .env --env-file .env.images "$@"; }
+          echo '```'
+          echo "роль: $(grep '^NODE_ROLE=' .env | cut -d= -f2)"
+          compose exec -T postgres psql -U indie -d indie -XAtc \
+            "SELECT 'подписка ' || subname || ': ' || CASE WHEN pid IS NULL THEN 'НЕ РАБОТАЕТ' ELSE 'работает, отставание ' || COALESCE(date_trunc('second', now() - latest_end_time)::text, '?') END FROM pg_stat_subscription" </dev/null
+          echo "последний снимок PDS:"
+          compose run --rm -T pds-backup snapshots </dev/null 2>&1 | tail -3
+          echo '```'
+          REMOTE
+
+      - name: Переключить RU-2 в основной
+        if: inputs.mode == 'failover'
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/weat/deploy/node
+          compose() { docker compose --env-file .env --env-file .env.images "$@"; }
+          psql_() { compose exec -T postgres psql -U indie -d indie -X -v ON_ERROR_STOP=1 "$@" </dev/null; }
+          # 1. Postgres: отвязать подписки от RU-1 (слот на мёртвом узле не удалить) и выровнять счётчики
+          for sub in $(psql_ -Atc "SELECT subname FROM pg_subscription"); do
+            psql_ -qc "ALTER SUBSCRIPTION $sub DISABLE"
+            psql_ -qc "ALTER SUBSCRIPTION $sub SET (slot_name = NONE)"
+            psql_ -qc "DROP SUBSCRIPTION $sub"
+            echo "подписка $sub снята"
+          done
+          psql_ -qc "DO \$\$ DECLARE r record; BEGIN
+            FOR r IN
+              SELECT s.relname AS seq, t.relname AS tbl, a.attname AS col
+              FROM pg_class s
+              JOIN pg_depend d ON d.objid = s.oid AND d.deptype IN ('a', 'i')
+              JOIN pg_class t ON t.oid = d.refobjid
+              JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+              WHERE s.relkind = 'S'
+            LOOP
+              EXECUTE format('SELECT setval(%L, COALESCE((SELECT max(%I) FROM %I), 0) + 1000, false)', r.seq, r.col, r.tbl);
+            END LOOP; END \$\$;"
+          echo "счётчики выровнены"
+          # 2. PDS: последний снимок из S3
+          compose stop pds </dev/null
+          compose run --rm -T -e FORCE=1 pds-backup restore </dev/null
+          # 3. роль узла — поверх переменных GitHub, чтобы следующий деплой её не вернул
+          printf 'NODE_ROLE=primary\nCOMPOSE_PROFILES=selfhosted-db,primary\nSITE_DOMAINS=weat.media ru.weat.media ru-2.weat.media\n' > .env.override
+          chmod 600 .env.override
+          awk -F= 'NR==FNR{o[$1]=1;next} !($1 in o)' .env.override .env > .env.tmp
+          cat .env.override >> .env.tmp && chmod 600 .env.tmp && mv .env.tmp .env
+          compose up -d </dev/null
+          compose ps --format '{{.Service}}: {{.Status}}' </dev/null
+          REMOTE
+
+      - name: RU-2 отвечает как основной
+        if: inputs.mode == 'failover'
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS -m 10 -o /dev/null --resolve "$HOST_NAME:443:$RU2_IP" "https://$HOST_NAME/api/health"; then
+              echo "✅ RU-2 отвечает" >> "$GITHUB_STEP_SUMMARY"; exit 0
+            fi
+            sleep 10
+          done
+          echo "❌ RU-2 не отвечает после переключения — DNS не трогаем" | tee -a "$GITHUB_STEP_SUMMARY" >&2
+          exit 1
+
+  dns:
+    name: DNS · RU на RU-2
+    needs: ru2
+    if: inputs.mode == 'failover'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gcore — адрес RU-1 заменить на RU-2
+        env:
+          TOKEN: ${{ secrets.GCORE_API_TOKEN }}
+          ZONE: weat.media
+          # почта RU и прямое имя RU-1 остаются на RU-1
+          KEEP: mail-ru.weat.media ru-1.weat.media
+        run: |
+          set -euo pipefail
+          [ -n "$TOKEN" ] || { echo "Нет секрета GCORE_API_TOKEN — смените DNS в портале Gcore: $RU1_IP → $RU2_IP" | tee -a "$GITHUB_STEP_SUMMARY" >&2; exit 1; }
+          api() { curl -fsS -m 30 -H "Authorization: APIKey $TOKEN" -H 'content-type: application/json' "$@"; }
+          api "https://api.gcore.com/dns/v2/zones/$ZONE/rrsets?all=true&limit=1000" > rrsets.json
+          changed=0
+          while IFS= read -r rr; do
+            name=$(jq -r .name <<<"$rr"); type=$(jq -r .type <<<"$rr")
+            case " $KEEP " in *" ${name%.} "*) echo "пропуск $name"; continue ;; esac
+            body=$(jq --arg a "$RU1_IP" --arg b "$RU2_IP" '{ttl, meta, pickers, resource_records: [.resource_records[] | {content: [.content[] | if . == $a then $b else . end], meta, enabled} | with_entries(select(.value != null))]} | with_entries(select(.value != null))' <<<"$rr")
+            api -X PUT "https://api.gcore.com/dns/v2/zones/$ZONE/${name%.}/$type" -d "$body" >/dev/null
+            echo "✅ $name $type → $RU2_IP" | tee -a "$GITHUB_STEP_SUMMARY"
+            changed=$((changed + 1))
+          done < <(jq -c --arg a "$RU1_IP" '.rrsets[] | select(.type == "A") | select([.resource_records[].content[]] | index($a))' rrsets.json)
+          rm -f rrsets.json
+          echo "изменено записей: $changed (TTL 120 с — пользователи переедут за 2–5 мин)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Что поменять руками
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ### Переменные окружений GitHub (роль на узлах уже стоит через .env.override)
+          - Production (RU-2): `NODE_ROLE=primary`, `COMPOSE_PROFILES=selfhosted-db,primary`, `SITE_DOMAINS=weat.media ru.weat.media ru-2.weat.media`
+          - Production (RU-1): `NODE_ROLE=standby`, `COMPOSE_PROFILES=selfhosted-db`
+          - RU-1 вернулся → `mode=fence-ru1`, затем пересоздать его как реплику RU-2
+          EOF

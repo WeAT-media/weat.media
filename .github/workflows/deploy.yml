@@ -145,6 +145,12 @@ jobs:
           PEER_CONTOUR_URL: ${{ vars.PEER_CONTOUR_URL }}
           # краулер на отдельном VPS (deploy/crawler): edge проксирует /crawler-api/* из админки
           CRAWLER_API_URL: ${{ vars.CRAWLER_API_URL }}
+          # сторож (профиль watchdog): что проверять и куда слать тревогу
+          WATCH_FROM: ${{ vars.WATCH_FROM }}
+          WATCH_TARGETS: ${{ vars.WATCH_TARGETS }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          ALERT_TELEGRAM_CHAT: ${{ vars.ALERT_TELEGRAM_CHAT }}
+          ALERT_TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FEED_DATABASE_URL: ${{ secrets.FEED_DATABASE_URL }}
@@ -195,7 +201,7 @@ jobs:
           # пустое — строку не пишем: необязательное остаётся «не задано»
           line() { [ -n "${!1:-}" ] && printf '%s=%s\n' "$1" "${!1}" || true; }
           {
-            for k in CONTOUR NODE_ROLE COMPOSE_PROFILES SITE_DOMAINS PDS_HOST PEER_CONTOUR_URL CRAWLER_API_URL ACME_EMAIL ACME_DNS_USERNAME ACME_DNS_PASSWORD ACME_DNS_SUBDOMAIN \
+            for k in CONTOUR NODE_ROLE COMPOSE_PROFILES SITE_DOMAINS PDS_HOST PEER_CONTOUR_URL CRAWLER_API_URL WATCH_FROM WATCH_TARGETS ALERT_EMAIL ALERT_TELEGRAM_CHAT ALERT_TELEGRAM_TOKEN ACME_EMAIL ACME_DNS_USERNAME ACME_DNS_PASSWORD ACME_DNS_SUBDOMAIN \
                      PG_PASSWORD DATABASE_URL FEED_DATABASE_URL ANALYTICS_DATABASE_URL REPLICATION_PRIMARY_DSN SUPABASE_DSN REPLICATION_PASSWORD PG_BIND PG_BIND6 ZITADEL_ISSUER ZITADEL_PROJECT_ID LABELER_ADMIN_TOKEN LABELER_DIDS MAILBOX_SUPPORT_PASSWORD MAILBOX_LEGAL_PASSWORD MAILBOX_NOREPLY_PASSWORD \
                      SECRETS_KEY ADMIN_TOKEN PAID_CONTENT_KEY PDS_ADMIN_PASSWORD ANALYTICS_VISITOR_SECRET \
                      LAVA_API_KEY LAVA_OFFER_ID LAVA_WEBHOOK_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
@@ -224,7 +230,8 @@ jobs:
           scp -q -i ~/.ssh/deploy -o BatchMode=yes node.env.pds "root@$HOST:/opt/weat/deploy/node/.env.pds.new"
           scp -q -i ~/.ssh/deploy -o BatchMode=yes node.env.labeler "root@$HOST:/opt/weat/deploy/node/.env.labeler.new"
           rm -f node.env node.env.pds node.env.labeler
-          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'cd /opt/weat/deploy/node && chmod 600 .env.new .env.pds.new .env.labeler.new && mv .env.new .env && mv .env.pds.new .env.pds && mv .env.labeler.new .env.labeler'
+          # .env.override на узле (пишет failover.yml: роль после переключения) перекрывает переменные GitHub
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'cd /opt/weat/deploy/node && chmod 600 .env.new .env.pds.new .env.labeler.new && mv .env.new .env && if [ -s .env.override ]; then awk -F= "NR==FNR{o[\$1]=1;next} !(\$1 in o)" .env.override .env > .env.tmp; cat .env.override >> .env.tmp; chmod 600 .env.tmp; mv .env.tmp .env; fi && mv .env.pds.new .env.pds && mv .env.labeler.new .env.labeler'
 
       - name: Обновить узел
         env:
