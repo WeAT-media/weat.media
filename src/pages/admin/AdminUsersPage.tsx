@@ -67,6 +67,22 @@ export default function AdminUsersPage() {
     }
   }
 
+  const [tierReason, setTierReason] = useState('')
+  /** Premium вручную — например, оплата прошла, а подписка не включилась; причина — в журнал */
+  const changeTier = async (tier: 'free' | 'premium') => {
+    if (!card) return
+    if (tierReason.trim().length < 5) return setError('Укажите причину — от 5 символов')
+    setError('')
+    try {
+      await call(`/admin/users/${encodeURIComponent(card.did)}/tier`, { method: 'PUT', body: JSON.stringify({ tier, reason: tierReason.trim() }) })
+      setDone(tier === 'premium' ? `Premium выдан: @${card.handle}` : `Premium снят: @${card.handle}`)
+      setTierReason('')
+      await open(card.did)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось')
+    }
+  }
+
   const changeResidence = async () => {
     if (!card || !residence[0] || residence[0] === card.residenceCountry) return
     setError('')
@@ -164,6 +180,17 @@ export default function AdminUsersPage() {
             <p className="mt-2 text-sm">
               <Link to={`/profile/${card.handle}`} className="text-accent hover:underline">Профиль на сайте</Link>
             </p>
+
+            <h3 className="mt-6 text-sm font-semibold">Тариф</h3>
+            <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+              <input value={tierReason} onChange={(e) => setTierReason(e.target.value)} placeholder="причина: оплата прошла, подписка не включилась…" aria-label="Причина смены тарифа" className={input} />
+              {card.tier === 'premium' ? (
+                <button type="button" onClick={() => void changeTier('free')} className="btn-ghost !px-3 !py-2">Снять Premium</button>
+              ) : (
+                <button type="button" onClick={() => void changeTier('premium')} className="btn-primary !px-3 !py-2">Выдать Premium</button>
+              )}
+            </div>
+            <p className="meta mt-1 !normal-case tracking-normal">только роль admin; причина пишется в аудит</p>
 
             <h3 className="mt-6 text-sm font-semibold">Страны · <Link to="/legal/register-and-residency" className="font-normal text-accent hover:underline">в чём разница</Link></h3>
             <p className="mt-2 text-sm">Регистрация: <b>{countryLabel(card.signupCountry)}</b> <span className="text-muted-foreground">— не меняется</span></p>

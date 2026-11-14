@@ -93,6 +93,7 @@ import MdxBlock from '@/components/MdxBlock'
 import Recommendations from '@/components/Recommendations'
 import { SITE_NAME } from '@/config/site'
 import Block from '@/components/ArticleBlock'
+import { useLiveLabels } from '@/lib/labels'
 import type { ArticleBlock, Comment, LabelAction } from '@/types/types'
 
 // локальный демо-ролик (H.264/AAC, 45 c): внешний GCS-бакет BigBuckBunny отдаёт 403
@@ -164,6 +165,7 @@ export default function ArticlePage() {
   }, [privateId, user?.did])
   const paidBlocks = paid && paid.id === privateId ? paid.blocks : null
   const article = loaded && paidBlocks ? { ...loaded, blocks: paidBlocks } : loaded
+  const liveLabels = useLiveLabels(article?.atUri)
   const bodyLoading = !!article?.bodyPending
   // тред статьи из индекса: комментарии всех читателей, не только свои
   const [thread, setThread] = useState<{ uri: string; comments: Comment[] } | null>(null)
@@ -234,14 +236,18 @@ export default function ArticlePage() {
     )
   }
 
+  // метки коллегий из сети (services/labeler): самая строгая по настройкам читателя становится вердиктом статьи
+  const strength = (v: string) => ({ hide: 3, warn: 2, ignore: 1 })[actionForLabel(v) ?? 'ignore'] ?? 0
+  const liveLabel = [...(liveLabels ?? [])].sort((x, y) => strength(y.val) - strength(x.val))[0]
+  const art = liveLabel ? { ...article, verdict: 'guilty' as const, verdictLabel: liveLabel.val } : article
   const caseFile = article.caseId ? cases.find((c) => c.id === article.caseId) : undefined
-  const labelMeta = article.verdictLabel
-    ? labelers.flatMap((l) => l.labels.map((x) => ({ ...x, labelerId: l.id, labelerName: l.name }))).find((x) => x.value === article.verdictLabel)
+  const labelMeta = art.verdictLabel
+    ? labelers.flatMap((l) => l.labels.map((x) => ({ ...x, labelerId: l.id, labelerName: l.name }))).find((x) => x.value === art.verdictLabel)
     : undefined
   const labelerId = labelMeta?.labelerId ?? ''
   const subscribed = settings[labelerId]?.subscribed ?? false
-  const action = actionForLabel(article.verdictLabel ?? '') ?? 'warn'
-  const bodyHidden = article.verdict === 'guilty' && subscribed && action === 'hide' && !showHidden
+  const action = actionForLabel(art.verdictLabel ?? '') ?? 'warn'
+  const bodyHidden = art.verdict === 'guilty' && subscribed && action === 'hide' && !showHidden
   // доступ: сервер отдал закрытую часть (автор, купивший) или демо-статья открыта локально
   const isUnlocked = !article.paywall || !!paidBlocks || !!unlocked[article.id]
   // без покупки: тизер вместо тела; если тизер не задан — как раньше, первые два блока
@@ -432,7 +438,7 @@ export default function ArticlePage() {
             <span className="meta rounded-full border border-border px-2 py-0.5" title="Язык публикации">
               {languageName(article.language)}
             </span>
-            <Stamp verdict={article.verdict} small />
+            <Stamp verdict={art.verdict} small />
             <UpvoteButton articleId={article.id} />
             <BookmarkButton articleId={article.id} />
             <Link
@@ -577,7 +583,7 @@ export default function ArticlePage() {
         )}
 
         {/* Панель вердикта / разбирательства */}
-        {article.verdict === 'guilty' && labelMeta && (
+        {art.verdict === 'guilty' && labelMeta && (
           <Reveal className="mt-8 border-2 border-accent/60 bg-secondary/70 p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -608,7 +614,7 @@ export default function ArticlePage() {
           </Reveal>
         )}
 
-        {article.verdict === 'trial' && caseFile && (
+        {art.verdict === 'trial' && caseFile && (
           <Reveal className="mt-8 border-2 border-dashed border-border bg-secondary/50 p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -626,7 +632,7 @@ export default function ArticlePage() {
           </Reveal>
         )}
 
-        {article.verdict === 'acquitted' && caseFile && (
+        {art.verdict === 'acquitted' && caseFile && (
           <Reveal className="mt-8 flex flex-wrap items-center justify-between gap-4 border border-border bg-secondary/50 p-6">
             <p className="max-w-[52ch] text-[15px] leading-relaxed text-muted-foreground">
               <span className="meta block text-foreground">{caseFile.number}</span>
@@ -660,7 +666,7 @@ export default function ArticlePage() {
             </div>
           ) : (
             <div className="relative">
-              {bodyHidden === false && article.verdict === 'guilty' && subscribed && action === 'hide' && showHidden && (
+              {bodyHidden === false && art.verdict === 'guilty' && subscribed && action === 'hide' && showHidden && (
                 <button
                   onClick={() => setShowHidden(false)}
                   className="btn-ghost mb-6 !px-4 !py-2"

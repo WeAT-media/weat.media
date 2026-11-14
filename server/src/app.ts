@@ -465,7 +465,7 @@ export function createApp(deps: Deps) {
     if (!body.success) return c.json({ error: 'InvalidRequest', message: "tier: 'free' | 'premium'" }, 400)
     const user = await d.users.setTier(c.req.param('did'), body.data.tier)
     if (!user) return c.json({ error: 'NotFound', message: 'Пользователь не найден' }, 404)
-    await audit(staff, 'user.tier', user.did, { tier: body.data.tier })
+    await audit(staff, 'user.tier', user.did, { tier: body.data.tier, ...(body.data.reason ? { reason: body.data.reason } : {}) })
     return c.json(toPublic(user))
   })
 

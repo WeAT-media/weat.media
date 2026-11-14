@@ -85,7 +85,8 @@ export const Email2faBody = z.object({
 export const CodeBody = z.object({ code: Code })
 
 // ── администрирование ───────────────────────────────────────────────────
-export const TierBody = z.object({ tier: z.enum(['free', 'premium']) })
+/** reason — почему выдан/снят вручную (техническая причина, компенсация): в журнал сотрудников */
+export const TierBody = z.object({ tier: z.enum(['free', 'premium']), reason: z.string().trim().min(5).max(500).optional() })
 
 /** смена страны резидентства сотрудником; ticket — номер заявки в поддержку */
 export const ResidenceBody = z.object({ country: z.string().regex(/^[A-Z]{2}$/), ticket: z.string().max(100).optional() })
