@@ -6,6 +6,8 @@ pub struct Value {
     pub description: &'static str,
     /// hide | warn | ignore — по умолчанию у читателя
     pub default_action: &'static str,
+    /// только для взрослых (18+): Bluesky прячет у несовершеннолетних и без включённого 18+
+    pub adult: bool,
 }
 
 pub struct Collegium {
@@ -16,7 +18,11 @@ pub struct Collegium {
 }
 
 const fn v(value: &'static str, description: &'static str, default_action: &'static str) -> Value {
-    Value { value, description, default_action }
+    Value { value, description, default_action, adult: false }
+}
+
+const fn adult(value: &'static str, description: &'static str, default_action: &'static str) -> Value {
+    Value { value, description, default_action, adult: true }
 }
 
 pub const ALL: &[Collegium] = &[
@@ -60,6 +66,27 @@ pub const ALL: &[Collegium] = &[
             v("verdict.misleading", "Содержит существенно недостоверные утверждения", "warn"),
             v("verdict.plagiarism", "Плагиат без указания источника", "hide"),
             v("verdict.other", "Иное нарушение правил площадки", "warn"),
+        ],
+    },
+    Collegium {
+        id: "nsfw",
+        name: "Коллегия 18+",
+        description: "Контент для взрослых: откровенные материалы и шокирующие изображения. Значения меток — общие для всей сети AT.",
+        labels: &[
+            adult("porn", "Порнография", "hide"),
+            adult("sexual", "Откровенный сексуальный контент", "warn"),
+            adult("nudity", "Нагота (в том числе художественная)", "warn"),
+            v("graphic-media", "Шокирующие изображения: насилие, травмы", "warn"),
+        ],
+    },
+    Collegium {
+        id: "politics",
+        name: "Политическая коллегия",
+        description: "Политическая агитация без маркировки, пропаганда под видом фактов, разжигание вражды.",
+        labels: &[
+            v("verdict.political-ad", "Политическая агитация без маркировки", "warn"),
+            v("verdict.propaganda", "Пропаганда: односторонняя подача под видом фактов", "warn"),
+            v("verdict.hate", "Разжигание вражды по признаку группы", "hide"),
         ],
     },
 ];

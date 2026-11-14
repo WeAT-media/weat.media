@@ -10,7 +10,7 @@ import type { Staff, StaffRole } from './staff.js'
  */
 
 export const LabelBody = z.object({
-  labeler: z.enum(['spam', 'tech', 'law', 'tone', 'general']),
+  labeler: z.enum(['spam', 'tech', 'law', 'tone', 'general', 'nsfw', 'politics']),
   uri: z.string().regex(/^(at:\/\/did:|did:)[^\s]{3,390}$/, 'uri: at://… или did:…'),
   val: z.string().regex(/^[a-z0-9.-]{3,64}$/),
   neg: z.boolean().optional(),

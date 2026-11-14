@@ -29,7 +29,7 @@ const APPVIEW = env('APPVIEW_URL', 'http://127.0.0.1:8787')
 const LABELER = env('LABELER_URL', 'http://labeler:8791')
 const MAIL_HOST = env('MAIL_HOST', `mail.${DOMAIN}`)
 
-interface Labeler { id: string; name: string; description: string; publicKeyMultibase: string; labels: { value: string; description: string; defaultAction: string }[] }
+interface Labeler { id: string; name: string; description: string; publicKeyMultibase: string; labels: { value: string; description: string; defaultAction: string; adult?: boolean }[] }
 type State = Record<string, { mailboxPassword: string; password?: string; did?: string }>
 
 const log = (...a: unknown[]) => console.error('[labelers]', ...a)
@@ -143,7 +143,7 @@ async function accounts(state: State) {
                 severity: severity(v.defaultAction),
                 blurs: v.defaultAction === 'hide' ? 'content' : 'none',
                 defaultSetting: v.defaultAction === 'ignore' ? 'ignore' : v.defaultAction,
-                adultOnly: false,
+                adultOnly: !!v.adult,
                 locales: [{ lang: 'ru', name: v.description.slice(0, 64), description: `${l.name}: ${v.description}` }],
               })),
             },

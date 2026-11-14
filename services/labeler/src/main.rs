@@ -194,7 +194,7 @@ async fn describe(State(s): State<AppState>) -> Json<Value> {
         "labelers": list.iter().map(|l| json!({
             "id": l.c.id, "did": l.did, "handle": l.host, "name": l.c.name, "description": l.c.description,
             "publicKeyMultibase": sign::multikey(l.key.verifying_key()),
-            "labels": l.c.labels.iter().map(|v| json!({ "value": v.value, "description": v.description, "defaultAction": v.default_action })).collect::<Vec<_>>(),
+            "labels": l.c.labels.iter().map(|v| json!({ "value": v.value, "description": v.description, "defaultAction": v.default_action, "adult": v.adult })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     }))
 }

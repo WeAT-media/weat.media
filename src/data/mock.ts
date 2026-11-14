@@ -66,6 +66,31 @@ export const labelers: Labeler[] = [
       { value: 'verdict.other', description: 'Иное нарушение правил площадки', defaultAction: 'warn' },
     ],
   },
+  {
+    id: 'collegium-nsfw',
+    name: 'Коллегия 18+',
+    handle: 'nsfw.justice.weat.media',
+    description: 'Контент для взрослых: откровенные материалы и шокирующие изображения. Значения меток — общие для всей сети AT.',
+    subscribers: 0,
+    labels: [
+      { value: 'porn', description: 'Порнография', defaultAction: 'hide' },
+      { value: 'sexual', description: 'Откровенный сексуальный контент', defaultAction: 'warn' },
+      { value: 'nudity', description: 'Нагота (в том числе художественная)', defaultAction: 'warn' },
+      { value: 'graphic-media', description: 'Шокирующие изображения: насилие, травмы', defaultAction: 'warn' },
+    ],
+  },
+  {
+    id: 'collegium-politics',
+    name: 'Политическая коллегия',
+    handle: 'politics.justice.weat.media',
+    description: 'Политическая агитация без маркировки, пропаганда под видом фактов, разжигание вражды.',
+    subscribers: 0,
+    labels: [
+      { value: 'verdict.political-ad', description: 'Политическая агитация без маркировки', defaultAction: 'warn' },
+      { value: 'verdict.propaganda', description: 'Пропаганда: односторонняя подача под видом фактов', defaultAction: 'warn' },
+      { value: 'verdict.hate', description: 'Разжигание вражды по признаку группы', defaultAction: 'hide' },
+    ],
+  },
 ]
 
 export const currentUser: User = {
