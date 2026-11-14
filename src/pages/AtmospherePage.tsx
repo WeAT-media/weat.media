@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { ArrowLeft, ArrowRight, Database, Fingerprint, Globe, Radio, RefreshCw, Server, User } from 'lucide-react'
 import { HANDLE_DOMAIN, SITE_NAME } from '@/config/site'
+import { useHiddenCollegia } from '@/lib/labels'
 
 /** Интерактивное объяснение: что такое AT Protocol и ATmosphere — пошагово, на схеме */
 
@@ -99,6 +100,7 @@ export default function AtmospherePage() {
   const [i, setI] = useState(0)
   const [pds, setPds] = useState(0)
   const [moved, setMoved] = useState(false)
+  const hiddenCollegia = useHiddenCollegia()
   const step = steps[i]
 
   const move = () => {
@@ -208,7 +210,7 @@ export default function AtmospherePage() {
               В закрытой соцсети модерацию решает одна компания: она удаляет записи и блокирует людей. В AT Protocol модерация
               устроена иначе — её делают <b className="text-foreground">лейблеры</b>: независимые службы, у каждой свой DID и
               ключ подписи. Лейблер ставит на запись или аккаунт <b className="text-foreground">подписанную метку</b> —
-              «спам», «нерабочий код», «18+». Подделать метку нельзя: подпись проверяется ключом из DID-документа лейблера.
+              «спам», «нерабочий код», «плагиат». Подделать метку нельзя: подпись проверяется ключом из DID-документа лейблера.
             </p>
             <p>
               Метка ничего не удаляет — запись остаётся в репозитории автора. Что с ней делать, решает{' '}
@@ -240,7 +242,7 @@ export default function AtmospherePage() {
                 ['nsfw', 'контент 18+'],
                 ['tone', 'тон и манера'],
                 ['general', 'всё остальное'],
-              ].map(([id, what]) => (
+              ].filter(([id]) => !hiddenCollegia.includes(id!)).map(([id, what]) => (
                 <li key={id} className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/70 pb-2">
                   <span className="font-mono">{id}.justice.{HANDLE_DOMAIN}</span>
                   <span className="text-muted-foreground">{what}</span>

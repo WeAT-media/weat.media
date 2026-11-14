@@ -26,6 +26,8 @@ export interface GeoInfo {
   allowed: boolean
   /** внешние провайдеры, которыми можно войти с этой страницы (с учётом контура) */
   providers: Provider[]
+  /** коллегии, которых в этом контуре нет (РФ: nsfw, politics — их записи закрыты сервером) */
+  hiddenCollegia?: string[]
 }
 
 export type Provider = 'yandex' | 'google' | 'github' | 'telegram' | 'atproto'

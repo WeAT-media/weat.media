@@ -688,7 +688,7 @@ const fakeAtproto: AtprotoAuth = {
   },
 }
 
-function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean } = {}) {
+function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean; restricted?: Deps['restricted']; feedUrl?: string } = {}) {
   const deps: Deps = {
     config: {
       CONTOUR: opts.contour ?? 'global',
@@ -727,6 +727,8 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     geo: { country: (ip) => opts.ipCountry?.[ip] ?? 'ZZ' },
     socketIp: () => '127.0.0.1',
     peer: opts.peer,
+    restricted: opts.restricted,
+    feedUrl: opts.feedUrl,
     nodeRole: opts.nodeRole,
   }
   return createApp(deps)
@@ -778,7 +780,7 @@ test('ru contour blocks registration from non-RU IP, login stays open (business 
   const app = makeApp({ contour: 'ru', ipCountry: { '5.1.1.1': 'NL', '95.1.1.1': 'RU' } })
 
   const geo = await (await app.request('/api/geo', { headers: { 'x-forwarded-for': '5.1.1.1' } })).json()
-  assert.deepEqual(geo, { country: 'NL', contour: 'ru', allowed: false, providers: ['yandex'] })
+  assert.deepEqual(geo, { country: 'NL', contour: 'ru', allowed: false, providers: ['yandex'], hiddenCollegia: ['nsfw', 'politics'] })
 
   const denied = await app.request('/api/auth/register', json(reg, '5.1.1.1'))
   assert.equal(denied.status, 403)
@@ -1166,6 +1168,33 @@ test('system accounts: admin creates news (reserved handle via admin API), logs 
   const human = await (await app.request('/api/auth/register', json({ ...reg, username: 'human', email: 'h@example.com' }, '5.1.1.1'))).json()
   assert.equal((await app.request(`/api/admin/system-accounts/${human.user.did}/login`, { method: 'POST', headers: admin })).status, 404, 'в человека войти нельзя')
   assert.ok(auditLog.some((e) => e.action === 'system.login' && e.target === news.did))
+})
+
+test('ru contour: articles labeled by nsfw/politics are cut from feed, related, article page and RSS', async () => {
+  const { filterRssItems, rssGuids } = await import('../src/restricted.ts')
+  const bad = 'at://did:plc:a/media.weat.article/bad'
+  const ok = 'at://did:plc:a/media.weat.article/ok'
+  const restricted = { enabled: true, async blocked(uris: string[]) { return new Set(uris.filter((u) => u === bad)) } }
+  const app = makeApp({ contour: 'ru', restricted, feedUrl: 'http://feed.test' })
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: URL | string) => {
+    const u = String(url)
+    if (u.includes('/feed-api/articles') || u.includes('/feed-api/related')) return Response.json({ articles: [{ uri: bad }, { uri: ok }], cursor: null })
+    if (u.includes('/rss/')) return new Response(`<rss><channel>\n<item>\n<guid isPermaLink="false">${bad}</guid>\n</item>\n<item>\n<guid isPermaLink="false">${ok}</guid>\n</item>\n</channel></rss>`, { headers: { 'content-type': 'application/rss+xml' } })
+    return Response.json({ uri: ok, record: {} })
+  }) as typeof fetch
+  try {
+    assert.deepEqual((await (await app.request('/api/feed')).json()).articles.map((a: { uri: string }) => a.uri), [ok])
+    assert.deepEqual((await (await app.request(`/api/feed/related?uri=${encodeURIComponent(ok)}`)).json()).articles.map((a: { uri: string }) => a.uri), [ok])
+    assert.equal((await app.request(`/api/feed/article?uri=${encodeURIComponent(bad)}`)).status, 451)
+    const rss = await (await app.request('/api/rss/author/a.indie.media')).text()
+    assert.ok(!rss.includes(bad) && rss.includes(ok))
+    assert.deepEqual((await (await app.request('/api/geo')).json()).hiddenCollegia, ['nsfw', 'politics'])
+  } finally {
+    globalThis.fetch = realFetch
+  }
+  assert.equal(filterRssItems('<item><guid>x</guid></item>', new Set()), '<item><guid>x</guid></item>')
+  assert.deepEqual(rssGuids('<guid a="1">at://u</guid>'), ['at://u'])
 })
 
 test('atproto: ru contour never registers', async () => {

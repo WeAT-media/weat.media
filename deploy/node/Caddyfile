@@ -126,10 +126,12 @@
 		}
 	}
 
-	# RSS (сервис ленты): /rss/author/<handle>, /rss/comments/<did>/<rkey>
+	# RSS (сервис ленты через AppView): /rss/author/<handle>, /rss/comments/<did>/<rkey>
 	@rss path /rss/*
 	handle @rss {
-		reverse_proxy feed:8790
+		# через AppView: в РФ-контуре из RSS убираются записи с метками nsfw/politics (server/src/restricted.ts)
+		rewrite * /api{uri}
+		reverse_proxy appview:8787
 	}
 
 	# открытая аналитика (Rust): beacon и агрегаты

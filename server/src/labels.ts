@@ -22,7 +22,7 @@ const fail = (code: string, message: string, status: 400 | 404 | 502 | 503 = 400
 
 export function mountLabelRoutes(
   app: Hono,
-  d: { labelerUrl?: string; labelerToken?: string },
+  d: { labelerUrl?: string; labelerToken?: string; hidden?: string[] },
   h: {
     requireStaff(c: Context, role: StaffRole): Promise<Staff | 'break-glass'>
     audit(who: Staff | 'break-glass', action: string, target: string | null, details?: Record<string, unknown>): Promise<void>
@@ -42,7 +42,10 @@ export function mountLabelRoutes(
   app.get('/labelers', async (c) => {
     const res = await relay(c, '/xrpc/app.weat.labeler.describe')
     c.header('cache-control', 'public, max-age=300')
-    return c.json(await res.json(), res.ok ? 200 : 502)
+    const body = (await res.json()) as { labelers?: { id: string }[] }
+    // РФ-контур: коллегий nsfw/politics на сайте нет
+    if (body.labelers && d.hidden?.length) body.labelers = body.labelers.filter((l) => !d.hidden!.includes(l.id))
+    return c.json(body, res.ok ? 200 : 502)
   })
 
   /** действующие метки на записи: ?uris=at://…,at://… (до 100) */

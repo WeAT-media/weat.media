@@ -1,5 +1,6 @@
 import { useStore } from '@/lib/store'
-import { labelers } from '@/data/mock'
+import { labelers as allLabelers } from '@/data/mock'
+import { collegiumKey, useHiddenCollegia } from '@/lib/labels'
 import Reveal from '@/components/Reveal'
 import CollegiumIcon from '@/components/CollegiumIcon'
 import { Switch } from '@/components/ui/switch'
@@ -38,6 +39,9 @@ function ActionRadio({
 
 /** Модерация: подписки на коллегии присяжных и действия по их меткам */
 export default function ModerationSettingsPage() {
+  // РФ-контур: коллегий nsfw/politics нет — их записи закрыты сервером
+  const hidden = useHiddenCollegia()
+  const labelers = allLabelers.filter((l) => !hidden.includes(collegiumKey(l.id)))
   const { settings, toggleSubscription, setLabelAction } = useStore()
 
   return (

@@ -20,6 +20,7 @@ import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
 import { mountPayoutRoutes, type PayoutRepo } from './payouts.js'
 import { mountShareRoutes } from './share.js'
+import { createRestrictedFilter, RESTRICTED_COLLEGIA } from './restricted.js'
 import { mountFinanceRoutes } from './finance.js'
 import { mountLabelRoutes } from './labels.js'
 import { mountPdsGate } from './pdsGate.js'
@@ -61,6 +62,8 @@ export interface Deps {
   pdsUrl?: string
   /** сервис коллегий (services/labeler): внутренний адрес и токен записи; не задан — метки выключены */
   labelerUrl?: string
+  /** фильтр закрытых в контуре записей; по умолчанию — РФ-контур закрывает метки nsfw/politics */
+  restricted?: import('./restricted.js').RestrictedFilter
   labelerToken?: string
   /** сервис ленты; не задан — лента собирается обходом PDS */
   feedUrl?: string
@@ -295,9 +298,11 @@ export function createApp(deps: Deps) {
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountFinanceRoutes(app, { payouts: d.payouts, users: d.users }, { requireStaff, audit })
   mountPdsGate(app, { pdsUrl: d.pdsUrl, pds: d.pds, mfa: d.mfa })
-  mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken }, { requireStaff, audit })
-  mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl })
-  mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL })
+  mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken, hidden: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] }, { requireStaff, audit })
+  // РФ-контур: записи с метками nsfw/politics закрыты на сервере (не настройка читателя)
+  const restricted = d.restricted ?? createRestrictedFilter({ enabled: d.config.CONTOUR === 'ru', labelerUrl: d.labelerUrl })
+  mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted })
+  mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountArticleRoutes(app, { pds: d.pds }, { bearer })
@@ -308,7 +313,8 @@ export function createApp(deps: Deps) {
 
   app.get('/geo', (c) => {
     const geo = geoOf(c)
-    return c.json({ ...geo, providers: ids.loginProviders(geo.country) })
+    // hiddenCollegia — коллегии, которых в контуре нет на сайте (РФ: nsfw, politics — их записи закрыты сервером)
+    return c.json({ ...geo, providers: ids.loginProviders(geo.country), hiddenCollegia: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] })
   })
 
   /**

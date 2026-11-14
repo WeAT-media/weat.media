@@ -53,7 +53,7 @@ ${o.publishedAt ? `<meta property="article:published_time" content="${esc(o.publ
 </body></html>`
 }
 
-export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string }) {
+export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
   const siteName = d.siteName ?? 'weAT.media'
   const image = `${d.siteUrl}/og-image.png`
 
@@ -64,7 +64,9 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     if (!SHORT_ID.test(id) || !d.feedUrl) return fallback()
     const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ short: id })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
     if (!res?.ok) return fallback()
-    const a = (await res.json()) as { handle?: string | null; created_at?: string; record?: { title?: string; subtitle?: string; excerpt?: string; text?: string } }
+    const a = (await res.json()) as { uri?: string; handle?: string | null; created_at?: string; record?: { title?: string; subtitle?: string; excerpt?: string; text?: string } }
+    // РФ-контур: закрытая запись — без заголовка и текста, общая карточка
+    if (a.uri && d.restricted?.enabled && (await d.restricted.blocked([a.uri])).has(a.uri)) return fallback()
     const r = a.record ?? {}
     const title = (r.title ?? '').trim() || siteName
     const description = (r.subtitle ?? '').trim() || (r.excerpt ?? '').trim() || plainExcerpt(r.text ?? '') || siteName

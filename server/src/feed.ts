@@ -1,6 +1,7 @@
-import type { Hono } from 'hono'
+import type { Context, Hono } from 'hono'
 import type { PdsClient } from './pds.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
+import { filterRssItems, rssGuids, type RestrictedFilter } from './restricted.js'
 
 /**
  * Временная лента: статьи со своего PDS (пользователи и краулеры) без индексатора сети.
@@ -21,7 +22,33 @@ const PER_REPO = 50
 const MAX_REPOS = 500
 
 /** feedUrl — сервис ленты (services/feed); недоступен — временный обход PDS */
-export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string }) {
+export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; restricted?: RestrictedFilter }) {
+  /** РФ-контур: вырезать записи с метками nsfw/politics (restricted.ts) */
+  const strip = async <T extends { uri: string }>(items: T[]): Promise<T[]> => {
+    if (!d.restricted?.enabled || !items.length) return items
+    const blocked = await d.restricted.blocked(items.map((i) => i.uri))
+    return blocked.size ? items.filter((i) => !blocked.has(i.uri)) : items
+  }
+  const stripBody = async (body: unknown) => {
+    const b = body as { articles?: { uri: string }[] }
+    return Array.isArray(b?.articles) ? { ...b, articles: await strip(b.articles) } : body
+  }
+  const closed = async (uri: string) => !!d.restricted?.enabled && (await d.restricted.blocked([uri])).has(uri)
+  const unavailable = { error: 'UnavailableInRegion', message: 'Материал недоступен в вашем регионе' }
+
+  /** RSS сервиса ленты — через AppView, чтобы в РФ-контуре из него тоже ушли закрытые записи */
+  const rss = async (c: Context) => {
+    if (!d.feedUrl) return c.text('not found', 404)
+    const path = c.req.path.replace(/^\/api/, '')
+    const res = await fetch(`${d.feedUrl}${path}${new URL(c.req.url).search}`, { signal: AbortSignal.timeout(5000) }).catch(() => null)
+    if (!res) return c.text('feed unavailable', 502)
+    const xml = await res.text()
+    const out = d.restricted?.enabled ? filterRssItems(xml, await d.restricted.blocked(rssGuids(xml))) : xml
+    return c.body(out, res.status as 200, { 'content-type': res.headers.get('content-type') ?? 'application/rss+xml; charset=utf-8', 'cache-control': 'public, max-age=300' })
+  }
+  app.get('/rss/author/:handle', rss)
+  app.get('/rss/comments/:did/:rkey', rss)
+
   let cache: { at: number; items: FeedItem[] } | null = null
   let inflight: Promise<FeedItem[]> | null = null
   const handles = new Map<string, string>()
@@ -67,7 +94,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     // рекомендации — не главное на странице: индекс недоступен — пустой блок, а не ошибка
     if (!res?.ok) return c.json({ articles: [] })
     c.header('cache-control', 'public, max-age=60')
-    return c.json(await res.json())
+    return c.json(await stripBody(await res.json()))
   })
 
   app.get('/feed/article', async (c) => {
@@ -75,6 +102,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/.test(uri)) {
       return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey' }, 400)
     }
+    if (await closed(uri)) return c.json(unavailable, 451)
     if (d.feedUrl) {
       const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ uri })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
       if (res?.ok) {
@@ -105,7 +133,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
         const res = await fetch(`${d.feedUrl}/feed-api/articles?${q}`, { signal: AbortSignal.timeout(3000) })
         if (res.ok) {
           c.header('cache-control', 'public, max-age=5')
-          return c.json(await res.json())
+          return c.json(await stripBody(await res.json()))
         }
         // ошибка запроса (неверный sort, курсор) — отдаём как есть: обход PDS её только спрятал бы
         if (res.status >= 400 && res.status < 500) return c.json(await res.json().catch(() => ({ error: 'InvalidRequest' })), res.status as 400)
@@ -119,6 +147,6 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
       cache = { at: Date.now(), items: await inflight }
     }
     c.header('cache-control', 'public, max-age=30')
-    return c.json({ articles: cache.items.slice(0, limit) })
+    return c.json({ articles: await strip(cache.items.slice(0, limit)) })
   })
 }

@@ -38,3 +38,25 @@ export function useLiveLabels(uri: string | undefined): LiveLabel[] | null {
   }, [uri])
   return uri && state?.uri === uri ? state.labels : null
 }
+
+let hiddenPromise: Promise<string[]> | null = null
+
+/** id коллегий (spam, nsfw…), скрытых в контуре; пока не загружено — скрываем nsfw/politics (безопасно для РФ) */
+export function useHiddenCollegia(): string[] {
+  const [hidden, setHidden] = useState<string[]>(['nsfw', 'politics'])
+  useEffect(() => {
+    hiddenPromise ??= fetch('/api/geo')
+      .then((r) => r.json() as Promise<{ hiddenCollegia?: string[] }>)
+      .then((g) => g.hiddenCollegia ?? [])
+      .catch(() => ['nsfw', 'politics'])
+    let alive = true
+    void hiddenPromise.then((h) => alive && setHidden(h))
+    return () => {
+      alive = false
+    }
+  }, [])
+  return hidden
+}
+
+/** id из мок-списка коллегий сайта: collegium-nsfw → nsfw, collegium-fraud → spam */
+export const collegiumKey = (id: string) => ({ 'collegium-fraud': 'spam', 'collegium-main': 'general' })[id] ?? id.replace(/^collegium-/, '')
