@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>АТик — маскот weAT.media · руководство для полиграфии</title>
+  <style>
+    @page { size: A4; margin: 13mm 15mm 14mm; }
+    * { box-sizing: border-box; }
+    html { font-family: Inter, Arial, sans-serif; color: #3c3835; background: #faf6f3; }
+    body { margin: 0; font-size: 10pt; line-height: 1.45; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #dec9b8; padding-bottom: 5mm; }
+    .brand { font-size: 18pt; font-weight: 800; letter-spacing: -.5px; }
+    .brand span, .accent { color: #bc773f; }
+    .meta { font: 8pt 'Courier New', monospace; letter-spacing: 1px; text-transform: uppercase; color: #6e675f; }
+    h1 { margin: 9mm 0 2mm; font-size: 29pt; line-height: 1.05; letter-spacing: -1px; }
+    h2 { margin: 0 0 4mm; font-size: 16pt; }
+    p { margin: 0 0 3mm; }
+    .lead { max-width: 145mm; color: #6e675f; font-size: 11pt; }
+    .hero { display: flex; justify-content: center; align-items: center; height: 99mm; margin: 5mm 0; border: 1px solid #dec9b8; background: #fffdfa; }
+    .hero img { width: 65mm; height: 82mm; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; }
+    .variant { min-height: 69mm; border: 1px solid #dec9b8; padding: 5mm; text-align: center; }
+    .variant img { width: 30mm; height: 40mm; display: block; margin: 0 auto 2mm; }
+    .variant.dark { background: #211e1b; color: #faf6f3; }
+    .variant h3 { margin: 0 0 1mm; font-size: 10pt; }
+    .variant p { margin: 0; font-size: 8pt; color: inherit; opacity: .8; }
+    .rule { margin-top: 5mm; padding-top: 3mm; border-top: 1px solid #dec9b8; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 9mm; }
+    ul { padding-left: 5mm; margin: 0; }
+    li { margin-bottom: 2mm; }
+    .swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-top: 4mm; }
+    .swatch { border: 1px solid #dec9b8; }
+    .color { height: 18mm; }
+    .spec { padding: 2mm 4mm; font: 8pt/1.5 'Courier New', monospace; }
+    .page { break-after: page; }
+    footer { margin-top: 5mm; padding-top: 3mm; border-top: 1px solid #dec9b8; display: flex; justify-content: space-between; }
+    .clearspace { position: relative; width: 65mm; height: 70mm; margin: 3mm auto; border: 1px dashed #bc773f; display: flex; align-items: center; justify-content: center; }
+    .clearspace img { width: 40mm; height: 51mm; }
+    .clearspace::before { content: '×'; position: absolute; left: 3mm; top: 2mm; color: #bc773f; font: 14pt 'Courier New', monospace; }
+    .small { font-size: 8pt; color: #6e675f; }
+  </style>
+</head>
+<body>
+  <section class="page">
+    <header><div class="brand">we<span>AT</span>.media</div><div class="meta">Фирменный стиль · полиграфия · 01</div></header>
+    <h1>АТик</h1>
+    <p class="lead">Маскот площадки — зерно свободного слова. Росток связывает персонажа со знаком-колосом, а открытая поза — с идеей независимого медиа.</p>
+    <div class="hero"><img src="weat-mascot.svg" alt="Цветной маскот АТик"></div>
+    <div class="grid">
+      <div class="variant"><img src="weat-mascot.svg" alt=""><h3>Основной</h3><p>Цветная печать, светлый фон</p></div>
+      <div class="variant"><img src="weat-mascot-mono.svg" alt=""><h3>Одноцветный</h3><p>Один оттиск, флексография, шелкография</p></div>
+      <div class="variant dark"><img src="weat-mascot-reverse.svg" alt=""><h3>Выворотный</h3><p>Тёмный однородный фон</p></div>
+    </div>
+    <footer><span class="meta">weat.media/design</span><span class="meta">Векторные мастер-файлы · SVG</span></footer>
+  </section>
+
+  <section>
+    <header><div class="brand">we<span>AT</span>.media</div><div class="meta">Фирменный стиль · полиграфия · 02</div></header>
+    <h1>Правила</h1>
+    <div class="cols">
+      <div>
+        <h2>Охранное поле</h2>
+        <div class="clearspace"><img src="weat-mascot-mono.svg" alt="Охранное поле маскота"></div>
+        <p class="small">Минимальное поле со всех сторон — <b>×</b>, диаметр глаза маскота. Не помещайте внутрь текст, линии и другие знаки.</p>
+      </div>
+      <div>
+        <h2>Размер и техника</h2>
+        <ul>
+          <li>Цветная версия — от <b>20 мм</b> по высоте.</li>
+          <li>Одноцветная — от <b>15 мм</b> по высоте.</li>
+          <li>Для меньших размеров используйте знак-колос, а не маскота.</li>
+          <li>Масштабируйте только пропорционально, из SVG.</li>
+          <li>Не меняйте цвета, толщину контура и выражение лица.</li>
+          <li>Не добавляйте тени, градиенты, обводку и эффекты.</li>
+        </ul>
+        <p class="small rule">Файлы содержат только векторные контуры и плашечные RGB-цвета. Допечатную конвертацию в CMYK выполняйте с ICC-профилем типографии. Перед тиражом закажите цветопробу.</p>
+      </div>
+    </div>
+
+    <h2 class="rule">Фирменные цвета</h2>
+    <div class="swatches">
+      <div class="swatch"><div class="color" style="background:#bc773f"></div><div class="spec"><b>Терракота</b><br>HEX #BC773F · RGB 188 / 119 / 63<br>CMYK 0 / 37 / 66 / 26*</div></div>
+      <div class="swatch"><div class="color" style="background:#3c3835"></div><div class="spec"><b>Уголь</b><br>HEX #3C3835 · RGB 60 / 56 / 53<br>CMYK 0 / 7 / 12 / 76*</div></div>
+      <div class="swatch"><div class="color" style="background:#faf6f3"></div><div class="spec"><b>Бумага</b><br>HEX #FAF6F3 · RGB 250 / 246 / 243<br>CMYK 0 / 2 / 3 / 2*</div></div>
+      <div class="swatch"><div class="color" style="background:#dec9b8"></div><div class="spec"><b>Песок</b><br>HEX #DEC9B8 · RGB 222 / 201 / 184<br>CMYK 0 / 10 / 17 / 13*</div></div>
+    </div>
+    <p class="small rule">* Ориентировочная математическая конвертация, а не замена ICC-профиля. На немелованной бумаге допустимо естественное изменение насыщенности.</p>
+    <footer><span class="meta">АТик · официальный маскот weAT.media</span><span class="meta">weat.media/brand/weat-mascot-guide.pdf</span></footer>
+  </section>
+</body>
+</html>

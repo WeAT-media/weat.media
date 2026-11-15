@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" role="img" aria-labelledby="title desc">
+  <title id="title">АТик — маскот weAT.media</title>
+  <desc id="desc">Дружелюбное терракотовое зерно с ростком пшеницы</desc>
+  <g fill="none" stroke="#3c3835" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M160 66V35"/>
+    <path d="M158 46C140 45 130 35 128 21C144 20 156 29 158 46Z" fill="#bc773f"/>
+    <path d="M162 34C164 18 174 9 190 10C190 25 180 35 162 38Z" fill="#bc773f"/>
+    <path d="M91 180C65 179 56 161 48 143M48 143L36 132M48 143L52 126"/>
+    <path d="M229 180C255 179 264 161 272 143M272 143L284 132M272 143L268 126"/>
+    <path d="M133 285L126 317C124 326 116 330 105 330H92"/>
+    <path d="M187 285L194 317C196 326 204 330 215 330H228"/>
+    <path d="M160 62C111 68 82 116 84 181C86 247 115 288 160 288C205 288 234 247 236 181C238 116 209 68 160 62Z" fill="#bc773f"/>
+  </g>
+  <path d="M160 77C121 88 101 128 102 181C103 231 124 265 160 273C134 251 126 216 127 174C128 131 138 99 160 77Z" fill="#d99a6d"/>
+  <g fill="#3c3835">
+    <ellipse cx="135" cy="169" rx="7" ry="9"/>
+    <ellipse cx="185" cy="169" rx="7" ry="9"/>
+  </g>
+  <g fill="#faf6f3">
+    <circle cx="137" cy="166" r="2.2"/>
+    <circle cx="187" cy="166" r="2.2"/>
+  </g>
+  <path d="M139 203C148 217 172 217 181 203" fill="none" stroke="#3c3835" stroke-width="7" stroke-linecap="round"/>
+  <path d="M111 197H121M199 197H209" fill="none" stroke="#dec9b8" stroke-width="7" stroke-linecap="round"/>
+</svg>

@@ -47,27 +47,30 @@
   }
 
   ::selection {
-    background: hsl(27 50% 49% / 0.25);
+    background: hsl(var(--accent) / 0.28);
   }
 
   /* Тёмная тема (appearance: dark/system) */
   html.dark {
-    --background: 25 8% 11%;
-    --foreground: 26 30% 90%;
-    --card: 25 8% 16%;
-    --card-foreground: 26 30% 90%;
-    --popover: 25 8% 11%;
-    --popover-foreground: 26 30% 90%;
-    --primary: 26 30% 90%;
-    --primary-foreground: 25 8% 12%;
-    --secondary: 25 8% 16%;
-    --secondary-foreground: 26 30% 90%;
-    --muted: 25 8% 18%;
-    --muted-foreground: 26 12% 62%;
-    --destructive: 27 55% 55%;
-    --destructive-foreground: 26 41% 97%;
-    --border: 25 10% 26%;
-    --input: 25 10% 26%;
+    --background: 25 11% 9%;
+    --foreground: 30 27% 91%;
+    --card: 25 12% 13%;
+    --card-foreground: 30 27% 91%;
+    --popover: 25 12% 12%;
+    --popover-foreground: 30 27% 91%;
+    --primary: 30 27% 91%;
+    --primary-foreground: 25 11% 10%;
+    --secondary: 25 12% 15%;
+    --secondary-foreground: 30 27% 91%;
+    --muted: 25 11% 17%;
+    --muted-foreground: 28 13% 70%;
+    --accent: 27 60% 66%;
+    --accent-foreground: 25 14% 12%;
+    --destructive: 5 62% 64%;
+    --destructive-foreground: 25 14% 12%;
+    --border: 27 15% 28%;
+    --input: 27 14% 32%;
+    --ring: 27 60% 66%;
   }
 
   /* Шрифт интерфейса */
@@ -90,6 +93,18 @@
   html[data-accent='crimson'] {
     --accent: 350 55% 44%;
     --ring: 350 55% 44%;
+  }
+  html.dark[data-accent='forest'] {
+    --accent: 145 35% 62%;
+    --ring: 145 35% 62%;
+  }
+  html.dark[data-accent='indigo'] {
+    --accent: 235 65% 75%;
+    --ring: 235 65% 75%;
+  }
+  html.dark[data-accent='crimson'] {
+    --accent: 350 60% 68%;
+    --ring: 350 60% 68%;
   }
 }
 
@@ -121,6 +136,15 @@
     color: hsl(25 8% 40%);
     border-style: dashed;
     transform: rotate(-1.5deg);
+  }
+  html.dark .stamp--guilty {
+    color: hsl(var(--destructive));
+  }
+  html.dark .stamp--acquitted {
+    color: hsl(var(--foreground));
+  }
+  html.dark .stamp--trial {
+    color: hsl(var(--muted-foreground));
   }
   .stamp--sm {
     font-size: 10px;

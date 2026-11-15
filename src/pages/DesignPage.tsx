@@ -114,11 +114,11 @@ export default function DesignPage() {
         <p className="meta mt-8">Дизайн-код · открыт для всех</p>
         <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">Дизайнерам</h1>
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
-          Знак, цвета, шрифты и базовые компоненты {SITE_NAME}. Берите их для своих клиентов AT Protocol, виджетов,
+          Знак, маскот, цвета, шрифты и базовые компоненты {SITE_NAME}. Берите их для своих клиентов AT Protocol, виджетов,
           обложек и материалов о площадке. Значения ниже — из живой темы: переключите тёмную тему, и они обновятся.
         </p>
         <nav aria-label="Разделы" className="mt-6 flex flex-wrap gap-2">
-          {[['logo', 'Знак'], ['colors', 'Цвета'], ['type', 'Типографика'], ['components', 'Компоненты'], ['tokens', 'Токены']].map(([id, label]) => (
+          {[['logo', 'Знак'], ['mascot', 'Маскот'], ['colors', 'Цвета'], ['type', 'Типографика'], ['components', 'Компоненты'], ['tokens', 'Токены']].map(([id, label]) => (
             <a key={id} href={`#${id}`} className="btn-ghost !px-3 !py-1 !text-[11px]">{label}</a>
           ))}
         </nav>
@@ -148,6 +148,33 @@ export default function DesignPage() {
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
             В названии «AT» всегда выделено акцентом и пишется заглавными: <BrandName className="font-semibold text-foreground" />.
+          </p>
+        </Section>
+
+        <Section id="mascot" title="АТик — маскот" lead="Зерно свободного слова с ростком-колосом. Используйте маскота в коммуникациях и сувенирной продукции; для интерфейсных иконок и маленьких размеров оставляйте основной знак. Не меняйте пропорции, выражение лица и фирменные цвета.">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="flex aspect-square items-center justify-center rounded-lg border border-border bg-[#fffdfa] p-8">
+              <img src="/brand/weat-mascot.svg" alt="АТик, цветная версия" className="h-full w-full" />
+            </div>
+            <div className="flex aspect-square items-center justify-center rounded-lg border border-border bg-[#fffdfa] p-8">
+              <img src="/brand/weat-mascot-mono.svg" alt="АТик, одноцветная версия" className="h-full w-full" />
+            </div>
+            <div className="flex aspect-square items-center justify-center rounded-lg bg-[#211e1b] p-8">
+              <img src="/brand/weat-mascot-reverse.svg" alt="АТик, выворотная версия" className="h-full w-full" />
+            </div>
+          </div>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <a href="/brand/weat-mascot-guide.pdf" download className="btn-primary"><Download size={14} aria-hidden="true" /> Гайд для печати · PDF</a>
+            <a href="/brand/weat-mascot.svg" download className="btn-ghost"><Download size={14} aria-hidden="true" /> SVG</a>
+            <a href="/brand/weat-mascot.png" download className="btn-ghost"><Download size={14} aria-hidden="true" /> PNG 800</a>
+          </div>
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            <a href="/brand/weat-mascot-mono.svg" download className="text-accent underline underline-offset-4">Одноцветный SVG</a>
+            {' · '}
+            <a href="/brand/weat-mascot-reverse.svg" download className="text-accent underline underline-offset-4">Выворотный SVG</a>
+            {' · '}
+            <a href="/brand/weat-mascot-guide.html" target="_blank" rel="noreferrer" className="text-accent underline underline-offset-4">Версия гайда для браузера</a>.
+            Минимальная высота в печати: 20 мм для цветной версии, 15 мм для одноцветной.
           </p>
         </Section>
 

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" role="img" aria-labelledby="title desc">
+  <title id="title">АТик — одноцветный маскот weAT.media</title>
+  <desc id="desc">Одноцветный контур зерна с ростком пшеницы для печати</desc>
+  <g fill="none" stroke="#3c3835" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M160 66V35"/>
+    <path d="M158 46C140 45 130 35 128 21C144 20 156 29 158 46Z" fill="#3c3835"/>
+    <path d="M162 34C164 18 174 9 190 10C190 25 180 35 162 38Z" fill="#3c3835"/>
+    <path d="M91 180C65 179 56 161 48 143M48 143L36 132M48 143L52 126"/>
+    <path d="M229 180C255 179 264 161 272 143M272 143L284 132M272 143L268 126"/>
+    <path d="M133 285L126 317C124 326 116 330 105 330H92"/>
+    <path d="M187 285L194 317C196 326 204 330 215 330H228"/>
+    <path d="M160 62C111 68 82 116 84 181C86 247 115 288 160 288C205 288 234 247 236 181C238 116 209 68 160 62Z"/>
+  </g>
+  <g fill="#3c3835">
+    <ellipse cx="135" cy="169" rx="7" ry="9"/>
+    <ellipse cx="185" cy="169" rx="7" ry="9"/>
+  </g>
+  <path d="M139 203C148 217 172 217 181 203" fill="none" stroke="#3c3835" stroke-width="7" stroke-linecap="round"/>
+</svg>
