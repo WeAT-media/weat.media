@@ -16,7 +16,7 @@
     "@atproto/oauth-client-node": "^0.5.16",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
-    "@hono/node-server": "^1.14.0",
+    "@hono/node-server": "^2.1.8",
     "@resvg/resvg-js": "^2.6.2",
     "hono": "^4.13.0",
     "imapflow": "^2.11.0",
@@ -40,6 +40,10 @@
   },
   "packageManager": "pnpm@10.11.0",
   "pnpm": {
+    "overrides": {
+      "fflate": "^0.7.5",
+      "zod@<4.6.6": "^4.6.6"
+    },
     "onlyBuiltDependencies": [
       "esbuild"
     ]

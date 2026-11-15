@@ -147,11 +147,11 @@ pub async fn comments_of(
     newest: bool,
 ) -> sqlx::Result<Vec<CommentRow>> {
     let order = if newest { "DESC" } else { "ASC" };
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT c.uri, c.did, h.handle, c.text, c.created_at, c.parent_uri AS parent
          FROM comments c LEFT JOIN handles h ON h.did = c.did
          WHERE c.subject_uri = $1 ORDER BY c.created_at {order} LIMIT $2"
-    ))
+    )))
     .bind(subject)
     .bind(limit)
     .fetch_all(pool)
@@ -197,7 +197,7 @@ pub async fn related(
     limit: i64,
     kind: Option<&str>,
 ) -> sqlx::Result<Vec<Row>> {
-    sqlx::query_as(&crate::rank::related_sql())
+    sqlx::query_as(sqlx::AssertSqlSafe(crate::rank::related_sql()))
         .bind(uri)
         .bind(limit)
         .bind(kind)

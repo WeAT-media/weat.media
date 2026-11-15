@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { Resvg } from '@resvg/resvg-js'
 import satori from 'satori'
+import { readBodyLimited, safeFetch, type SafeFetch } from './safeFetch.js'
 
 /**
  * Картинка превью статьи (1200×630) для соцсетей и мессенджеров: название статьи, автор с фото.
@@ -94,11 +95,11 @@ export async function renderArticleCard(a: ArticleCard): Promise<Buffer> {
 }
 
 /** фото автора → data: URI для satori (png/jpeg; webp и прочее satori не рисует — тогда буква) */
-export async function avatarDataUri(url: string): Promise<string | null> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(4000) }).catch(() => null)
+export async function avatarDataUri(url: string, fetcher: SafeFetch = safeFetch): Promise<string | null> {
+  const res = await fetcher(url, { signal: AbortSignal.timeout(4000) }).catch(() => null)
   if (!res?.ok) return null
-  const buf = Buffer.from(await res.arrayBuffer())
-  if (buf.byteLength > 2_000_000) return null
+  const buf = await readBodyLimited(res, 2_000_000).catch(() => null)
+  if (!buf) return null
   const type = buf[0] === 0x89 && buf[1] === 0x50 ? 'image/png' : buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : null
   return type ? `data:${type};base64,${buf.toString('base64')}` : null
 }

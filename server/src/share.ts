@@ -1,6 +1,7 @@
 import type { Hono } from 'hono'
 import { resolvePds } from './imports.js'
 import { avatarDataUri, renderArticleCard } from './ogImage.js'
+import { createSafeFetch, readBodyLimited, type SafeFetch } from './safeFetch.js'
 
 /**
  * Превью ссылок (Open Graph / Twitter Card) для ботов соцсетей и мессенджеров: они не выполняют JS,
@@ -65,20 +66,25 @@ interface FeedArticle {
 }
 
 /** имя и фото автора из его профиля AT (app.bsky.actor.profile на его PDS) */
-async function authorProfile(did: string, plcUrl: string): Promise<{ name: string | null; avatar: string | null }> {
-  const pds = await resolvePds(did, plcUrl).catch(() => null)
+async function authorProfile(did: string, plcUrl: string, fetcher: SafeFetch): Promise<{ name: string | null; avatar: string | null }> {
+  const pds = await resolvePds(did, plcUrl, fetcher).catch(() => null)
   if (!pds) return { name: null, avatar: null }
-  const res = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
-  const v = res?.ok ? ((await res.json()) as { value?: { displayName?: string; avatar?: { ref?: { $link?: string } } } }).value : undefined
+  const res = await fetcher(`${pds}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+  const v = res?.ok
+    ? await readBodyLimited(res, 1024 * 1024)
+        .then((buf) => (JSON.parse(buf.toString('utf8')) as { value?: { displayName?: string; avatar?: { ref?: { $link?: string } } } }).value)
+        .catch(() => undefined)
+    : undefined
   const cid = v?.avatar?.ref?.$link
-  const avatar = cid ? await avatarDataUri(`${pds}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`) : null
+  const avatar = cid ? await avatarDataUri(`${pds}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`, fetcher) : null
   return { name: v?.displayName?.trim() || null, avatar }
 }
 
-export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
+export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; allowPrivate?: boolean; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
   const siteName = d.siteName ?? 'weAT.media'
   const image = `${d.siteUrl}/og-image.png`
   const plcUrl = d.plcUrl ?? 'https://plc.directory'
+  const fetcher = createSafeFetch({ allowPrivate: d.allowPrivate })
 
   /** публичная статья из индекса ленты; null — нет, недоступна или закрыта в этом контуре */
   const article = async (id: string): Promise<FeedArticle | null> => {
@@ -99,7 +105,7 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     if (!/^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.%-]{1,253})$/.test(did) || !/^[a-z0-9]{20,120}$/.test(cid)) return c.json({ error: 'InvalidRequest', message: 'Неверный DID или CID' }, 400)
     let hit = pdsOf.get(did)
     if (!hit || Date.now() - hit.at > 3_600_000) {
-      const pds = await resolvePds(did, plcUrl).catch(() => null)
+      const pds = await resolvePds(did, plcUrl, fetcher).catch(() => null)
       if (!pds) return c.json({ error: 'NotFound', message: 'Сервер автора не найден' }, 404)
       if (pdsOf.size > 5000) pdsOf.delete(pdsOf.keys().next().value!)
       pdsOf.set(did, (hit = { at: Date.now(), pds }))
@@ -119,7 +125,7 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     if (!a || !r?.title?.trim()) return c.redirect(image, 302)
     const did = a.did ?? a.uri?.split('/')[2]
     const crawled = r.source?.author?.trim()
-    const p = !crawled && did ? await authorProfile(did, plcUrl) : { name: null, avatar: null }
+    const p = !crawled && did ? await authorProfile(did, plcUrl, fetcher) : { name: null, avatar: null }
     const png = await renderArticleCard({
       title: r.title,
       author: crawled || p.name || a.handle || siteName,

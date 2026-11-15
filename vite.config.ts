@@ -16,7 +16,7 @@ export default defineConfig({
   // SPA раздаётся с корня домена: относительный base ломал прямые заходы на
   // вложенные роуты (/case/c114 → /case/assets/… 404 → пустая страница)
   base: '/',
-  plugins: [inspectAttr(), react(), siteVerification()],
+  plugins: [process.env.NODE_ENV === 'development' ? inspectAttr() : null, react(), siteVerification()],
   server: {
     port: 3000,
     // AT OAuth loopback-клиент возвращает пользователя на http://127.0.0.1:<port>

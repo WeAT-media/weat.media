@@ -9,13 +9,13 @@ publish = false
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate", "chrono"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate", "chrono"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_ipld_dagcbor = "0.6"
 ipld-core = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
-k256 = { version = "0.13", features = ["ecdsa"] }
+k256 = { version = "0.14", features = ["ecdsa"] }
 sha2 = "0.10"
 bs58 = "0.5"
 hex = "0.4"

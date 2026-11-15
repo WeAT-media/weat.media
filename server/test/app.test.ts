@@ -858,6 +858,7 @@ test('/me with bearer token; admin sets premium tier', async () => {
 
   const me = await app.request('/api/me', { headers: { authorization: `Bearer ${accessJwt}` } })
   assert.equal((await me.json()).did, user.did)
+  assert.equal(me.headers.get('cache-control'), 'private, no-store')
 
   const put = (token: string) =>
     app.request(`/api/admin/users/${user.did}/tier`, {

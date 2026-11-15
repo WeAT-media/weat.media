@@ -1,7 +1,5 @@
-import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import type { Context, Hono } from 'hono'
-import ipaddr from 'ipaddr.js'
-import { Agent, fetch as undiciFetch } from 'undici'
+import { createSafeFetch, isPublicAddress } from './safeFetch.js'
 
 /**
  * Превью ссылки для редактора (карточка «/link» в BlockSuite): заголовок, описание, картинка, иконка из
@@ -10,22 +8,14 @@ import { Agent, fetch as undiciFetch } from 'undici'
  * вручную с той же проверкой, тело не больше 1 МБ. Только для вошедших; результат кэшируется на час.
  */
 
+export { isPublicAddress }
+
 export interface LinkPreview {
   url: string
   title: string | null
   description: string | null
   image: string | null
   icon: string | null
-}
-
-export function isPublicAddress(ip: string): boolean {
-  try {
-    let addr = ipaddr.parse(ip)
-    if (addr.kind() === 'ipv6' && (addr as ipaddr.IPv6).isIPv4MappedAddress()) addr = (addr as ipaddr.IPv6).toIPv4Address()
-    return addr.range() === 'unicast'
-  } catch {
-    return false
-  }
 }
 
 const MAX_BYTES = 1024 * 1024
@@ -81,78 +71,34 @@ export function parsePreview(html: string, url: string): LinkPreview {
 }
 
 export function createPreviewFetcher(opts: { allowPrivate?: boolean } = {}) {
-  const agent = new Agent({
-    connect: {
-      lookup(hostname, options, cb) {
-        dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
-          if (err) return cb(err, '', 0)
-          const list = (Array.isArray(addresses) ? addresses : [addresses]) as LookupAddress[]
-          const bad = list.find((a) => !opts.allowPrivate && !isPublicAddress(a.address))
-          if (bad) return cb(new Error(`адрес ${bad.address} во внутренней сети`), '', 0)
-          const first = list[0]
-          if (!first) return cb(new Error('no address'), '', 0)
-          if ((options as { all?: boolean }).all) return (cb as unknown as (e: null, a: LookupAddress[]) => void)(null, list)
-          cb(null, first.address, first.family)
-        })
-      },
-    },
-  })
-
-  const check = (raw: string): URL | null => {
-    let u: URL
-    try {
-      u = new URL(raw)
-    } catch {
-      return null
-    }
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null
-    if (u.username || u.password) return null
-    if (u.port && u.port !== '80' && u.port !== '443' && !opts.allowPrivate) return null
-    const host = u.hostname.replace(/^\[|\]$/g, '')
-    if (ipaddr.isValid(host) && !opts.allowPrivate && !isPublicAddress(host)) return null
-    return u
-  }
-
+  const fetch = createSafeFetch(opts)
   return async function preview(raw: string): Promise<LinkPreview | null> {
-    let u = check(raw)
-    for (let hop = 0; u && hop <= 4; hop++) {
-      const res = await undiciFetch(u, {
-        dispatcher: agent,
-        redirect: 'manual',
-        headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5', 'accept-language': 'ru,en;q=0.8' },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      }).catch(() => null)
-      if (!res) return null
-      if (res.status >= 300 && res.status < 400) {
-        const loc = res.headers.get('location')
-        await res.body?.cancel()
-        u = loc ? check(new URL(loc, u).toString()) : null
-        continue
-      }
-      const type = res.headers.get('content-type') ?? ''
-      if (!res.ok || !/html|xml/i.test(type)) {
-        await res.body?.cancel()
-        // картинка по прямой ссылке — сама себе превью
-        return res.ok && type.startsWith('image/') ? { url: u.toString(), title: null, description: null, image: u.toString(), icon: null } : null
-      }
-      const chunks: Uint8Array[] = []
-      let size = 0
-      for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
-        chunks.push(chunk)
-        size += chunk.byteLength
-        // <head> всегда в начале — дальше не читаем
-        if (size >= MAX_BYTES) break
-      }
-      const charset = /charset=([\w-]+)/i.exec(type)?.[1] ?? 'utf-8'
-      let html: string
-      try {
-        html = new TextDecoder(charset).decode(Buffer.concat(chunks))
-      } catch {
-        html = new TextDecoder().decode(Buffer.concat(chunks))
-      }
-      return parsePreview(html, u.toString())
+    const res = await fetch(raw, {
+      headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.5', 'accept-language': 'ru,en;q=0.8' },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    }).catch(() => null)
+    if (!res) return null
+    const url = res.url || raw
+    const type = res.headers.get('content-type') ?? ''
+    if (!res.ok || !/html|xml/i.test(type)) {
+      await res.body?.cancel()
+      return res.ok && type.startsWith('image/') ? { url, title: null, description: null, image: url, icon: null } : null
     }
-    return null
+    const chunks: Uint8Array[] = []
+    let size = 0
+    for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+      chunks.push(chunk)
+      size += chunk.byteLength
+      if (size >= MAX_BYTES) break
+    }
+    const charset = /charset=([\w-]+)/i.exec(type)?.[1] ?? 'utf-8'
+    let html: string
+    try {
+      html = new TextDecoder(charset).decode(Buffer.concat(chunks))
+    } catch {
+      html = new TextDecoder().decode(Buffer.concat(chunks))
+    }
+    return parsePreview(html, url)
   }
 }
 

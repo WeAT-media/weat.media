@@ -3,6 +3,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { IdentityRepo, Sql } from './db.js'
 import { PdsError, type PdsClient } from './pds.js'
+import { createSafeFetch, readBodyLimited, safeFetch, type SafeFetch } from './safeFetch.js'
 
 /**
  * Импорт постов из привязанного AT-аккаунта (bsky.social, свой PDS) в черновики.
@@ -78,29 +79,36 @@ export interface PostSource {
 }
 
 /** PDS из DID-документа: did:plc — через plc.directory, did:web — /.well-known/did.json */
-export async function resolvePds(did: string, plcUrl: string): Promise<string> {
+export async function resolvePds(did: string, plcUrl: string, fetcher: SafeFetch = safeFetch): Promise<string> {
   const docUrl = did.startsWith('did:plc:')
     ? `${plcUrl}/${did}`
     : did.startsWith('did:web:')
       ? `https://${decodeURIComponent(did.slice('did:web:'.length))}/.well-known/did.json`
       : null
   if (!docUrl) throw new PdsError(400, 'UnsupportedDid', 'Этот тип DID не поддерживается')
-  const res = await fetch(docUrl, { signal: AbortSignal.timeout(5000) }).catch(() => null)
+  const res = await fetcher(docUrl, { signal: AbortSignal.timeout(5000) }).catch(() => null)
   if (!res?.ok) throw new PdsError(502, 'SourceUnavailable', 'Не удалось найти сервер AT-аккаунта')
-  const doc = (await res.json()) as { service?: { id?: string; serviceEndpoint?: string }[] }
+  const doc = await readBodyLimited(res, 1024 * 1024)
+    .then((buf) => JSON.parse(buf.toString('utf8')) as { service?: { id?: string; serviceEndpoint?: string }[] })
+    .catch(() => null)
+  if (!doc) throw new PdsError(502, 'SourceUnavailable', 'Сервер AT-аккаунта вернул некорректный DID-документ')
   const pds = doc.service?.find((s) => s.id === '#atproto_pds' || s.id?.endsWith('#atproto_pds'))?.serviceEndpoint
   if (!pds?.startsWith('https://')) throw new PdsError(502, 'SourceUnavailable', 'У AT-аккаунта не указан сервер')
   return pds.replace(/\/+$/, '')
 }
 
-export function atprotoPostSource(plcUrl = 'https://plc.directory'): PostSource {
+export function atprotoPostSource(plcUrl = 'https://plc.directory', allowPrivate = false): PostSource {
+  const fetcher = createSafeFetch({ allowPrivate })
   return {
     async posts(did, cursor) {
-      const pds = await resolvePds(did, plcUrl)
+      const pds = await resolvePds(did, plcUrl, fetcher)
       const q = new URLSearchParams({ repo: did, collection: POST_COLLECTION, limit: '100', ...(cursor ? { cursor } : {}) })
-      const res = await fetch(`${pds}/xrpc/com.atproto.repo.listRecords?${q}`, { signal: AbortSignal.timeout(10_000) }).catch(() => null)
+      const res = await fetcher(`${pds}/xrpc/com.atproto.repo.listRecords?${q}`, { signal: AbortSignal.timeout(10_000) }).catch(() => null)
       if (!res?.ok) throw new PdsError(502, 'SourceUnavailable', 'Сервер AT-аккаунта не отдал посты. Попробуйте позже.')
-      const body = (await res.json()) as { records: SourceRecord[]; cursor?: string }
+      const body = await readBodyLimited(res, 4 * 1024 * 1024)
+        .then((buf) => JSON.parse(buf.toString('utf8')) as { records: SourceRecord[]; cursor?: string })
+        .catch(() => null)
+      if (!body) throw new PdsError(502, 'SourceUnavailable', 'Сервер AT-аккаунта вернул некорректный список постов')
       return { pds, records: body.records ?? [], cursor: body.cursor }
     },
   }

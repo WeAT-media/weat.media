@@ -45,14 +45,14 @@ pub fn sign(key: &SigningKey, label: &Unsigned) -> [u8; 64] {
     let digest = Sha256::digest(label.bytes());
     let sig: Signature = key.sign_prehash(&digest).expect("sign");
     // AT Protocol принимает только low-S
-    let sig = sig.normalize_s().unwrap_or(sig);
+    let sig = sig.normalize_s();
     sig.to_bytes().into()
 }
 
 /// Multikey для DID-документа: z + base58btc(varint 0xe7 (secp256k1-pub) + сжатый ключ 33 байта)
 pub fn multikey(key: &VerifyingKey) -> String {
     let mut buf = vec![0xe7, 0x01];
-    buf.extend_from_slice(key.to_encoded_point(true).as_bytes());
+    buf.extend_from_slice(key.to_sec1_point(true).as_bytes());
     format!("z{}", bs58::encode(buf).into_string())
 }
 
@@ -83,7 +83,7 @@ mod tests {
         let l = label();
         let sig = sign(&key, &l);
         let s = Signature::from_slice(&sig).unwrap();
-        assert!(s.normalize_s().is_none(), "low-S");
+        assert_eq!(s.normalize_s(), s, "low-S");
         let digest = Sha256::digest(l.bytes());
         key.verifying_key().verify_prehash(&digest, &s).unwrap();
     }

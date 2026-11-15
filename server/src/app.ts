@@ -44,7 +44,7 @@ import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, ResidenceBody, Tie
 import { SettingsPatch, type SettingsRepo } from './settings.js'
 
 export interface Deps {
-  config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'LAVA_WEBHOOK_SECRET'>>
+  config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'LAVA_WEBHOOK_SECRET' | 'ATPROTO_PLC_URL' | 'ATPROTO_ALLOW_HTTP'>>
   users: UserRepo
   settings: SettingsRepo
   identities: IdentityRepo
@@ -193,6 +193,12 @@ export function createApp(deps: Deps) {
   )
   // журнал устройств: завершённая сессия не проходит; выданная пара токенов — запись (sessions.ts)
   app.use('*', sessionTracking({ sessions: d.sessions, secrets: d.secrets }, { bearer, country: (c) => d.geo.country(clientIp(c)) }))
+  app.use('*', async (c, next) => {
+    if (c.req.path === '/api/me' || c.req.path.startsWith('/api/me/') || c.req.path.startsWith('/api/auth/')) {
+      c.header('cache-control', 'private, no-store')
+    }
+    await next()
+  })
   mountContourRoutes(app, { users: d.users, peer: d.peer, nodeRole: d.nodeRole ?? 'primary' })
 
   const geoOf = (c: Context) => {
@@ -321,7 +327,7 @@ export function createApp(deps: Deps) {
   const pending = pendingSource({ cooldown: d.cooldown, peerUrl: d.peer?.publicUrl })
   mountPeerCooldownRoute(app, { cooldown: d.cooldown })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted, moved: (uris) => d.claims.movedTo(uris), pending })
-  mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted })
+  mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted, plcUrl: d.config.ATPROTO_PLC_URL, allowPrivate: d.config.ATPROTO_ALLOW_HTTP })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown, pending }, { bearer })
   // маршруты есть всегда (без охлаждения очередь просто пуста)
@@ -329,7 +335,7 @@ export function createApp(deps: Deps) {
   const shared = d.shared ?? memShared()
   mountSharedRoutes(app, { pds: d.pds, drafts: d.drafts, shared, users: d.users }, { bearer })
   mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown }, { bearer })
-  mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource() }, { bearer })
+  mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource(d.config.ATPROTO_PLC_URL, d.config.ATPROTO_ALLOW_HTTP) }, { bearer })
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })
   mountSystemAccountRoutes(app, { pds: d.pds, users: d.users, system: d.system, secrets: d.secrets, handleDomain: d.config.PDS_HANDLE_DOMAIN }, { requireStaff, audit, issueHandoff: ids.issueHandoff, sessionDto })
