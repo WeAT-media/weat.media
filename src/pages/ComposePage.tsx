@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { CURRENCIES, formatMoney, type Currency } from '@/lib/money'
-import { durationLabel, parsePoll } from '@/lib/poll'
+import { parsePoll } from '@/lib/poll'
 import { currentUser } from '@/data/mock'
 import { profileMetaSeed } from '@/data/profiles'
 import { MAX_VIDEO_SIZE, formatFileSize, keepSessionVideo, releaseObjectUrl } from '@/lib/videoUploads'
@@ -26,9 +26,7 @@ import { drafts as draftsApi, hasSession, imports, pending as pendingApi, shared
 import { remoteId } from '@/lib/remoteFeed'
 import PeopleAutocomplete, { type PersonCandidate } from '@/components/PeopleAutocomplete'
 import ArticleToc from '@/components/ArticleToc'
-import BlockView from '@/components/ArticleBlock'
-import MdxBlock from '@/components/MdxBlock'
-import { tocFromBlocks, tocFromMarkdown } from '@/lib/toc'
+import { tocFromMarkdown } from '@/lib/toc'
 import {
   Dialog,
   DialogContent,
@@ -58,8 +56,8 @@ function normalizeTag(raw: string): string {
 const MAX_TAGS = 5
 
 
-function Preview({ article }: { article: Article }) {
-  const tocItems = tocFromBlocks(article.blocks)
+/** markdown — тело редактора: рендер тем же BlockSuite (только чтение), что и в редакторе */
+function Preview({ article, markdown }: { article: Article; markdown: string }) {
   return (
     <div className="rounded-md border border-border bg-background p-6">
       <p className="meta">Предпросмотр</p>
@@ -77,53 +75,17 @@ function Preview({ article }: { article: Article }) {
         </div>
       )}
       <div className="mt-6" id="preview-blocks">
-        {tocItems.length > 0 && (
-          <div className="mb-5">
-            <ArticleToc items={tocItems} observeRootId="preview-blocks" />
-          </div>
-        )}
-        {article.blocks.length === 0 ? (
+        {!markdown.trim() ? (
           <p className="text-sm text-muted-foreground">Текст пока пуст — начните писать слева.</p>
         ) : (
-          // те же блоки, что на странице статьи (кнопка, FAQ, видео, картинки…); опрос — превью без голосов
-          article.blocks.map((b, i) =>
-            b.type === 'poll' ? (
-              <PollPreview key={i} raw={b.text} />
-            ) : b.type === 'mdx' ? (
-              <MdxBlock key={i} component={b.component ?? 'box'} text={b.text} />
-            ) : (
-              <BlockView key={i} block={b} id={tocItems.find((t) => t.index === i)?.id} />
-            ),
-          )
+          // тот же BlockSuite, что в редакторе — разметка одинаковая; опросы — превью без голосов
+          <BlocksEditor key={markdown} value={markdown} onChange={() => {}} readOnly />
         )}
       </div>
     </div>
   )
 }
 
-function PollPreview({ raw }: { raw: string }) {
-  const { question, options, settings } = parsePoll(raw)
-  const flags = [
-    settings.multiple ? 'несколько ответов' : 'один ответ',
-    settings.shuffle && 'перемешать',
-    settings.subscribersOnly && 'только подписчики',
-    settings.authorizedOnly && 'только вошедшие',
-    settings.countries.length > 0 && settings.countries.join(', '),
-    settings.durationHours && durationLabel(settings.durationHours),
-    settings.anonymous ? 'анонимный' : settings.showVoters === 'always' ? 'участники видны' : 'участники после завершения',
-    settings.allowRetract && 'можно отозвать',
-    settings.showResults === 'afterClose' && 'результаты после завершения',
-  ].filter(Boolean)
-  return (
-    <div className="mt-4 rounded-md border border-border bg-secondary/50 p-4">
-      <p className="meta">Опрос · {flags.join(' · ')}</p>
-      <p className="mt-1 text-sm font-semibold">{question}</p>
-      {options.map((o, j) => (
-        <p key={j} className="mt-1 text-sm">· {o}</p>
-      ))}
-    </div>
-  )
-}
 
 export default function ComposePage() {
   const navigate = useNavigate()
@@ -1240,7 +1202,7 @@ export default function ComposePage() {
 
             <div className="rule pt-6">
               <p className="meta mb-3">Предпросмотр всей статьи</p>
-              <Preview article={draft} />
+              <Preview article={draft} markdown={fullText.replace(/^#\s+.*(?:\n+|$)/, '')} />
             </div>
 
                       <div className="flex flex-wrap items-center gap-3">

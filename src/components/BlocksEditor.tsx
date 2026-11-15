@@ -26,6 +26,8 @@ interface BlocksEditorProps {
    * hasVideo: в теле есть видео-элемент — attachment или embed YouTube/Loom/Video.
    */
   onContentInspect?: (info: { hasVideo: boolean }) => void
+  /** только чтение: тот же рендер BlockSuite, что в редакторе (предпросмотр) — без расхождений с разметкой */
+  readOnly?: boolean
 }
 
 /** flavours видео-элементов BlockSuite 0.19.5 */
@@ -42,7 +44,7 @@ const VIDEO_FLAVOURS = new Set([
  * Инициализация по API 0.19.5: doc создаётся и load() вызывается ДО editor.doc;
  * editor.doc/specs присваиваются ДО appendChild (connectedCallback читает doc).
  */
-export default function BlocksEditor({ value, onChange, compact, roomId, serverRoom, title, onTitleChange, onContentInspect }: BlocksEditorProps) {
+export default function BlocksEditor({ value, onChange, compact, roomId, serverRoom, title, onTitleChange, onContentInspect, readOnly }: BlocksEditorProps) {
   const serverRoomRef = useRef(serverRoom)
   useEffect(() => {
     serverRoomRef.current = serverRoom
@@ -220,6 +222,10 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
           }
         }
         if (disposed || !el) return
+        if (readOnly) {
+          const bc = (doc as unknown as { blockCollection?: unknown; _blockCollection?: unknown }).blockCollection ?? (doc as unknown as { _blockCollection?: unknown })._blockCollection
+          ;(collection as unknown as { awarenessStore: { setReadonly(bc: unknown, v: boolean): void } }).awarenessStore.setReadonly(bc, true)
+        }
 
         // @mention-автодополнение: работает и в полном редакторе, и в compact-комментариях
         const { attachMentions } = await import('@/lib/mentions')
@@ -378,7 +384,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
 
   return (
     <div>
-      {!compact && (
+      {!compact && !readOnly && (
         <p className="meta mb-2 inline-flex items-center gap-1.5">
           BlockSuite · PageEditor {ready ? '· готов' : '· загрузка…'}
           {roomId && !serverRoom && (
