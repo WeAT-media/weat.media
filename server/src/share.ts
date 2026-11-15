@@ -122,6 +122,19 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     return c.redirect(`${hit.pds}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`, 302)
   })
 
+  // профиль (имя, «О себе») из записи app.bsky.actor.profile — с PDS самого автора: настройки профиля
+  // открываются и тогда, когда аккаунт из соседнего контура
+  app.get('/profile-record/:did', async (c) => {
+    const did = c.req.param('did')
+    if (!/^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.%-]{1,253})$/.test(did)) return c.json({ error: 'InvalidRequest', message: 'Неверный DID' }, 400)
+    const pds = await resolvePds(did, plcUrl).catch(() => null)
+    if (!pds) return c.json({ displayName: null, description: null })
+    const res = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`, { signal: AbortSignal.timeout(4000) }).catch(() => null)
+    const v = res?.ok ? ((await res.json()) as { value?: { displayName?: string; description?: string } }).value : undefined
+    c.header('cache-control', 'no-store')
+    return c.json({ displayName: v?.displayName ?? null, description: v?.description ?? null })
+  })
+
   // картинка превью статьи: название и автор; готовые PNG — в памяти на час
   const cards = new Map<string, { at: number; png: Buffer }>()
   app.get('/og/article/:file', async (c) => {

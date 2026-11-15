@@ -7,6 +7,8 @@ const Env = z.object({
       НЕ использовать в read-after-write путях (auth/настройки/выплаты) — там всегда primary */
   DATABASE_READ_URL: z.string().url().optional(),
   PDS_URL: z.string().url(),
+  /** публичное имя PDS этого контура (pds.weat.media / pds-ru.weat.media) — aud его токенов did:web:<host> */
+  PDS_HOST: z.string().optional(),
   PDS_ADMIN_PASSWORD: z.string().min(1),
   /** домен handle'ов нашего PDS: alina -> alina.indie.media */
   PDS_HANDLE_DOMAIN: z.string().min(1),

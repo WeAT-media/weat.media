@@ -1,4 +1,3 @@
-import { PDS_URL } from '@/config/site'
 import { firstTouchUtm, lastTouchUtm } from '@/lib/utm'
 import type { BlockDef } from '@/lib/userBlocks'
 import type { EditorPreferences, LabelerSettings, Preferences, SubscriptionTier, User, ReadEntry, VideoProgressEntry } from '@/types/types'
@@ -419,8 +418,9 @@ export interface ProfileView {
 export const profile = {
   /** текущая запись профиля — публично с PDS */
   async get(did: string): Promise<{ displayName: string | null; description: string | null }> {
-    const res = await fetch(`${PDS_URL}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`).catch(() => null)
-    const v = res?.ok ? ((await res.json()) as { value?: { displayName?: string; description?: string } }).value : undefined
+    // через AppView: он найдёт PDS автора (аккаунт может быть из соседнего контура)
+    const res = await fetch(`${BASE}/profile-record/${encodeURIComponent(did)}`).catch(() => null)
+    const v = res?.ok ? ((await res.json()) as { displayName?: string | null; description?: string | null }) : undefined
     return { displayName: v?.displayName ?? null, description: v?.description ?? null }
   },
   update: (b: { displayName?: string | null; description?: string | null }) => authed<ProfileView>('/me/profile', { method: 'PATCH', body: JSON.stringify(b) }),

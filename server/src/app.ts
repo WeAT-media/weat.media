@@ -7,7 +7,7 @@ import type { Config } from './config.js'
 import type { IdentityRepo, MfaRepo, Tier, UserRepo, UserRow } from './db.js'
 import type { SecretBox } from './secretbox.js'
 import type { AtprotoAuth } from './atprotoOAuth.js'
-import { mountContourRoutes, PEER_HOP_HEADER, type PeerContour } from './contour.js'
+import { homeContourProxy, mountContourRoutes, PEER_HOP_HEADER, type PeerContour } from './contour.js'
 import { mountPaidRoutes, type PaidRepo } from './paidContent.js'
 import { mountIdentityRoutes } from './identityRoutes.js'
 import { mountDeveloperRoutes, type DeveloperRepo } from './developer.js'
@@ -44,7 +44,7 @@ import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, ResidenceBody, Tie
 import { SettingsPatch, type SettingsRepo } from './settings.js'
 
 export interface Deps {
-  config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'LAVA_WEBHOOK_SECRET' | 'ATPROTO_PLC_URL' | 'ATPROTO_ALLOW_HTTP'>>
+  config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'LAVA_WEBHOOK_SECRET' | 'ATPROTO_PLC_URL' | 'ATPROTO_ALLOW_HTTP' | 'PDS_HOST' | 'PEER_SECRET'>>
   users: UserRepo
   settings: SettingsRepo
   identities: IdentityRepo
@@ -174,6 +174,12 @@ export function createApp(deps: Deps) {
   const app = new Hono().basePath('/api')
 
   const clientIp = (c: Context): string => {
+    // запрос переслал соседний контур (homeContourProxy): настоящий IP — в заголовке, если ключ контуров верный
+    const peerKey = c.req.header('x-weat-peer-key')
+    if (peerKey && d.config.PEER_SECRET && safeEqual(peerKey, d.config.PEER_SECRET)) {
+      const ip = c.req.header('x-weat-client-ip')
+      if (ip) return ip
+    }
     if (d.config.TRUST_PROXY) {
       const xff = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
       if (xff) return xff
@@ -184,6 +190,8 @@ export function createApp(deps: Deps) {
   app.use('*', cors({ origin: d.config.CORS_ORIGIN, allowHeaders: ['content-type', 'authorization'] }))
   // до всех маршрутов: иначе ранние обработчики ответят раньше лимитера
   if (d.rateLimiter !== false) app.use('*', rateLimit(clientIp, d.rateLimiter))
+  // токен соседнего контура — запрос в родной контур пользователя (там его данные); вход работает с любого адреса
+  app.use('*', homeContourProxy({ ownPdsHost: d.config.PDS_HOST, peer: d.peer, secret: d.config.PEER_SECRET, clientIp }))
   // тело разбирается до валидации — без лимита гигантский JSON съест память.
   // Тексты статей (до 200 000 символов UTF-8) — до 1 МБ, остальное — 64 КБ
   const tooLarge = (c: Context) => c.json({ error: 'PayloadTooLarge', message: 'Слишком большой запрос' }, 413)

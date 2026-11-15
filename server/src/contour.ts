@@ -1,4 +1,4 @@
-import type { Context, Hono } from 'hono'
+import type { Context, Hono, MiddlewareHandler } from 'hono'
 import type { UserRepo } from './db.js'
 
 /**
@@ -123,4 +123,64 @@ export function mountContourRoutes(app: Hono, d: { users: UserRepo; peer?: PeerC
     }
     return c.text('not found', 404)
   })
+}
+
+
+/** aud из JWT без проверки подписи — только чтобы выбрать контур; проверяет токен PDS того контура */
+function jwtAud(jwt: string): string | null {
+  try {
+    const p = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as { aud?: unknown }
+    return typeof p.aud === 'string' ? p.aud : null
+  } catch {
+    return null
+  }
+}
+
+const HOP_DROP = new Set(['host', 'content-length', 'connection', 'accept-encoding', 'transfer-encoding'])
+
+/**
+ * Один вход — везде: токен PDS несёт aud = did:web:<PDS его контура>. Пришёл на этот контур токен соседнего
+ * (вошли на weat.media, а GeoDNS потом увёл в другую страну) — запрос целиком уходит в родной контур
+ * пользователя, его данные (черновики, настройки) живут там. Раньше такой запрос получал 401 и разлогинивал.
+ */
+export function homeContourProxy(d: { ownPdsHost?: string; peer?: PeerContour; secret?: string; clientIp?: (c: Context) => string }): MiddlewareHandler {
+  return async (c: Context, next) => {
+    if (!d.ownPdsHost || !d.peer || c.req.header(PEER_HOP_HEADER) || c.req.path.startsWith('/api/peer/')) return next()
+    let jwt = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
+    let body: ArrayBuffer | undefined
+    if (!jwt && c.req.method === 'POST' && (c.req.path === '/api/auth/refresh' || c.req.path === '/api/auth/logout')) {
+      body = await c.req.raw.clone().arrayBuffer()
+      try {
+        jwt = String((JSON.parse(new TextDecoder().decode(body)) as { refreshJwt?: string }).refreshJwt ?? '')
+      } catch {
+        jwt = ''
+      }
+    }
+    const aud = jwt.split('.').length === 3 ? jwtAud(jwt) : null
+    if (!aud?.startsWith('did:web:') || aud === `did:web:${d.ownPdsHost}`) return next()
+    const url = new URL(c.req.url)
+    const headers = new Headers()
+    c.req.raw.headers.forEach((v, k) => {
+      if (!HOP_DROP.has(k.toLowerCase())) headers.set(k, v)
+    })
+    headers.set(PEER_HOP_HEADER, '1')
+    // настоящий IP пользователя для лимитов и гео — сосед примет его только с ключом контуров
+    if (d.secret && d.clientIp) {
+      headers.set('x-weat-peer-key', d.secret)
+      headers.set('x-weat-client-ip', d.clientIp(c))
+    }
+    if (body === undefined && c.req.method !== 'GET' && c.req.method !== 'HEAD') body = await c.req.raw.arrayBuffer()
+    const res = await fetch(`${d.peer.publicUrl}${url.pathname}${url.search}`, {
+      method: c.req.method,
+      headers,
+      ...(body !== undefined ? { body } : {}),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(20_000),
+    }).catch(() => null)
+    if (!res) return c.json({ error: 'PeerUnavailable', message: 'Контур вашего аккаунта сейчас недоступен — попробуйте позже' }, 503)
+    const out = new Headers(res.headers)
+    out.delete('content-encoding')
+    out.delete('content-length')
+    return new Response(res.body, { status: res.status, headers: out })
+  }
 }
