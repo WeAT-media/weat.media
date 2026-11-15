@@ -263,9 +263,14 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
           return
         }
         // начальный заголовок кладём в title root-блока (настоящий page-title)
-        const rootTitle = (doc.root as unknown as { title?: { length: number; insert: (c: string, i: number) => void; toString: () => string } } | null)?.title
-        if (withTitle && initialTitle && rootTitle && rootTitle.length === 0) {
+        const rootTitle = (doc.root as unknown as { title?: { length: number; insert: (c: string, i: number) => void; delete: (i: number, n: number) => void; toString: () => string } } | null)?.title
+        // загрузка markdown ставит заглушку «Untitled» — она не заголовок: заменяем настоящим (из черновика)
+        const placeholder = rootTitle && (rootTitle.length === 0 || rootTitle.toString().trim() === 'Untitled')
+        if (!readOnly && !mirror && withTitle && initialTitle && rootTitle && placeholder) {
+          if (rootTitle.length) rootTitle.delete(0, rootTitle.length)
           rootTitle.insert(initialTitle, 0)
+        } else if (!readOnly && !mirror && rootTitle && rootTitle.toString().trim() === 'Untitled') {
+          rootTitle.delete(0, rootTitle.length)
         }
 
         // у не-Premium Premium-блоки (вставка, drag&drop, черновик) сразу становятся текстом
@@ -297,6 +302,14 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         ]
         editor.doc = doc
         el.appendChild(editor)
+        // тема BlockSuite (ThemeObserver) стартует «светлой» и меняется только по мутации data-theme у <html>;
+        // наш theme-init.js ставит тему раньше — повторяем запись, чтобы панели и меню стали тёмными
+        const kickTheme = () => {
+          const root = document.documentElement
+          root.setAttribute('data-theme', root.dataset.theme ?? (root.classList.contains('dark') ? 'dark' : 'light'))
+        }
+        requestAnimationFrame(kickTheme)
+        setTimeout(kickTheme, 500)
 
         // поддерживаемый page-title: <doc-title> из @blocksuite/presets живёт
         // внутри .affine-page-viewport рядом с editor-host (как в AFFiNE)
