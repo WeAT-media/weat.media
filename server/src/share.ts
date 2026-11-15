@@ -1,6 +1,8 @@
 import type { Hono } from 'hono'
 import { resolvePds } from './imports.js'
 import { avatarDataUri, renderArticleCard } from './ogImage.js'
+import type { PendingSource } from './cooldown.js'
+import { ARTICLE_COLLECTION } from './paidContent.js'
 import { createSafeFetch, readBodyLimited, type SafeFetch } from './safeFetch.js'
 
 /**
@@ -80,7 +82,7 @@ async function authorProfile(did: string, plcUrl: string, fetcher: SafeFetch): P
   return { name: v?.displayName?.trim() || null, avatar }
 }
 
-export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; allowPrivate?: boolean; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
+export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; allowPrivate?: boolean; pending?: PendingSource; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
   const siteName = d.siteName ?? 'weAT.media'
   const image = `${d.siteUrl}/og-image.png`
   const plcUrl = d.plcUrl ?? 'https://plc.directory'
@@ -88,10 +90,16 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
 
   /** публичная статья из индекса ленты; null — нет, недоступна или закрыта в этом контуре */
   const article = async (id: string): Promise<FeedArticle | null> => {
-    if (!SHORT_ID.test(id) || !d.feedUrl) return null
-    const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ short: id })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
-    if (!res?.ok) return null
-    const a = (await res.json()) as FeedArticle
+    if (!SHORT_ID.test(id)) return null
+    const res = d.feedUrl ? await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ short: id })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null) : null
+    let a = res?.ok ? ((await res.json()) as FeedArticle) : null
+    // статья в периоде охлаждения ещё не в индексе ленты — ищем среди ждущих (своих и соседнего контура)
+    if (!a && d.pending) {
+      const [rkey, tail] = [id.slice(0, id.lastIndexOf('-')), id.slice(id.lastIndexOf('-') + 1)]
+      const p = (await d.pending.list(ARTICLE_COLLECTION)).find((x) => x.uri.endsWith(`/${rkey}`) && x.did.endsWith(tail))
+      if (p) a = { uri: p.uri, did: p.did, handle: p.handle, created_at: p.createdAt, record: p.record as FeedArticle['record'] }
+    }
+    if (!a) return null
     // РФ-контур: закрытая запись — без заголовка и текста, общая карточка
     if (a.uri && d.restricted?.enabled && (await d.restricted.blocked([a.uri])).has(a.uri)) return null
     return a

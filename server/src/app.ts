@@ -327,7 +327,7 @@ export function createApp(deps: Deps) {
   const pending = pendingSource({ cooldown: d.cooldown, peerUrl: d.peer?.publicUrl })
   mountPeerCooldownRoute(app, { cooldown: d.cooldown })
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted, moved: (uris) => d.claims.movedTo(uris), pending })
-  mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted, plcUrl: d.config.ATPROTO_PLC_URL, allowPrivate: d.config.ATPROTO_ALLOW_HTTP })
+  mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted, pending, plcUrl: d.config.ATPROTO_PLC_URL, allowPrivate: d.config.ATPROTO_ALLOW_HTTP })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown, pending }, { bearer })
   // маршруты есть всегда (без охлаждения очередь просто пуста)

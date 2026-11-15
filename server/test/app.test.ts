@@ -2344,14 +2344,19 @@ test('shared drafts: login required, Yjs updates sync, editor becomes reviewer, 
 
 test('cooldown: article and comment stay on the site 24h, editable and deletable; then published to the repo at the same uri; staff sees the queue', async () => {
   const app = makeApp({ cooldown: true, ipCountry: { '5.1.1.1': 'DE' } })
-  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'cool', email: 'cool@example.com' }, '5.1.1.1'))).json()
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'coolwriter', email: 'cool@example.com' }, '5.1.1.1'))).json()
   const H = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
   const before = published.length
   const res = await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'Остынет', text: 'текст' }) })).json()
-  assert.match(res.uri, /^at:\/\/did:plc:cool\/media\.weat\.article\/[a-z2-7]{13}$/)
+  assert.match(res.uri, /^at:\/\/did:plc:coolwriter\/media\.weat\.article\/[a-z2-7]{13}$/)
   assert.ok(res.pendingUntil, 'есть срок')
   assert.equal(published.length, before, 'в репозиторий не ушло')
 
+  // превью для соцсетей — тоже сразу: свой заголовок и своя картинка
+  const short = `${res.uri.split('/').pop()}-${'did:plc:coolwriter'.slice(-6)}`
+  const share = await (await app.request(`/api/share/article/${short}`)).text()
+  assert.match(share, /og:title" content="Остынет"/)
+  assert.match(share, new RegExp(`og:image" content="[^"]*/api/og/article/${short}\\.png"`))
   // на сайте видна сразу
   const page = await (await app.request(`/api/feed/article?uri=${encodeURIComponent(res.uri)}`)).json()
   assert.equal(page.record.title, 'Остынет')
@@ -2379,6 +2384,6 @@ test('cooldown: article and comment stay on the site 24h, editable and deletable
   ;(await cooldownLast!.repo.get(res.uri))!.publish_at = new Date(Date.now() - 1000)
   assert.equal(await cooldownLast!.publishDue(), 1)
   const rkey = res.uri.split('/').pop()
-  assert.equal((stored.get(`did:plc:cool/media.weat.article/${rkey}`) as { title?: string } | undefined)?.title, 'Остынет 2')
+  assert.equal((stored.get(`did:plc:coolwriter/media.weat.article/${rkey}`) as { title?: string } | undefined)?.title, 'Остынет 2')
   assert.equal((await app.request(`/api/me/pending${q}`, { method: 'DELETE', headers: H })).status, 409, 'после публикации — уже не ждущая')
 })
