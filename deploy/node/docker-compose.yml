@@ -23,6 +23,8 @@ services:
       PDS_HOST: ${PDS_HOST}
       PDS_HANDLE_DOMAIN: ${PDS_HANDLE_DOMAIN}
       ADMIN_ALLOW_IPS: ${ADMIN_ALLOW_IPS:-127.0.0.1/32}
+      # с этих адресов (узлы РФ-контура) можно ставить метки коллегий через /admin — по токену
+      LABELER_PEER_IPS: ${LABELER_PEER_IPS:-127.0.0.1/32}
       CRAWLER_API_URL: ${CRAWLER_API_URL:-}
       # имя почтового сервера контура: Caddy держит его сертификат для deploy/mail
       MAIL_HOST: ${MAIL_HOST:-mail.weat.media}

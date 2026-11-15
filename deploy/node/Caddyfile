@@ -247,7 +247,11 @@
 *.{$LABELER_DOMAIN:justice.weat.media} {
 	import tls_dns
 	import security_headers
-	@write path /admin/*
+	# запись меток — только AppView соседнего контура (LABELER_PEER_IPS) и по токену; остальным /admin нет
+	@write {
+		path /admin/*
+		not remote_ip {$LABELER_PEER_IPS:127.0.0.1/32}
+	}
 	respond @write 404
 	reverse_proxy labeler:8791
 }
