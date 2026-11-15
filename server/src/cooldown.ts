@@ -308,3 +308,61 @@ export function mountCooldownRoutes(
     return c.json({ ok: true })
   })
 }
+
+export type PendingItem = ReturnType<typeof pendingFeedItem> & { collection: string; subject?: string }
+
+const toItem = (r: PendingRow): PendingItem => ({
+  ...pendingFeedItem(r),
+  collection: r.collection,
+  ...((r.record.subject as { uri?: string } | undefined)?.uri ? { subject: (r.record.subject as { uri: string }).uri } : {}),
+})
+
+/**
+ * Ждущие записи обоих контуров: своя база + соседний контур (PEER_CONTOUR_URL, /api/peer/cooldown).
+ * Статья в охлаждении ещё не в AT, поэтому лента соседа сама её не увидит — берём у него напрямую.
+ * Соседа опрашиваем не чаще раза в 20 с; недоступен — показываем только свои.
+ */
+export interface PendingSource {
+  list(collection: string): Promise<PendingItem[]>
+  get(uri: string): Promise<PendingItem | undefined>
+}
+
+export function pendingSource(d: { cooldown?: Cooldown; peerUrl?: string; fetchImpl?: typeof fetch }): PendingSource {
+  let peerCache: { at: number; items: PendingItem[] } | null = null
+  const peer = async (): Promise<PendingItem[]> => {
+    if (!d.peerUrl) return []
+    if (peerCache && Date.now() - peerCache.at < 20_000) return peerCache.items
+    const res = await (d.fetchImpl ?? fetch)(`${d.peerUrl.replace(/\/$/, '')}/api/peer/cooldown`, {
+      headers: { 'x-indie-peer-hop': '1' },
+      signal: AbortSignal.timeout(2500),
+    }).catch(() => null)
+    const body = res?.ok ? ((await res.json().catch(() => null)) as { items?: PendingItem[] } | null) : null
+    const items = (body?.items ?? []).filter((i) => typeof i?.uri === 'string' && i.uri.startsWith('at://did:') && typeof i.collection === 'string')
+    peerCache = { at: Date.now(), items: res?.ok ? items : (peerCache?.items ?? []) }
+    return peerCache.items
+  }
+  const local = async (collection: string) => (d.cooldown ? (await d.cooldown.repo.list({ collection })).map(toItem) : [])
+  return {
+    async list(collection) {
+      const [mine, theirs] = await Promise.all([local(collection), peer()])
+      const seen = new Set(mine.map((i) => i.uri))
+      return [...mine, ...theirs.filter((i) => i.collection === collection && !seen.has(i.uri))]
+    },
+    async get(uri) {
+      const row = d.cooldown ? await d.cooldown.repo.get(uri) : undefined
+      if (row && row.status !== 'published' && row.visible_at <= new Date()) return toItem(row)
+      return (await peer()).find((i) => i.uri === uri)
+    },
+  }
+}
+
+/** соседнему контуру — только свои ждущие и уже вышедшие на сайте записи (то же, что видят читатели) */
+export function mountPeerCooldownRoute(app: Hono, d: { cooldown?: Cooldown }) {
+  app.get('/peer/cooldown', async (c) => {
+    if (c.req.header('x-indie-peer-hop') !== '1') return c.json({ error: 'NotFound', message: 'Не найдено' }, 404)
+    if (!d.cooldown) return c.json({ items: [] })
+    const [articles, comments] = await Promise.all(['media.weat.article', 'media.weat.comment'].map((collection) => d.cooldown!.repo.list({ collection, limit: 500 })))
+    c.header('cache-control', 'public, max-age=10')
+    return c.json({ items: [...articles!, ...comments!].filter((r) => r.status !== 'published').map(toItem) })
+  })
+}

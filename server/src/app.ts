@@ -16,7 +16,7 @@ import { mountLikeRoutes } from './likes.js'
 import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
 import { memShared, mountSharedRoutes, type SharedRepo } from './shared.js'
-import { createCooldown, memCooldown, mountCooldownRoutes, type Cooldown } from './cooldown.js'
+import { createCooldown, memCooldown, mountCooldownRoutes, mountPeerCooldownRoute, pendingSource, type Cooldown } from './cooldown.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
@@ -317,10 +317,13 @@ export function createApp(deps: Deps) {
   mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken, hidden: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] }, { requireStaff, audit })
   // РФ-контур: записи с метками nsfw/politics закрыты на сервере (не настройка читателя)
   const restricted = d.restricted ?? createRestrictedFilter({ enabled: d.config.CONTOUR === 'ru', labelerUrl: d.labelerUrl })
-  mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted, moved: (uris) => d.claims.movedTo(uris), cooldown: d.cooldown })
+  // ждущие записи обоих контуров — для ленты, страницы статьи и обсуждений
+  const pending = pendingSource({ cooldown: d.cooldown, peerUrl: d.peer?.publicUrl })
+  mountPeerCooldownRoute(app, { cooldown: d.cooldown })
+  mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted, moved: (uris) => d.claims.movedTo(uris), pending })
   mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
-  mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown }, { bearer })
+  mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown, pending }, { bearer })
   // маршруты есть всегда (без охлаждения очередь просто пуста)
   mountCooldownRoutes(app, { pds: d.pds, cooldown: d.cooldown ?? createCooldown({ pds: d.pds, secrets: d.secrets, repo: memCooldown() }) }, { bearer, requireStaff })
   const shared = d.shared ?? memShared()

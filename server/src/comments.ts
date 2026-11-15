@@ -2,7 +2,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { PdsError, type PdsClient } from './pds.js'
 import { COMMENT_COLLECTION } from './developer.js'
-import { pendingFeedItem, type Cooldown } from './cooldown.js'
+import type { Cooldown, PendingSource } from './cooldown.js'
 
 /**
  * Комментарии с сайта: запись media.weat.comment в репозитории читателя его же сессией,
@@ -40,7 +40,7 @@ export const AuthorCommentDto = z.object({
 
 const fail = (code: string, message: string, status: 400 | 401 | 503) => new PdsError(status, code, message)
 
-export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; cooldown?: Cooldown }, h: { bearer(c: Context): string | undefined }) {
+export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; cooldown?: Cooldown; pending?: PendingSource }, h: { bearer(c: Context): string | undefined }) {
   const session = async (c: Context) => {
     const token = h.bearer(c)
     if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
@@ -62,13 +62,13 @@ export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: str
     c.header('cache-control', 'public, max-age=5')
     const body = (await res.json()) as { comments?: { uri: string }[] }
     // комментарии в периоде охлаждения — в треде сразу (в сеть уйдут через 24 ч)
-    if (d.cooldown && body.comments) {
+    if (d.pending && body.comments) {
       const seen = new Set(body.comments.map((x) => x.uri))
-      const held = (await d.cooldown.repo.list({ collection: COMMENT_COLLECTION, ...(subject ? { subject } : { did: author! }) }))
-        .filter((r) => !seen.has(r.uri))
+      const held = (await d.pending.list(COMMENT_COLLECTION))
+        .filter((r) => !seen.has(r.uri) && (subject ? r.subject === subject : r.did === author))
         .map((r) => {
-          const rec = r.record as { text?: string; createdAt?: string; reply?: { parent?: { uri?: string } }; subject?: { uri?: string } }
-          return { uri: r.uri, did: r.did, handle: r.handle, text: rec.text ?? '', createdAt: rec.createdAt ?? r.created_at.toISOString(), parent: rec.reply?.parent?.uri ?? null, subject: rec.subject?.uri, pendingUntil: pendingFeedItem(r).pendingUntil }
+          const rec = r.record as { text?: string; reply?: { parent?: { uri?: string } } }
+          return { uri: r.uri, did: r.did, handle: r.handle, text: rec.text ?? '', createdAt: r.createdAt, parent: rec.reply?.parent?.uri ?? null, subject: r.subject, pendingUntil: r.pendingUntil }
         })
       body.comments = subject ? [...body.comments, ...held.reverse()] : [...held, ...body.comments]
     }

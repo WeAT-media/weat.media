@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono'
 import type { PdsClient } from './pds.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
-import { pendingFeedItem, type Cooldown } from './cooldown.js'
+import type { PendingSource } from './cooldown.js'
 import { filterRssItems, rssGuids, type RestrictedFilter } from './restricted.js'
 
 /**
@@ -23,17 +23,16 @@ const PER_REPO = 50
 const MAX_REPOS = 500
 
 /** feedUrl — сервис ленты (services/feed); недоступен — временный обход PDS */
-export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; restricted?: RestrictedFilter; moved?: (uris: string[]) => Promise<Map<string, string>>; cooldown?: Cooldown }) {
+export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; restricted?: RestrictedFilter; moved?: (uris: string[]) => Promise<Map<string, string>>; pending?: PendingSource }) {
   // статьи в периоде охлаждения (24 ч до ухода в AT): на сайте — сразу, первой страницей «Свежего»
   const held = async (q: { author?: string; tags?: string; kind?: string }) => {
-    if (!d.cooldown) return []
-    const rows = await d.cooldown.repo.list({ collection: ARTICLE_COLLECTION, ...(q.author?.startsWith('did:') ? { did: q.author } : {}) })
+    if (!d.pending) return []
     const tags = q.tags?.split(',').filter(Boolean) ?? []
-    return rows
-      .filter((r) => !q.author || q.author.startsWith('did:') || r.handle === q.author)
+    return (await d.pending.list(ARTICLE_COLLECTION))
+      .filter((r) => !q.author || r.did === q.author || r.handle === q.author)
       .filter((r) => !tags.length || tags.some((t) => ((r.record.tags as string[] | undefined) ?? []).includes(t)))
       .filter((r) => !q.kind || (q.kind === 'video' ? r.record.kind === 'video' : r.record.kind !== 'video'))
-      .map(pendingFeedItem)
+      .map(({ collection: _c, subject: _s, ...item }) => item)
   }
   /** РФ-контур: вырезать записи с метками nsfw/politics (restricted.ts) */
   // и перенесённые автору статьи краулера (claims.ts): оригинал из ленты уходит, в ней — копия автора
@@ -123,10 +122,12 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     const movedTo = d.moved ? (await d.moved([uri]).catch(() => new Map<string, string>())).get(uri) : undefined
     if (movedTo) uri = movedTo
     if (await closed(uri)) return c.json(unavailable, 451)
-    const pending = d.cooldown ? await d.cooldown.repo.get(uri) : undefined
-    if (pending && pending.status !== 'published' && pending.visible_at <= new Date()) {
+    // в охлаждении (своём или соседнего контура) — ещё не в индексе ленты
+    const held = d.pending ? await d.pending.get(uri) : undefined
+    if (held) {
       c.header('cache-control', 'no-store')
-      return c.json({ ...pendingFeedItem(pending), textLength: String(pending.record.text ?? '').length })
+      const { collection: _c, subject: _s, ...item } = held
+      return c.json({ ...item, textLength: String(item.record.text ?? '').length })
     }
     if (d.feedUrl) {
       const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ uri })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
