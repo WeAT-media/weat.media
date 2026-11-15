@@ -87,13 +87,44 @@ function Preview({ article, markdown, doc }: { article: Article; markdown: strin
 }
 
 
+/**
+ * Резервная копия текста в браузере: если сессия кончилась посреди работы (или сеть пропала до автосохранения),
+ * после входа редактор откроется с тем же текстом. Удаляется после публикации.
+ */
+const BACKUP_KEY = 'weat:compose-unsaved'
+const readBackup = (): { title: string; text: string; at: number } | null => {
+  try {
+    const b = JSON.parse(localStorage.getItem(BACKUP_KEY) ?? 'null') as { title?: string; text?: string; at?: number } | null
+    return b && (b.title || b.text) && Date.now() - (b.at ?? 0) < 14 * 86_400_000 ? { title: b.title ?? '', text: b.text ?? '', at: b.at ?? 0 } : null
+  } catch {
+    return null
+  }
+}
+const clearBackup = () => {
+  try {
+    localStorage.removeItem(BACKUP_KEY)
+  } catch {
+    /* noop */
+  }
+}
+
 export default function ComposePage() {
   const navigate = useNavigate()
   const { publishArticle, forgetArticle, payoutConnected, user, collections, tiers, articles, prefs } = useStore()
-  const [bodyText, setBodyText] = useState('')
-  const [title, setTitle] = useState('')
   // ?import=<id> — черновик из импорта постов AT-аккаунта: редактор открывается с его текстом
   const [searchParams, setSearchParams] = useSearchParams()
+  // новая статья (без ?draft/?import/?pending) — продолжаем с несохранённого текста, если он есть
+  const [backup] = useState(() => (searchParams.get('draft') || searchParams.get('import') || searchParams.get('pending') ? null : readBackup()))
+  const [bodyText, setBodyText] = useState(backup?.text ?? '')
+  const [title, setTitle] = useState(backup?.title ?? '')
+  useEffect(() => {
+    if (!title.trim() && !bodyText.trim()) return
+    try {
+      localStorage.setItem(BACKUP_KEY, JSON.stringify({ title, text: bodyText, at: Date.now() }))
+    } catch {
+      /* квота — не страшно, есть автосохранение на сервер */
+    }
+  }, [title, bodyText])
   const importId = searchParams.get('import')
   // ?draft=<id> — свой черновик с сервера; без него первый ввод создаёт новый черновик
   const draftParam = searchParams.get('draft')
@@ -497,6 +528,7 @@ export default function ComposePage() {
       if (importId) await imports.setStatus(importId, 'published', uri).catch(() => {})
       // опубликовано — черновик больше не нужен
       if (draftId) await draftsApi.remove(draftId).catch(() => {})
+      clearBackup()
       navigate(`/article/${uri ? remoteId(uri) : id}`)
     } catch (err) {
       // запись не ушла в репозиторий — черновик остаётся в форме, можно повторить

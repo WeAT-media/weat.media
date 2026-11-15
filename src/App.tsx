@@ -85,6 +85,16 @@ function LegacySettingsRedirect() {
   return <Navigate to={`/profile/${user.handle}/settings${sub}`} replace />
 }
 
+/** только для вошедших: без сессии (или когда она кончилась) — на вход и обратно сюда же */
+function RequireSession({ children }: { children: React.ReactNode }) {
+  const { user } = useStore()
+  const location = useLocation()
+  if (!user || !hasSession()) {
+    return <Navigate to={`/login?${new URLSearchParams({ returnTo: location.pathname + location.search })}`} replace />
+  }
+  return <>{children}</>
+}
+
 export default function App() {
   useEffect(() => {
     if (hasSession()) prefetchEditor()
@@ -132,7 +142,7 @@ export default function App() {
               <Route path="security" element={<SecuritySettingsPage />} />
               <Route path="developer" element={<DeveloperSettingsPage />} />
             </Route>
-            <Route path="/compose" element={<ComposePage />} />
+            <Route path="/compose" element={<RequireSession><ComposePage /></RequireSession>} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/login/reset" element={<PasswordResetPage />} />
             <Route path="/api" element={<ApiDocsPage />} />

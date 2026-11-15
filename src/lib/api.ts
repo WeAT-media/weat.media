@@ -145,6 +145,38 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 let refreshing: Promise<void> | null = null
 
+/**
+ * Продление заранее: access-токен PDS живёт ~2 ч. Раньше он обновлялся только после отказа сервера — запрос
+ * мог потеряться (автосохранение, публикация). Теперь — за 5 минут до истечения, раз в минуту проверяем,
+ * и сразу при возврате на вкладку (таймеры в фоне браузер замедляет).
+ */
+const jwtExp = (jwt: string): number | null => {
+  try {
+    const p = JSON.parse(atob(jwt.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number }
+    return typeof p.exp === 'number' ? p.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
+export async function refreshIfExpiring(marginMs = 5 * 60_000): Promise<void> {
+  const t = loadSession()
+  if (!t) return
+  const exp = jwtExp(t.accessJwt)
+  if (exp === null || exp - Date.now() > marginMs) return
+  refreshing ??= refreshShared(t.refreshJwt).finally(() => {
+    refreshing = null
+  })
+  await refreshing.catch(() => {})
+}
+
+if (typeof window !== 'undefined') {
+  window.setInterval(() => void refreshIfExpiring(), 60_000)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void refreshIfExpiring()
+  })
+}
+
 async function refreshShared(staleRefresh: string): Promise<void> {
   const run = async () => {
     // пока ждали блокировку, соседняя вкладка могла уже обновить — берём её токены
@@ -169,6 +201,8 @@ async function refreshShared(staleRefresh: string): Promise<void> {
 
 /** Запрос от имени пользователя; при истёкшем access-токене один раз обновляет сессию */
 async function authed<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // истекает через минуту-другую — обновим до запроса, а не после отказа
+  await refreshIfExpiring(60_000)
   const tokens = loadSession()
   if (!tokens) throw new ApiError(401, 'AuthenticationRequired', 'Нужно войти')
   const withAuth = (t: Tokens) => ({ ...init, headers: { ...init.headers, authorization: `Bearer ${t.accessJwt}` } })
