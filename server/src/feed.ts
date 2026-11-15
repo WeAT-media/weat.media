@@ -1,7 +1,15 @@
 import type { Context, Hono } from 'hono'
 import type { PdsClient } from './pds.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
-import type { PendingSource } from './cooldown.js'
+import type { PendingItem, PendingSource } from './cooldown.js'
+
+/** ждущая запись в форме ответа ленты — без служебных полей источника */
+const asFeedItem = (i: PendingItem) => {
+  const item: Partial<PendingItem> = { ...i }
+  delete item.collection
+  delete item.subject
+  return item as Omit<PendingItem, 'collection' | 'subject'>
+}
 import { filterRssItems, rssGuids, type RestrictedFilter } from './restricted.js'
 
 /**
@@ -32,7 +40,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
       .filter((r) => !q.author || r.did === q.author || r.handle === q.author)
       .filter((r) => !tags.length || tags.some((t) => ((r.record.tags as string[] | undefined) ?? []).includes(t)))
       .filter((r) => !q.kind || (q.kind === 'video' ? r.record.kind === 'video' : r.record.kind !== 'video'))
-      .map(({ collection: _c, subject: _s, ...item }) => item)
+      .map(asFeedItem)
   }
   /** РФ-контур: вырезать записи с метками nsfw/politics (restricted.ts) */
   // и перенесённые автору статьи краулера (claims.ts): оригинал из ленты уходит, в ней — копия автора
@@ -126,7 +134,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     const held = d.pending ? await d.pending.get(uri) : undefined
     if (held) {
       c.header('cache-control', 'no-store')
-      const { collection: _c, subject: _s, ...item } = held
+      const item = asFeedItem(held)
       return c.json({ ...item, textLength: String(item.record.text ?? '').length })
     }
     if (d.feedUrl) {
