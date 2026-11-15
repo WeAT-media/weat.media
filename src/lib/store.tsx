@@ -166,6 +166,8 @@ interface StoreValue extends Persisted {
    */
   /** uri записи в репозитории; undefined — статья осталась локальной (платная, отложенная, без сессии) */
   publishArticle: (article: Article, text?: string, draftId?: string) => Promise<string | undefined>
+  /** убрать свою статью из копии этого браузера (удалена в периоде охлаждения) */
+  forgetArticle: (atUri: string) => void
   /** у статьи из индекса — запись в репозиторий читателя; ошибка API пробрасывается (ApiError) */
   addComment: (articleId: string, text: string, parentId?: string) => Promise<void>
   /** свой комментарий: из репозитория читателя (AT URI) или локальный; ошибка API пробрасывается */
@@ -706,9 +708,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ? null
             : videoFromLink(article.videoUrl || `${window.location.origin}/demo-video.mp4`)
           : null
-        const toPds =
-          text !== undefined && hasSession() && !article.paywall && (!article.publishAt || article.publishAt <= now) && (!video || !!clip)
-        let remote: { uri: string; cid: string } | null = null
+        // с аккаунтом — всегда в сеть (отложенный пост тоже: сервер выпустит его в срок); раньше отложенные,
+        // платные и с видеофайлом молча оставались только в этом браузере
+        if (text !== undefined && hasSession() && article.paywall) throw new Error('Платные статьи пока не публикуются в сеть — уберите платный доступ или сохраните черновик')
+        if (text !== undefined && hasSession() && video && !clip) throw new Error('Видео файлом пока не публикуется в сеть — вставьте ссылку на ролик (YouTube, Loom или https://…)')
+        const toPds = text !== undefined && hasSession() && (!video || !!clip)
+        let remote: { uri: string; cid: string; pendingUntil?: string } | null = null
         if (toPds) {
           remote = await articlesApi.publish({
             title: article.title,
@@ -720,6 +725,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             kind: video ? 'video' : 'text',
             ...(article.noindex ? { noindex: true } : {}),
             ...(draftId ? { draftId } : {}),
+            ...(article.publishAt && article.publishAt > now ? { publishAt: new Date(article.publishAt).toISOString() } : {}),
             videos: clip
               ? [
                   {
@@ -737,24 +743,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           extraArticles: [
             {
               ...article,
-              // в репозитории — настоящие uri и cid; лайки и комментарии сразу работают через индекс
-              ...(remote ? { atUri: remote.uri, cid: remote.cid, fromIndex: true, likeCount: 0, commentCount: 0 } : {}),
-              // локальный демо-AT URI и canonicalId для новой записи
-              atUri: article.atUri ?? `at://${user?.did ?? 'did:plc:reader001'}/media.weat.article/${article.id}`,
-              cid: article.cid ?? `bafy…demo…${article.id}`,
+              // настоящий адрес записи (в охлаждении CID ещё нет — запись не в репозитории); без сети — ни того, ни другого
+              ...(remote ? { atUri: remote.uri, cid: remote.cid || undefined, fromIndex: true, likeCount: 0, commentCount: 0, ...(remote.pendingUntil ? { pendingUntil: remote.pendingUntil } : {}) } : {}),
               originPds: article.originPds ?? PDS_URL,
               indexedAt: article.indexedAt ?? new Date().toISOString(),
               // полное время: по нему сортируют «Свежее» и «Горячее» (одна дата ставила запись в полночь)
               publishedAtFull: article.publishedAtFull ?? article.publishAt ?? new Date().toISOString(),
               sourceType: article.sourceType ?? 'native-pds',
-              canonicalId:
-                remote?.uri ?? article.canonicalId ?? `at://${user?.did ?? 'did:plc:reader001'}/media.weat.article/${article.id}`,
+              ...(remote?.uri ?? article.canonicalId ? { canonicalId: remote?.uri ?? article.canonicalId } : {}),
             },
             ...prev.extraArticles,
           ],
         }))
         return remote?.uri
       },
+      forgetArticle: (atUri) => setPersisted((prev) => ({ ...prev, extraArticles: prev.extraArticles.filter((a) => a.atUri !== atUri) })),
       addComment: async (articleId, text, parentId) => {
         const a = articles.find((x) => x.id === articleId)
         const comment: Comment =

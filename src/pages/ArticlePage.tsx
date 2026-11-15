@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
-import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, Flag, Gavel, Landmark, LineChart, MessageSquare, Rss, Share2, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, Flag, Gavel, Hourglass, Landmark, LineChart, MessageSquare, PenLine, Rss, Share2, Trash2 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { labelers } from '@/data/mock'
 import { languageName } from '@/data/languages'
@@ -19,7 +19,7 @@ import BookmarkButton from '@/components/BookmarkButton'
 import { buildCommentsFeed } from '@/lib/rss'
 import { useArticleTracking } from '@/lib/tracking'
 import { commentAnchor, fetchArticleBody, fetchComments, markdownToBlocks, remoteId } from '@/lib/remoteFeed'
-import { hasSession, paidContent } from '@/lib/api'
+import { hasSession, paidContent, pending as pendingApi } from '@/lib/api'
 import { safeHref } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
 import BlocksEditor from '@/components/BlocksEditor'
@@ -131,7 +131,7 @@ export default function ArticlePage() {
   const {
     articles, cases, collections, settings, actionForLabel, setLabelAction,
     addComment, deleteComment, extraComments, unlocked, unlock, user, reportToCourt,
-    watchedArticles, toggleWatchArticle, videoProgress, syncVideoProgress, recordRead,
+    watchedArticles, toggleWatchArticle, videoProgress, syncVideoProgress, recordRead, forgetArticle,
   } = useStore()
   const navigate = useNavigate()
   const videoPlayerRef = useRef<VideoPlayerHandle>(null)
@@ -356,6 +356,9 @@ export default function ArticlePage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="meta">
             @{c.author} · {c.at}
+            {c.pendingUntil && new Date(c.pendingUntil) > new Date() && (
+              <span title="Период охлаждения: пока только на weAT.media, удаление не оставит следа в сети"> · в сеть — {new Date(c.pendingUntil).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+            )}
             {depth > 0 && ' · ответ'}
           </p>
           <div className="flex items-center gap-3">
@@ -475,6 +478,39 @@ export default function ArticlePage() {
             <PaywallBadge hasPaywall={!!article.paywall} unlocked={isUnlocked} />
           </h1>
           {article.subtitle && <p className="mt-3 text-lg text-muted-foreground">{article.subtitle}</p>}
+          {article.pendingUntil && new Date(article.pendingUntil) > new Date() && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-accent bg-secondary/40 p-4">
+              <p className="meta inline-flex min-w-0 flex-wrap items-center gap-1.5 !normal-case tracking-normal">
+                <Hourglass size={12} aria-hidden="true" /> Период охлаждения: в сеть AT уйдёт{' '}
+                {new Date(article.pendingUntil).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.{' '}
+                {isOwnArticle ? 'До этого правка и удаление не оставят следа в сети.' : 'Пока видна только на weAT.media.'}{' '}
+                <Link to="/docs#cooldown" className="text-accent underline-offset-4 hover:underline">Подробнее</Link>
+              </p>
+              {isOwnArticle && article.atUri && (
+                <span className="flex gap-2">
+                  <Link to={`/compose?${new URLSearchParams({ pending: article.atUri })}`} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
+                    <PenLine size={13} aria-hidden="true" /> Редактировать
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm('Удалить статью? В сеть она ещё не ушла — следа не останется.')) return
+                      try {
+                        await pendingApi.remove(article.atUri!)
+                        forgetArticle(article.atUri!)
+                        navigate('/feed')
+                      } catch (e) {
+                        window.alert(e instanceof Error ? e.message : 'Не удалось удалить')
+                      }
+                    }}
+                    className="btn-ghost !px-3 !py-1.5 !text-[11px] text-destructive"
+                  >
+                    <Trash2 size={13} aria-hidden="true" /> Удалить
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
           <div className="mt-6 flex items-center gap-3 border-y border-border py-4">
             <Link
               to={`/profile/${article.author.handle}`}
@@ -543,7 +579,7 @@ export default function ArticlePage() {
               {(
                 [
                   { k: 'atUri', label: 'AT URI', hint: 'адрес записи: did автора / коллекция / rkey', value: atMeta.atUri, copy: true },
-                  { k: 'cid', label: 'CID', hint: 'контент-хэш версии записи', value: atMeta.cid, copy: false, demo: atMeta.cidIsDemo },
+                  { k: 'cid', label: 'CID', hint: 'контент-хэш версии записи', value: atMeta.cid, copy: false },
                   { k: 'originPds', label: 'Origin PDS', hint: 'персональный сервер, где хранится оригинал', value: atMeta.originPds, copy: false },
                   { k: 'indexedAt', label: 'Indexed at', hint: 'когда AppView площадки увидел запись', value: atMeta.indexedAt, copy: false },
                   { k: 'sourceType', label: 'Тип источника', hint: 'native-pds — свой PDS · external-pds — внешний · crawler — импорт · repost — репост', value: atMeta.sourceType, copy: false },
@@ -554,9 +590,6 @@ export default function ArticlePage() {
                   <div className="min-w-0">
                     <dt className="meta inline-flex items-center gap-1.5">
                       {row.label}
-                      {'demo' in row && row.demo && (
-                        <span className="rounded-full border border-dashed border-accent px-1.5 text-accent">demo</span>
-                      )}
                     </dt>
                     <dd className="mt-1 break-all font-mono text-[12px] leading-relaxed">{row.value}</dd>
                     <dd className="mt-1 text-[12px] text-muted-foreground">{row.hint}</dd>
@@ -575,10 +608,10 @@ export default function ArticlePage() {
               ))}
             </dl>
             {copied && <p className="meta text-accent">Скопировано: {copied}</p>}
-            {atMeta.cidIsDemo && (
-              <p className="border border-dashed border-border bg-secondary/50 p-3 text-[12px] leading-relaxed text-muted-foreground">
-                CID помечен demo: в прототипе это не криптографическое доказательство содержимого, а
-                детерминированная заглушка.
+            {atMeta.notInRepo && (
+              <p className="border border-dashed border-accent bg-secondary/50 p-3 text-[12px] leading-relaxed text-muted-foreground">
+                Этой статьи нет в вашем AT-репозитории: она сохранена только в этом браузере и другим не видна.
+                Откройте её в редакторе и опубликуйте снова.
               </p>
             )}
             <p className="border border-dashed border-border bg-secondary/50 p-3 text-[12px] leading-relaxed text-muted-foreground">

@@ -16,6 +16,7 @@ import { mountLikeRoutes } from './likes.js'
 import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
 import { memShared, mountSharedRoutes, type SharedRepo } from './shared.js'
+import { createCooldown, memCooldown, mountCooldownRoutes, type Cooldown } from './cooldown.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
@@ -61,6 +62,8 @@ export interface Deps {
   drafts: DraftRepo
   /** совместное редактирование черновиков по ссылке; по умолчанию — в памяти (тесты) */
   shared?: SharedRepo
+  /** период охлаждения (24 ч до ухода в AT); без него — публикация сразу (тесты, локальный стенд) */
+  cooldown?: Cooldown
   /** почта площадки (/admin/email); не задана — ящиков нет */
   mail?: MailboxClient
   /** посты внешних AT-аккаунтов для импорта; по умолчанию — публичные репозитории через plc.directory */
@@ -314,13 +317,15 @@ export function createApp(deps: Deps) {
   mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken, hidden: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] }, { requireStaff, audit })
   // РФ-контур: записи с метками nsfw/politics закрыты на сервере (не настройка читателя)
   const restricted = d.restricted ?? createRestrictedFilter({ enabled: d.config.CONTOUR === 'ru', labelerUrl: d.labelerUrl })
-  mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted, moved: (uris) => d.claims.movedTo(uris) })
+  mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted, moved: (uris) => d.claims.movedTo(uris), cooldown: d.cooldown })
   mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
-  mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
+  mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown }, { bearer })
+  // маршруты есть всегда (без охлаждения очередь просто пуста)
+  mountCooldownRoutes(app, { pds: d.pds, cooldown: d.cooldown ?? createCooldown({ pds: d.pds, secrets: d.secrets, repo: memCooldown() }) }, { bearer, requireStaff })
   const shared = d.shared ?? memShared()
   mountSharedRoutes(app, { pds: d.pds, drafts: d.drafts, shared, users: d.users }, { bearer })
-  mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts }, { bearer })
+  mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown }, { bearer })
   mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource() }, { bearer })
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })

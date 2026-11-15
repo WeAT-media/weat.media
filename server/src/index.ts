@@ -24,12 +24,24 @@ import { payoutRepo } from './payouts.js'
 import { systemAccountRepo } from './systemAccounts.js'
 import { draftRepo } from './drafts.js'
 import { sharedRepo } from './shared.js'
+import { cooldownRepo, createCooldown } from './cooldown.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
 await migrate(sql, { standby: config.NODE_ROLE === 'standby' })
 
+const pds = createPdsClient(config.PDS_URL, config.PDS_ADMIN_PASSWORD)
+const secrets = createSecretBox(config.SECRETS_KEY)
+const cooldown = createCooldown({ pds, secrets, repo: cooldownRepo(sql) })
+// созревшие записи уходят в AT раз в минуту — только с основного узла (на standby — та же база по репликации)
+if (config.NODE_ROLE === 'primary') {
+  setInterval(() => {
+    cooldown.publishDue().then((n) => n && console.log(`cooldown: published ${n}`), (e) => console.error('cooldown', e))
+  }, 60_000).unref()
+}
+
 const app = createApp({
+  cooldown,
   config,
   users: userRepo(sql),
   settings: settingsRepo(sql),
@@ -62,7 +74,7 @@ const app = createApp({
   audit: auditRepo(sql),
   lava: config.LAVA_API_KEY ? createLavaClient(config.LAVA_API_KEY, config.LAVA_API_URL) : undefined,
   paidBox: createSecretBox(config.PAID_CONTENT_KEY ?? config.SECRETS_KEY),
-  secrets: createSecretBox(config.SECRETS_KEY),
+  secrets,
   oauth: Object.fromEntries(
     (
       [
@@ -83,7 +95,7 @@ const app = createApp({
         allowHttp: config.ATPROTO_ALLOW_HTTP,
       })
     : undefined,
-  pds: createPdsClient(config.PDS_URL, config.PDS_ADMIN_PASSWORD),
+  pds,
   pdsUrl: config.PDS_URL,
   peer: config.PEER_CONTOUR_URL ? createPeer(config.PEER_CONTOUR_URL) : undefined,
   nodeRole: config.NODE_ROLE,

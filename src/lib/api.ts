@@ -320,7 +320,8 @@ export const articles = {
     noindex?: boolean
     /** черновик-источник: сервер добавит в запись его рецензентов */
     draftId?: string
-  }) => authed<{ uri: string; cid: string }>('/me/articles', post(b)),
+    publishAt?: string
+  }) => authed<{ uri: string; cid: string; pendingUntil?: string; visibleAt?: string }>('/me/articles', post(b)),
 }
 
 /** Черновик из импорта постов AT-аккаунта: text — markdown для редактора */
@@ -369,6 +370,13 @@ export const profile = {
   update: (b: { displayName?: string | null; description?: string | null }) => authed<ProfileView>('/me/profile', { method: 'PATCH', body: JSON.stringify(b) }),
   setAvatar: (file: File) => authed<ProfileView>('/me/avatar', { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } }),
   removeAvatar: () => authed<ProfileView>('/me/avatar', { method: 'DELETE' }),
+}
+
+/** Период охлаждения: 24 ч запись только на сайте; автор правит или удаляет без следа в сети */
+export const pending = {
+  update: (uri: string, b: { title?: string; subtitle?: string; text: string; excerpt?: string; tags?: string[] }) =>
+    authed<{ uri: string }>(`/me/pending?${new URLSearchParams({ uri })}`, { method: 'PUT', body: JSON.stringify(b) }),
+  remove: (uri: string) => authed<{ ok: true }>(`/me/pending?${new URLSearchParams({ uri })}`, { method: 'DELETE' }),
 }
 
 /** Совместное редактирование черновика по ссылке /shared-draft/<token>: 24 ч, только для вошедших */
@@ -453,6 +461,8 @@ export interface ThreadComment {
   createdAt: string
   /** uri комментария, на который это ответ */
   parent: string | null
+  /** период охлаждения: в AT уйдёт в это время */
+  pendingUntil?: string
 }
 
 export interface AuthorComment {

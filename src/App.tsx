@@ -40,6 +40,7 @@ const AdminEmailPage = lazy(() => import('@/pages/admin/AdminEmailPage'))
 const AdminPayoutsPage = lazy(() => import('@/pages/admin/AdminPayoutsPage'))
 const AdminFinancePage = lazy(() => import('@/pages/admin/AdminFinancePage'))
 const AdminLabelsPage = lazy(() => import('@/pages/admin/AdminLabelsPage'))
+const AdminCooldownPage = lazy(() => import('@/pages/admin/AdminCooldownPage'))
 const AdminSystemPage = lazy(() => import('@/pages/admin/AdminSystemPage'))
 const CrawlerInfoPage = lazy(() => import('@/pages/CrawlerInfoPage'))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage'))
@@ -141,6 +142,7 @@ export default function App() {
             <Route path="/admin/payouts" element={<AdminPayoutsPage />} />
             <Route path="/admin/finance" element={<AdminFinancePage />} />
             <Route path="/admin/labels" element={<AdminLabelsPage />} />
+            <Route path="/admin/cooldown" element={<AdminCooldownPage />} />
             <Route path="/admin/system" element={<AdminSystemPage />} />
             <Route path="/crawler" element={<CrawlerInfoPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />

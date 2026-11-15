@@ -80,7 +80,10 @@ export default function AdminLabelsPage() {
             Метка не удаляет запись: читатель скроет её или увидит предупреждение по своим настройкам. Каждое решение — в журнале сотрудников.
           </p>
         </div>
-        <Link to="/admin/tickets" className="btn-ghost !px-3 !py-2 !text-[11px]">Обращения</Link>
+        <span className="flex gap-2">
+          <Link to="/admin/cooldown" className="btn-ghost !px-3 !py-2 !text-[11px]">Охлаждение</Link>
+          <Link to="/admin/tickets" className="btn-ghost !px-3 !py-2 !text-[11px]">Обращения</Link>
+        </span>
       </div>
 
       {error && <p role="alert" className="mt-4 text-sm text-destructive">{error}</p>}

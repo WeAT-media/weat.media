@@ -21,6 +21,7 @@ import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
 import type { AdjustmentRow, PayoutRepo, PayoutRow } from '../src/payouts.ts'
 import type { SystemAccountRepo } from '../src/systemAccounts.ts'
 import type { DraftRepo, DraftRow } from '../src/drafts.ts'
+import { createCooldown, memCooldown, type Cooldown } from '../src/cooldown.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
 /** тестовый «Zitadel»: свой ключ подписи и выпуск access-токенов с ролями проекта */
@@ -721,7 +722,8 @@ const fakeAtproto: AtprotoAuth = {
   },
 }
 
-function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean; restricted?: Deps['restricted']; feedUrl?: string } = {}) {
+let cooldownLast: Cooldown | undefined
+function makeApp(opts: { cooldown?: boolean; rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean; restricted?: Deps['restricted']; feedUrl?: string } = {}) {
   const deps: Deps = {
     config: {
       CONTOUR: opts.contour ?? 'global',
@@ -765,6 +767,8 @@ function makeApp(opts: { rateLimit?: boolean; contour?: 'global' | 'ru'; ipCount
     feedUrl: opts.feedUrl,
     nodeRole: opts.nodeRole,
   }
+  cooldownLast = opts.cooldown ? createCooldown({ pds: deps.pds, secrets: deps.secrets, repo: memCooldown(), ms: 60_000 }) : undefined
+  deps.cooldown = cooldownLast
   return createApp(deps)
 }
 
@@ -2335,4 +2339,45 @@ test('shared drafts: login required, Yjs updates sync, editor becomes reviewer, 
   const rec = published.at(-1)!.record as { reviewers?: { did: string; handle?: string }[] }
   assert.deepEqual(rec.reviewers, [{ did: b.user.did, handle: 'reviewer.indie.media' }])
   assert.equal((await app.request(`/api/shared/${share.token}`, { headers: H(b.accessJwt) })).status, 410, 'после публикации ссылка закрыта')
+})
+
+test('cooldown: article and comment stay on the site 24h, editable and deletable; then published to the repo at the same uri; staff sees the queue', async () => {
+  const app = makeApp({ cooldown: true, ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'cool', email: 'cool@example.com' }, '5.1.1.1'))).json()
+  const H = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
+  const before = published.length
+  const res = await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'Остынет', text: 'текст' }) })).json()
+  assert.match(res.uri, /^at:\/\/did:plc:cool\/media\.weat\.article\/[a-z2-7]{13}$/)
+  assert.ok(res.pendingUntil, 'есть срок')
+  assert.equal(published.length, before, 'в репозиторий не ушло')
+
+  // на сайте видна сразу
+  const page = await (await app.request(`/api/feed/article?uri=${encodeURIComponent(res.uri)}`)).json()
+  assert.equal(page.record.title, 'Остынет')
+  assert.ok(page.pendingUntil)
+
+  // правка автором; чужой — нет
+  const q = `?uri=${encodeURIComponent(res.uri)}`
+  assert.equal((await app.request(`/api/me/pending${q}`, { method: 'PUT', headers: H, body: JSON.stringify({ title: 'Остынет 2', text: 'новый текст' }) })).status, 200)
+  const b = await (await app.request('/api/auth/register', json({ ...reg, username: 'stranger', email: 'st@example.com' }, '5.1.1.1'))).json()
+  assert.equal((await app.request(`/api/me/pending${q}`, { method: 'DELETE', headers: { authorization: `Bearer ${b.accessJwt}` } })).status, 404)
+
+  // комментарий тоже ждёт; удалённый в охлаждении — без следа
+  const com = await (await app.request('/api/me/comments', { method: 'POST', headers: H, body: JSON.stringify({ subject: res.uri, text: 'мнение' }) })).json()
+  assert.ok(com.pendingUntil)
+  assert.equal((await app.request(`/api/me/comments/${com.uri.split('/').pop()}`, { method: 'DELETE', headers: H })).status, 200)
+  assert.equal(published.length, before)
+
+  // модератор видит очередь; без роли — нет
+  assert.equal((await app.request('/api/admin/cooldown')).status, 401)
+  const queue = await (await app.request('/api/admin/cooldown', { headers: { authorization: `Bearer ${await staffToken(['moderator'])}` } })).json()
+  assert.deepEqual(queue.items.map((i: { uri: string }) => i.uri), [res.uri])
+
+  // срок вышел — публикуется в репозиторий автора по тому же адресу, с правкой
+  await cooldownLast!.repo.update(res.uri, (await cooldownLast!.repo.get(res.uri))!.record)
+  ;(await cooldownLast!.repo.get(res.uri))!.publish_at = new Date(Date.now() - 1000)
+  assert.equal(await cooldownLast!.publishDue(), 1)
+  const rkey = res.uri.split('/').pop()
+  assert.equal((stored.get(`did:plc:cool/media.weat.article/${rkey}`) as { title?: string } | undefined)?.title, 'Остынет 2')
+  assert.equal((await app.request(`/api/me/pending${q}`, { method: 'DELETE', headers: H })).status, 409, 'после публикации — уже не ждущая')
 })

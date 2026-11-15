@@ -6,6 +6,7 @@ import { plainExcerpt } from './share.js'
 import type { UserRepo } from './db.js'
 import type { SharedRepo } from './shared.js'
 import type { DraftRepo } from './drafts.js'
+import type { Cooldown } from './cooldown.js'
 
 /**
  * Публикация с сайта: запись media.weat.article в репозиторий автора его же сессией.
@@ -48,6 +49,8 @@ export const PublishArticleBody = z
     noindex: z.boolean().optional(),
     /** черновик, из которого публикуется: его рецензенты (правили по ссылке) попадают в запись */
     draftId: z.string().max(64).optional(),
+    /** отложенный пост: выход на сайте; в AT — через 24 ч после него (период охлаждения) */
+    publishAt: z.string().datetime({ offset: true }).optional(),
   })
   .refine((b) => b.kind === 'text' || b.videos.length > 0, 'у видео-записи нужен хотя бы один ролик')
   .refine((b) => b.kind === 'video' || b.text.trim().length > 0, 'text: напишите хотя бы абзац')
@@ -70,11 +73,11 @@ export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new D
   }
 }
 
-export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo }, h: { bearer(c: Context): string | undefined }) {
+export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo; cooldown?: Cooldown }, h: { bearer(c: Context): string | undefined }) {
   app.post('/me/articles', async (c) => {
     const token = h.bearer(c)
     if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
-    const { did } = await d.pds.getSession(token)
+    const { did, handle } = await d.pds.getSession(token)
     const parsed = PublishArticleBody.safeParse(await c.req.json().catch(() => null))
     if (!parsed.success) throw fail('InvalidRequest', z.prettifyError(parsed.error), 400)
     // рецензенты — только из своего черновика (владелец проверяется), клиент их не задаёт
@@ -86,8 +89,14 @@ export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: Shar
         reviewers.push({ did: r, ...(handle ? { handle } : {}) })
       }
     }
-    const { uri, cid } = await d.pds.createRecord(token, did, ARTICLE_COLLECTION, articleRecord(parsed.data, new Date(), reviewers))
+    const visibleAt = parsed.data.publishAt ? new Date(parsed.data.publishAt) : undefined
+    const record = articleRecord(parsed.data, visibleAt && visibleAt > new Date() ? visibleAt : new Date(), reviewers)
+    // период охлаждения: 24 ч запись только на сайте — автор правит или удаляет без следа в сети
+    const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, record, visibleAt) : null
     if (draft && d.shared) await d.shared.closeFor(draft.id)
+    if (held) return c.json({ uri: held.uri, cid: '', pendingUntil: held.publish_at.toISOString(), visibleAt: held.visible_at.toISOString() }, 201)
+    if (visibleAt && visibleAt > new Date()) throw fail('InvalidRequest', 'Отложенная публикация недоступна для этого входа', 400)
+    const { uri, cid } = await d.pds.createRecord(token, did, ARTICLE_COLLECTION, record)
     return c.json({ uri, cid }, 201)
   })
 }

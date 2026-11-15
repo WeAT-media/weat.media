@@ -8,35 +8,30 @@ export interface AtProtoMeta {
   indexedAt: string
   sourceType: NonNullable<Article['sourceType']>
   canonicalId: string
-  /** CID в прототипе демонстрационный — не криптографическое доказательство */
+  /** записи нет в репозитории (статья только в этом браузере) — CID и AT URI не существуют */
+  notInRepo: boolean
+  /** старое поле: всегда false — выдуманных CID больше нет */
   cidIsDemo: boolean
-}
-
-const ARTICLE_COLLECTION = 'media.weat.article'
-
-/** Демо-CID: детерминирован от id, явно помечен как демо (bafy…demo…) */
-export function demoCid(articleId: string): string {
-  let h = 2166136261
-  for (const ch of articleId) h = Math.imul(h ^ ch.charCodeAt(0), 16777619)
-  return `bafy…demo…${Math.abs(h).toString(36)}`
 }
 
 /**
  * Обратносовместимая нормализация ATProto-метаданных статьи:
- * старые записи без полей получают разумные демо-значения
- * (sourceType из article.source, atUri из did автора, canonicalId = atUri).
+ * у записи из индекса — настоящие atUri и cid; статья без записи в репозитории (только в этом браузере)
+ * получает «—», а не выдуманные значения.
  */
 export function normalizeAtProto(article: Article): AtProtoMeta {
   const sourceType: AtProtoMeta['sourceType'] =
     article.sourceType ?? (article.source ? 'crawler' : 'native-pds')
-  const atUri = article.atUri ?? `at://${article.author.did}/${ARTICLE_COLLECTION}/${article.id}`
+  const notInRepo = !article.atUri || !article.cid || article.cid.includes('demo')
+  const atUri = article.atUri ?? '— (запись ещё не в репозитории)'
   return {
     atUri,
-    cid: article.cid ?? demoCid(article.id),
-    originPds: article.originPds ?? (sourceType === 'native-pds' ? PDS_URL : 'https://pds-demo.extern.example'),
+    cid: notInRepo ? '— (запись ещё не в репозитории)' : article.cid!,
+    originPds: article.originPds ?? (sourceType === 'native-pds' ? PDS_URL : 'PDS автора'),
     indexedAt: article.indexedAt ?? article.publishedAt,
     sourceType,
     canonicalId: article.canonicalId ?? atUri,
-    cidIsDemo: !article.cid || article.cid.includes('demo'),
+    notInRepo,
+    cidIsDemo: false,
   }
 }

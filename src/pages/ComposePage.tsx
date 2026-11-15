@@ -22,7 +22,8 @@ import Reveal from '@/components/Reveal'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
 import { plainExcerpt } from '@/lib/plainText'
-import { drafts as draftsApi, hasSession, imports, shared as sharedApi, type SharedPerson } from '@/lib/api'
+import { drafts as draftsApi, hasSession, imports, pending as pendingApi, shared as sharedApi, type SharedPerson } from '@/lib/api'
+import { remoteId } from '@/lib/remoteFeed'
 import PeopleAutocomplete, { type PersonCandidate } from '@/components/PeopleAutocomplete'
 import ArticleToc from '@/components/ArticleToc'
 import BlockView from '@/components/ArticleBlock'
@@ -126,7 +127,7 @@ function PollPreview({ raw }: { raw: string }) {
 
 export default function ComposePage() {
   const navigate = useNavigate()
-  const { publishArticle, payoutConnected, user, collections, tiers, articles, prefs } = useStore()
+  const { publishArticle, forgetArticle, payoutConnected, user, collections, tiers, articles, prefs } = useStore()
   const [bodyText, setBodyText] = useState('')
   const [title, setTitle] = useState('')
   // ?import=<id> — черновик из импорта постов AT-аккаунта: редактор открывается с его текстом
@@ -134,9 +135,11 @@ export default function ComposePage() {
   const importId = searchParams.get('import')
   // ?draft=<id> — свой черновик с сервера; без него первый ввод создаёт новый черновик
   const draftParam = searchParams.get('draft')
+  // ?pending=<at://…> — правка своей статьи в периоде охлаждения (ещё не ушла в AT)
+  const pendingUri = searchParams.get('pending')
   const [draftId, setDraftId] = useState<string | null>(draftParam)
   const [draftSaved, setDraftSaved] = useState<string>('')
-  const [importReady, setImportReady] = useState(!importId && !draftParam)
+  const [importReady, setImportReady] = useState(!importId && !draftParam && !pendingUri)
   // настройки шага 2 из черновика — применяются, когда объявлены их состояния (эффект ниже)
   const [loadedMeta, setLoadedMeta] = useState<Record<string, unknown> | null>(null)
   useEffect(() => {
@@ -152,6 +155,19 @@ export default function ComposePage() {
       .catch(() => setDraftId(null))
       .finally(() => setImportReady(true))
   }, [draftParam])
+  useEffect(() => {
+    if (!pendingUri) return
+    fetch(`/api/feed/article?${new URLSearchParams({ uri: pendingUri })}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Статья не найдена'))))
+      .then((a: { record?: { title?: string; subtitle?: string; text?: string; tags?: string[] } }) => {
+        const r = a.record ?? {}
+        setTitle(r.title ?? '')
+        setBodyText(`# ${r.title ?? ''}\n\n${r.text ?? ''}`)
+        setLoadedMeta({ subtitle: r.subtitle ?? '', tags: r.tags ?? [], step: 1 })
+      })
+      .catch(() => {})
+      .finally(() => setImportReady(true))
+  }, [pendingUri])
   useEffect(() => {
     if (!importId) return
     imports
@@ -279,6 +295,8 @@ export default function ComposePage() {
     () => ({ step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput }),
     [step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput],
   )
+  // настройки из черновика приходят асинхронно (после загрузки) — разовое применение к полям формы
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!loadedMeta) return
     const m = loadedMeta as Partial<typeof draftMeta>
@@ -310,13 +328,15 @@ export default function ComposePage() {
     if (m.step === 1 || m.step === 2) setStep(m.step)
     setLoadedMeta(null)
   }, [loadedMeta])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const draftIdRef = useRef<string | null>(draftId)
   useEffect(() => {
     draftIdRef.current = draftId
   }, [draftId])
   const saveDraftNow = useCallback(async () => {
-    if (!hasSession() || (!title.trim() && !bodyText.trim())) return
+    // правка статьи в охлаждении — не черновик
+    if (pendingUri || !hasSession() || (!title.trim() && !bodyText.trim())) return
     try {
       const body = { title: title.trim(), text: bodyText, meta: draftMeta }
       const d = draftIdRef.current ? await draftsApi.save(draftIdRef.current, body) : await draftsApi.create(body)
@@ -334,7 +354,7 @@ export default function ComposePage() {
     } catch {
       setDraftSaved('')
     }
-  }, [title, bodyText, draftMeta, setSearchParams])
+  }, [title, bodyText, draftMeta, setSearchParams, pendingUri])
   // автосохранение: через 2 с после правки текста или настроек; пока грузится черновик — не пишем
   useEffect(() => {
     if (!importReady || loadedMeta) return
@@ -495,12 +515,25 @@ export default function ComposePage() {
     const text = fullText.replace(/^#\s+.*(?:\n+|$)/, '').trim()
     setPublishing(true)
     setPublishError('')
+    if (pendingUri) {
+      // правка в охлаждении: та же запись, тот же адрес; в сеть уйдёт уже исправленной
+      try {
+        await pendingApi.update(pendingUri, { title: title.trim(), text, tags, ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}), excerpt: draft.excerpt })
+        forgetArticle(pendingUri)
+        navigate(`/article/${remoteId(pendingUri)}`)
+      } catch (err) {
+        setPublishError(err instanceof Error ? err.message : 'Не удалось сохранить правку')
+      } finally {
+        setPublishing(false)
+      }
+      return
+    }
     try {
       const uri = await publishArticle({ ...draft, blocks, id, title: title.trim() }, text, draftId ?? undefined)
       if (importId) await imports.setStatus(importId, 'published', uri).catch(() => {})
       // опубликовано — черновик больше не нужен
       if (draftId) await draftsApi.remove(draftId).catch(() => {})
-      navigate(`/article/${id}`)
+      navigate(`/article/${uri ? remoteId(uri) : id}`)
     } catch (err) {
       // запись не ушла в репозиторий — черновик остаётся в форме, можно повторить
       setPublishError(err instanceof Error ? err.message : 'Не удалось опубликовать. Попробуйте ещё раз.')
@@ -1211,7 +1244,7 @@ export default function ComposePage() {
               </p>
             )}
             <button type="submit" data-publish className="btn-primary" disabled={publishing}>
-              {publishing ? 'Публикуем…' : 'Опубликовать в репозиторий'}
+              {publishing ? 'Публикуем…' : pendingUri ? 'Сохранить правку' : 'Опубликовать'}
             </button>
             <button
               type="button"

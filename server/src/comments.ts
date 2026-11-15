@@ -2,6 +2,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import { PdsError, type PdsClient } from './pds.js'
 import { COMMENT_COLLECTION } from './developer.js'
+import { pendingFeedItem, type Cooldown } from './cooldown.js'
 
 /**
  * Комментарии с сайта: запись media.weat.comment в репозитории читателя его же сессией,
@@ -39,7 +40,7 @@ export const AuthorCommentDto = z.object({
 
 const fail = (code: string, message: string, status: 400 | 401 | 503) => new PdsError(status, code, message)
 
-export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string }, h: { bearer(c: Context): string | undefined }) {
+export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; cooldown?: Cooldown }, h: { bearer(c: Context): string | undefined }) {
   const session = async (c: Context) => {
     const token = h.bearer(c)
     if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
@@ -59,7 +60,19 @@ export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: str
     const res = await fetch(`${d.feedUrl}/feed-api/comments?${q}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
     if (!res?.ok) throw fail('FeedUnavailable', 'Индекс ленты недоступен', 503)
     c.header('cache-control', 'public, max-age=5')
-    return c.json(await res.json())
+    const body = (await res.json()) as { comments?: { uri: string }[] }
+    // комментарии в периоде охлаждения — в треде сразу (в сеть уйдут через 24 ч)
+    if (d.cooldown && body.comments) {
+      const seen = new Set(body.comments.map((x) => x.uri))
+      const held = (await d.cooldown.repo.list({ collection: COMMENT_COLLECTION, ...(subject ? { subject } : { did: author! }) }))
+        .filter((r) => !seen.has(r.uri))
+        .map((r) => {
+          const rec = r.record as { text?: string; createdAt?: string; reply?: { parent?: { uri?: string } }; subject?: { uri?: string } }
+          return { uri: r.uri, did: r.did, handle: r.handle, text: rec.text ?? '', createdAt: rec.createdAt ?? r.created_at.toISOString(), parent: rec.reply?.parent?.uri ?? null, subject: rec.subject?.uri, pendingUntil: pendingFeedItem(r).pendingUntil }
+        })
+      body.comments = subject ? [...body.comments, ...held.reverse()] : [...held, ...body.comments]
+    }
+    return c.json(body)
   })
 
   app.post('/me/comments', async (c) => {
@@ -68,15 +81,18 @@ export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: str
     if (!parsed.success) throw fail('InvalidRequest', z.prettifyError(parsed.error), 400)
     const b = parsed.data
     const createdAt = new Date().toISOString()
-    const { uri } = await d.pds.createRecord(s.token, s.did, COMMENT_COLLECTION, {
+    const record = {
       $type: COMMENT_COLLECTION,
       subject: { uri: b.subject },
       ...(b.parent ? { reply: { parent: { uri: b.parent } } } : {}),
       text: b.text,
       createdAt,
-    })
+    }
+    // период охлаждения: 24 ч комментарий только на сайте
+    const held = d.cooldown ? await d.cooldown.hold(s, COMMENT_COLLECTION, record) : null
+    const uri = held?.uri ?? (await d.pds.createRecord(s.token, s.did, COMMENT_COLLECTION, record)).uri
     // форма как в треде: клиент показывает комментарий сразу, не дожидаясь индекса
-    return c.json({ uri, did: s.did, handle: s.handle, text: b.text, createdAt, parent: b.parent ?? null }, 201)
+    return c.json({ uri, did: s.did, handle: s.handle, text: b.text, createdAt, parent: b.parent ?? null, ...(held ? { pendingUntil: held.publish_at.toISOString() } : {}) }, 201)
   })
 
   /** удалить можно только свой: запись живёт в репозитории автора, чужой сессией её не тронуть */
@@ -84,6 +100,9 @@ export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: str
     const s = await session(c)
     const rkey = c.req.param('rkey')
     if (!RKEY.test(rkey)) throw fail('InvalidRequest', 'rkey', 400)
+    // ещё в охлаждении — удаляем у себя, в сеть он не уходил
+    const uri = `at://${s.did}/${COMMENT_COLLECTION}/${rkey}`
+    if (d.cooldown && (await d.cooldown.repo.remove(uri))) return c.json({ ok: true })
     await d.pds.deleteRecord(s.token, s.did, COMMENT_COLLECTION, rkey)
     return c.json({ ok: true })
   })

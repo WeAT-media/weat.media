@@ -32,6 +32,8 @@ interface FeedItem {
     noindex?: boolean
     reviewers?: { did?: string; handle?: string }[]
   }
+  /** AppView: запись в периоде охлаждения */
+  pendingUntil?: string
 }
 
 /** видео из записи → плейлист страницы; адреса — только http(s), id площадок — как в лексиконе */
@@ -156,6 +158,7 @@ export function toArticle(i: FeedItem): Article | null {
     blocks,
     comments: [],
     atUri: i.uri,
+    ...(i.pendingUntil ? { pendingUntil: i.pendingUntil } : {}),
     fromIndex: true,
     ...(r.noindex ? { noindex: true } : {}),
     ...(r.reviewers?.length ? { reviewers: r.reviewers.filter((x) => typeof x?.did === 'string').slice(0, 20).map((x) => ({ did: x.did!, ...(typeof x.handle === 'string' ? { handle: x.handle } : {}) })) } : {}),
@@ -198,6 +201,7 @@ export function toComment(c: ThreadComment): Comment {
     text: c.text,
     at: c.createdAt.slice(0, 16).replace('T', ' '),
     ...(c.parent ? { parentId: c.parent } : {}),
+    ...(c.pendingUntil ? { pendingUntil: c.pendingUntil } : {}),
   }
 }
 

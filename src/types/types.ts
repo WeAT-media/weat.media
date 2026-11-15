@@ -44,6 +44,8 @@ export interface Comment {
   at: string
   /** ответ на комментарий (id родителя); у старых записей отсутствует */
   parentId?: string
+  /** период охлаждения: до этого времени комментарий только на сайте */
+  pendingUntil?: string
 }
 
 export interface Paywall {
@@ -137,6 +139,8 @@ export interface Article {
   editor?: string
   /** рецензенты: правили черновик по ссылке совместного редактирования (ставит AppView) */
   reviewers?: { did: string; handle?: string }[]
+  /** период охлаждения: до этого времени запись только на сайте (в AT ещё не ушла) */
+  pendingUntil?: string
   paywall?: Paywall
   source?: SourceRef
   collectionId?: string

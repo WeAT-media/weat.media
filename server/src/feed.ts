@@ -1,6 +1,7 @@
 import type { Context, Hono } from 'hono'
 import type { PdsClient } from './pds.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
+import { pendingFeedItem, type Cooldown } from './cooldown.js'
 import { filterRssItems, rssGuids, type RestrictedFilter } from './restricted.js'
 
 /**
@@ -22,7 +23,18 @@ const PER_REPO = 50
 const MAX_REPOS = 500
 
 /** feedUrl — сервис ленты (services/feed); недоступен — временный обход PDS */
-export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; restricted?: RestrictedFilter; moved?: (uris: string[]) => Promise<Map<string, string>> }) {
+export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; restricted?: RestrictedFilter; moved?: (uris: string[]) => Promise<Map<string, string>>; cooldown?: Cooldown }) {
+  // статьи в периоде охлаждения (24 ч до ухода в AT): на сайте — сразу, первой страницей «Свежего»
+  const held = async (q: { author?: string; tags?: string; kind?: string }) => {
+    if (!d.cooldown) return []
+    const rows = await d.cooldown.repo.list({ collection: ARTICLE_COLLECTION, ...(q.author?.startsWith('did:') ? { did: q.author } : {}) })
+    const tags = q.tags?.split(',').filter(Boolean) ?? []
+    return rows
+      .filter((r) => !q.author || q.author.startsWith('did:') || r.handle === q.author)
+      .filter((r) => !tags.length || tags.some((t) => ((r.record.tags as string[] | undefined) ?? []).includes(t)))
+      .filter((r) => !q.kind || (q.kind === 'video' ? r.record.kind === 'video' : r.record.kind !== 'video'))
+      .map(pendingFeedItem)
+  }
   /** РФ-контур: вырезать записи с метками nsfw/politics (restricted.ts) */
   // и перенесённые автору статьи краулера (claims.ts): оригинал из ленты уходит, в ней — копия автора
   const strip = async <T extends { uri: string }>(items: T[]): Promise<T[]> => {
@@ -111,6 +123,11 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     const movedTo = d.moved ? (await d.moved([uri]).catch(() => new Map<string, string>())).get(uri) : undefined
     if (movedTo) uri = movedTo
     if (await closed(uri)) return c.json(unavailable, 451)
+    const pending = d.cooldown ? await d.cooldown.repo.get(uri) : undefined
+    if (pending && pending.status !== 'published' && pending.visible_at <= new Date()) {
+      c.header('cache-control', 'no-store')
+      return c.json({ ...pendingFeedItem(pending), textLength: String(pending.record.text ?? '').length })
+    }
     if (d.feedUrl) {
       const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ uri })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
       if (res?.ok) {
@@ -141,7 +158,15 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
         const res = await fetch(`${d.feedUrl}/feed-api/articles?${q}`, { signal: AbortSignal.timeout(3000) })
         if (res.ok) {
           c.header('cache-control', 'public, max-age=5')
-          return c.json(await stripBody(await res.json()))
+          const body = (await stripBody(await res.json())) as { articles?: { uri: string }[] }
+          // первая страница «Свежего» без фильтров по источнику — с ждущими статьями сверху
+          const sort = c.req.query('sort')
+          if (body.articles && !c.req.query('cursor') && (!sort || sort === 'new') && !c.req.query('source') && !c.req.query('view') && !c.req.query('lang')) {
+            const seen = new Set(body.articles.map((a) => a.uri))
+            const extra = (await held({ author: c.req.query('author'), tags: c.req.query('tags'), kind: c.req.query('kind') })).filter((a) => !seen.has(a.uri))
+            body.articles = [...(await strip(extra)), ...body.articles]
+          }
+          return c.json(body)
         }
         // ошибка запроса (неверный sort, курсор) — отдаём как есть: обход PDS её только спрятал бы
         if (res.status >= 400 && res.status < 500) return c.json(await res.json().catch(() => ({ error: 'InvalidRequest' })), res.status as 400)
