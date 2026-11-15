@@ -6,6 +6,10 @@
   :root {
     /* Тёплая «бумажная» палитра: OKLCH-логика через HSL-токены */
     --background: 26 41% 97%;        /* #faf6f3 тёплый off-white */
+    /* блоки кода: тёмные в обеих темах (в тёмной — чуть светлее фона страницы) */
+    --code-bg: 25 6% 22%;
+    --code-fg: 30 27% 93%;
+    --code-muted: 30 10% 70%;
     --foreground: 25 6% 22%;         /* #3c3835 угольно-коричневый */
     --card: 26 44% 93%;              /* #f5ece5 персиковый крем */
     --card-foreground: 25 6% 22%;
@@ -53,6 +57,9 @@
   /* Тёмная тема (appearance: dark/system) */
   html.dark {
     --background: 25 11% 9%;
+    --code-bg: 25 10% 14%;
+    --code-fg: 30 27% 91%;
+    --code-muted: 30 8% 62%;
     --foreground: 30 27% 91%;
     --card: 25 12% 13%;
     --card-foreground: 30 27% 91%;

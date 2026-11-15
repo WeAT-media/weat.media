@@ -28,10 +28,10 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
   if (block.type === 'code') {
     return (
       <figure className="my-8">
-        <figcaption className="meta mb-0 rounded-t-md bg-primary px-4 py-2 text-primary-foreground/80">
+        <figcaption className="meta mb-0 rounded-t-md border border-b-0 border-border bg-[hsl(var(--code-bg))] px-4 py-2 text-[hsl(var(--code-muted))]">
           {block.lang ?? 'code'}
         </figcaption>
-        <pre className="overflow-x-auto rounded-b-md bg-primary p-5 text-[13px] leading-relaxed text-primary-foreground">
+        <pre className="overflow-x-auto rounded-b-md border border-t-0 border-border bg-[hsl(var(--code-bg))] p-5 text-[13px] leading-relaxed text-[hsl(var(--code-fg))]">
           <code>{block.text}</code>
         </pre>
       </figure>
