@@ -710,6 +710,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           : null
         // с аккаунтом — всегда в сеть (отложенный пост тоже: сервер выпустит его в срок); раньше отложенные,
         // платные и с видеофайлом молча оставались только в этом браузере
+        // без входа публиковать некуда: раньше статья молча оставалась только в этом браузере
+        if (text !== undefined && !hasSession()) throw new Error('Вы не вошли — статья не опубликована. Войдите и нажмите «Опубликовать» ещё раз: черновик сохранится.')
         if (text !== undefined && hasSession() && article.paywall) throw new Error('Платные статьи пока не публикуются в сеть — уберите платный доступ или сохраните черновик')
         if (text !== undefined && hasSession() && video && !clip) throw new Error('Видео файлом пока не публикуется в сеть — вставьте ссылку на ролик (YouTube, Loom или https://…)')
         const toPds = text !== undefined && hasSession() && (!video || !!clip)

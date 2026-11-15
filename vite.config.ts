@@ -35,4 +35,25 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // BlockSuite (редактор) и его зависимости — отдельный чанк: имя (хеш) меняется только при обновлении
+        // библиотеки, а не при каждом деплое сайта, — браузер держит его в кэше (/assets/* — immutable, 1 год).
+        // Подсветка кода (shiki: языки, темы) остаётся ленивой — по чанку на язык.
+        manualChunks(id) {
+          // служебные помощники сборки нужны всем страницам — иначе Rollup кладёт их в чанк редактора,
+          // и вход сайта статически тянет весь BlockSuite
+          if (id.includes('commonjsHelpers') || id.includes('preload-helper')) return 'runtime'
+          if (!id.includes('node_modules')) return
+          // зависимости редактора, которые нужны и сайту (всплывающие окна Radix — floating-ui и др.): свой чанк,
+          // иначе Rollup забирает их в blocksuite и страницы без редактора тянут его целиком
+          const shared = /node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(@floating-ui|date-fns|dompurify|zod|nanoid)\//.exec(id)
+          if (shared) return `vendor-${shared[1]!.replace('@', '')}`
+          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(shiki|@shikijs)\//.test(id)) return
+          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(@blocksuite|@toeverything|@lit|lit|lit-html|lit-element|@lit-labs|yjs|lib0|y-protocols)\//.test(id)) return 'blocksuite'
+        },
+      },
+    },
+  },
 });

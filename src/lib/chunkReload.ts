@@ -37,3 +37,17 @@ if (typeof window !== 'undefined') {
     if (reloadForNewBuild()) e.preventDefault()
   })
 }
+
+/**
+ * Редактор (BlockSuite, ~1,5 МБ gzip) — заранее, пока браузер простаивает: у вошедших редактор открывается
+ * сразу, а файл уже в кэше (он меняется только при обновлении библиотеки). Гостям не грузим.
+ */
+export function prefetchEditor(): void {
+  if (typeof window === 'undefined') return
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+  if (conn?.saveData || conn?.effectiveType === '2g' || conn?.effectiveType === 'slow-2g') return
+  const run = () => void import('@blocksuite/presets').catch(() => {})
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+  if (idle) idle(run, { timeout: 8000 })
+  else window.setTimeout(run, 4000)
+}

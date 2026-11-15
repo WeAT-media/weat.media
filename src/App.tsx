@@ -1,5 +1,6 @@
-import { Suspense } from 'react'
-import { lazyPage as lazy } from '@/lib/chunkReload'
+import { Suspense, useEffect } from 'react'
+import { lazyPage as lazy, prefetchEditor } from '@/lib/chunkReload'
+import { hasSession } from '@/lib/api'
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
 import Header from '@/components/Header'
@@ -84,6 +85,9 @@ function LegacySettingsRedirect() {
 }
 
 export default function App() {
+  useEffect(() => {
+    if (hasSession()) prefetchEditor()
+  }, [])
   return (
     <StoreProvider>
       <div className="flex min-h-dvh flex-col">

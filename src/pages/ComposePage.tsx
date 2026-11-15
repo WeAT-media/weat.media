@@ -600,6 +600,12 @@ export default function ComposePage() {
             )
           })}
         </ol>
+        {!hasSession() && (
+          <p role="alert" className="mt-3 border border-destructive/60 bg-secondary/60 p-3 text-sm">
+            Вы не вошли: черновик не сохраняется, а опубликовать статью не получится.{' '}
+            <Link to={`/login?${new URLSearchParams({ returnTo: '/compose' })}`} className="font-semibold text-accent underline underline-offset-2">Войти</Link>
+          </p>
+        )}
         {hasSession() && (
           <p className="mt-3 flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => void saveDraftNow()} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
