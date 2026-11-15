@@ -5,7 +5,8 @@
 #   репозиторий — общее для всех узлов
 #     secrets  ACME_DNS_USERNAME, ACME_DNS_PASSWORD, ACME_DNS_SUBDOMAIN   одна учётка acme-dns на оба контура
 #              LAVA_API_KEY, LAVA_OFFER_ID, LAVA_WEBHOOK_SECRET          оплата (пока не задано)
-#              YANDEX_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, GITHUB_CLIENT_ID/SECRET, TELEGRAM_CLIENT_ID/SECRET
+#              YANDEX_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, GH_OAUTH_CLIENT_ID/SECRET (GitHub), TELEGRAM_CLIENT_ID/SECRET
+#              (Google, GitHub, Telegram — только в глобальный контур: на RU-узлы не попадают)
 #     vars     ACME_EMAIL, SITE_URL, SITE_VERIFY_GOOGLE / _YANDEX / _BING
 #   окружение — узел (у primary и standby одного контура секреты AppView и PDS ОДИНАКОВЫЕ, иначе после
 #   переключения не расшифруются привязанные аккаунты и TOTP)
@@ -132,8 +133,9 @@ jobs:
           YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.GITHUB_CLIENT_SECRET }}
+          # GitHub не даёт заводить секреты с префиксом GITHUB_ — в GitHub они GH_OAUTH_*, на узле — GITHUB_*
+          GITHUB_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
           TELEGRAM_CLIENT_ID: ${{ secrets.TELEGRAM_CLIENT_ID }}
           TELEGRAM_CLIENT_SECRET: ${{ secrets.TELEGRAM_CLIENT_SECRET }}
           # окружение
@@ -196,6 +198,10 @@ jobs:
           if [ -n "$missing" ]; then echo "Не заданы:$missing" >&2; exit 1; fi
           # свой Postgres узла (selfhosted-db) — адреса из PG_PASSWORD; managed — заданы целиком
           pg() { printf 'postgres://indie:%s@postgres:5432/%s' "$PG_PASSWORD" "$1"; }
+          # зарубежные провайдеры входа (Google, GitHub, Telegram) в РФ-контуре запрещены — их ключи туда не кладём
+          if [ "$CONTOUR" = ru ]; then
+            unset GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET TELEGRAM_CLIENT_ID TELEGRAM_CLIENT_SECRET
+          fi
           DATABASE_URL=${DATABASE_URL:-$(pg indie)}
           FEED_DATABASE_URL=${FEED_DATABASE_URL:-$(pg feed)}
           ANALYTICS_DATABASE_URL=${ANALYTICS_DATABASE_URL:-$(pg analytics)}
