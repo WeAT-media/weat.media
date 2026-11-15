@@ -28,6 +28,10 @@ interface BlocksEditorProps {
   onContentInspect?: (info: { hasVideo: boolean }) => void
   /** только чтение: тот же рендер BlockSuite, что в редакторе (предпросмотр) — без расхождений с разметкой */
   readOnly?: boolean
+  /** живой документ редактора (Yjs) — для предпросмотра; вызывается, когда редактор готов */
+  onDoc?: (ydoc: import('yjs').Doc) => void
+  /** зеркало чужого документа (предпросмотр): повторяет каждое его изменение, в т. ч. правки соавторов */
+  mirror?: import('yjs').Doc | null
 }
 
 /** flavours видео-элементов BlockSuite 0.19.5 */
@@ -44,7 +48,11 @@ const VIDEO_FLAVOURS = new Set([
  * Инициализация по API 0.19.5: doc создаётся и load() вызывается ДО editor.doc;
  * editor.doc/specs присваиваются ДО appendChild (connectedCallback читает doc).
  */
-export default function BlocksEditor({ value, onChange, compact, roomId, serverRoom, title, onTitleChange, onContentInspect, readOnly }: BlocksEditorProps) {
+export default function BlocksEditor({ value, onChange, compact, roomId, serverRoom, title, onTitleChange, onContentInspect, readOnly, onDoc, mirror }: BlocksEditorProps) {
+  const onDocRef = useRef(onDoc)
+  useEffect(() => {
+    onDocRef.current = onDoc
+  }, [onDoc])
   const serverRoomRef = useRef(serverRoom)
   useEffect(() => {
     serverRoomRef.current = serverRoom
@@ -129,9 +137,17 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         // не добавляет запись, blockCollections не заполняется, createDoc() возвращает null
         collection.meta.initialize()
         const job = new Job({ collection })
+        // фенсы своих блоков (```faq, ```poll…) — только им: штатный блок кода тоже их брал, и при загрузке
+        // markdown получались два блока — код с JSON и сам блок (так было в предпросмотре)
+        const OWN_FENCES = new Set(['faq', 'poll', 'carousel', 'callout', 'userblock', 'ivideo', 'button', 'bookmark'])
         const adapter = new MarkdownAdapter(job, [
-          ...blocksMod.defaultBlockMarkdownAdapterMatchers,
           ...customBlocksMod.customMarkdownMatchers,
+          // карточку ссылки пишет наш bookmarkMarkdownMatcher (```bookmark) — штатный превращал её в обычную ссылку
+          ...blocksMod.defaultBlockMarkdownAdapterMatchers.filter((m) => m.flavour !== 'affine:bookmark').map((m) =>
+            m.flavour === 'affine:code'
+              ? { ...m, toMatch: (o: Parameters<typeof m.toMatch>[0]) => m.toMatch(o) && !OWN_FENCES.has(String((o.node as { lang?: string }).lang ?? '')) }
+              : m,
+          ),
         ])
 
         // официальный паттерн (react-basic): пустой doc получает базовые блоки в initFn load()
@@ -170,7 +186,18 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         // если никто не ответил — инициализируемся из markdown сами
         let doc: Doc | undefined
         const room = serverRoomRef.current
-        if (room) {
+        if (mirror) {
+          // предпросмотр: копия документа редактора + все его следующие изменения
+          doc = collection.createDoc({ id: `mirror-${Date.now()}` })
+          doc.load()
+          const Y = await import('yjs')
+          const target = doc.spaceDoc
+          Y.applyUpdate(target, Y.encodeStateAsUpdate(mirror))
+          const follow = (u: Uint8Array) => Y.applyUpdate(target, u)
+          mirror.on('update', follow)
+          syncRef.current = { disconnect: () => mirror.off('update', follow) }
+          for (let i = 0; i < 50 && !doc.root; i++) await new Promise((r) => setTimeout(r, 100))
+        } else if (room) {
           // пустой doc без блоков: корень придёт с сервера (или его создаст автор) — два корня ломают документ
           doc = collection.createDoc({ id: `room-${room.token}` })
           doc.load()
@@ -296,7 +323,9 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
             const snap = job.docToSnapshot(doc)
             if (!snap) return lastSerialized.current
             const { file } = await adapter.fromDocSnapshot({ snapshot: snap })
-            return file ?? ''
+            // пустой заголовок BlockSuite пишет как «# Untitled» — у нас это стало бы заголовком статьи
+            const rootTitle = String((doc.root as unknown as { title?: { toString(): string } } | null)?.title?.toString() ?? '').trim()
+            return rootTitle ? (file ?? '') : (file ?? '').replace(/^#\s+Untitled\s*(\n+|$)/, '')
           } catch {
             return lastSerialized.current
           }
@@ -340,6 +369,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         updateHandlerRef.current = onYUpdate
         stateRef.current = { doc }
         setReady(true)
+        onDocRef.current?.(doc.spaceDoc)
       } catch (e) {
         if (!disposed) setError(String(e))
       }
@@ -360,7 +390,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
     }
     // редактор создаётся один раз из начального value; дальше он — источник markdown
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, serverRoom?.token])
+  }, [roomId, serverRoom?.token, mirror])
 
   if (error) {
     return (

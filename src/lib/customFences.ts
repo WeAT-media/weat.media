@@ -10,7 +10,7 @@ import type { ArticleBlock } from '@/types/types'
  * читателю показалась бы блоком кода. Всё нормализуется — читатель получает только проверенное.
  */
 
-const FENCES = ['carousel', 'poll', 'userblock', 'button', 'faq', 'ivideo', 'callout'] as const
+const FENCES = ['carousel', 'poll', 'userblock', 'button', 'faq', 'ivideo', 'callout', 'bookmark'] as const
 
 export const isCustomFence = (lang: string) => (FENCES as readonly string[]).includes(lang)
 
@@ -45,6 +45,11 @@ export function customFenceBlock(lang: string, inner: string): ArticleBlock | nu
       case 'callout':
         // безопасный рендер — CalloutView (без arbitrary HTML)
         return { type: 'callout', text: inner }
+      case 'bookmark': {
+        // карточка ссылки редактора («/link»): адрес обязателен, остальное — превью
+        const b = JSON.parse(inner) as { url?: unknown }
+        return typeof b.url === 'string' && /^https?:\/\//.test(b.url) ? { type: 'bookmark', text: inner } : null
+      }
     }
   } catch {
     /* битый JSON — пропускаем блок */

@@ -971,7 +971,42 @@ export const FaqBlockSpec = [BlockMarkdownAdapterExtension(faqMarkdownMatcher), 
 export const ButtonBlockSpec = [BlockMarkdownAdapterExtension(buttonMarkdownMatcher), ButtonBlockViewExtension]
 
 export const customBlockSpecs = [...CarouselBlockSpec, ...PollBlockSpec, ...CalloutBlockSpec, ...UserBlockSpec, ...IVideoBlockSpec, ...FaqBlockSpec, ...ButtonBlockSpec]
+/**
+ * Карточка ссылки («/link») ↔ ```bookmark {url,title,description,icon,image}```. Штатный адаптер пишет её
+ * обычной ссылкой — при следующей загрузке (переход между шагами, черновик) карточка «схлопывалась» в текст.
+ */
+const BOOKMARK_KEYS = ['url', 'title', 'description', 'icon', 'image'] as const
+export const bookmarkMarkdownMatcher: BlockMarkdownAdapterMatcher = {
+  flavour: 'affine:bookmark',
+  toMatch: (o) => (o.node as { type?: string; lang?: string }).type === 'code' && (o.node as { lang?: string }).lang === 'bookmark',
+  fromMatch: (o) => o.node.flavour === 'affine:bookmark',
+  toBlockSnapshot: {
+    enter: (o, context) => {
+      let data: Record<string, unknown> = {}
+      try {
+        data = JSON.parse((o.node as { value?: string }).value ?? '{}')
+      } catch {
+        return
+      }
+      if (typeof data.url !== 'string') return
+      const props: Record<string, unknown> = { style: 'horizontal', caption: null }
+      for (const k of BOOKMARK_KEYS) props[k] = typeof data[k] === 'string' ? data[k] : null
+      context.walkerContext.openNode({ type: 'block', id: nanoid(), flavour: 'affine:bookmark', props, children: [] }, 'children').closeNode()
+    },
+  },
+  fromBlockSnapshot: {
+    enter: (o, context) => {
+      const p = o.node.props as Record<string, unknown>
+      const data: Record<string, string> = {}
+      for (const k of BOOKMARK_KEYS) if (typeof p[k] === 'string' && p[k]) data[k] = p[k] as string
+      if (!data.url) return
+      context.walkerContext.openNode({ type: 'code', lang: 'bookmark', meta: null, value: JSON.stringify(data) }, 'children').closeNode()
+    },
+  },
+}
+
 export const customMarkdownMatchers: BlockMarkdownAdapterMatcher[] = [
+  bookmarkMarkdownMatcher,
   carouselMarkdownMatcher,
   pollMarkdownMatcher,
   calloutMarkdownMatcher,
@@ -1179,4 +1214,71 @@ export async function registerCustomSlashMenuItems() {
     devPreviewSlashItems as never,
   )
   slashMenuPatched = true
+}
+
+// ── Только чтение (предпросмотр): свои блоки показываются так же, как у читателя на странице статьи —
+// те же React-компоненты (FaqView, кнопка, видео…), а не поля редактирования.
+type ReadView = { root?: import('react-dom/client').Root; host?: Element }
+const READ_VIEWS: [unknown, string][] = [
+  [CarouselBlockComponent, 'carousel'],
+  [PollBlockComponent, 'poll'],
+  [UserBlockComponent, 'userblock'],
+  [CalloutBlockComponent, 'callout'],
+  [IVideoBlockComponent, 'ivideo'],
+  [FaqBlockComponent, 'faq'],
+  [ActionButtonBlockComponent, 'button'],
+]
+
+async function mountReadView(el: HTMLElement & { __readView?: ReadView }, host: Element, type: string, data: string) {
+  const [{ createElement }, { createRoot }, { default: Block }, poll] = await Promise.all([
+    import('react'),
+    import('react-dom/client'),
+    import('@/components/ArticleBlock'),
+    import('@/lib/poll'),
+  ])
+  const state = (el.__readView ??= {})
+  if (state.host !== host) {
+    state.root?.unmount()
+    state.root = createRoot(host)
+    state.host = host
+  }
+  const root = state.root!
+  if (type === 'poll') {
+    // опрос в предпросмотре — вопрос и варианты, голосовать нельзя
+    const p = poll.parsePoll(data)
+    root.render(
+      createElement('div', { className: 'mt-5 border border-border p-4' }, [
+        createElement('p', { key: 'q', className: 'font-semibold' }, p.question || 'Опрос'),
+        createElement('ul', { key: 'o', className: 'mt-2 space-y-1 text-sm' }, p.options.map((o, i) => createElement('li', { key: i, className: 'rounded border border-border px-3 py-1.5' }, o))),
+      ]),
+    )
+    return
+  }
+  root.render(createElement(Block, { block: { type: type as never, text: data } }))
+}
+
+for (const [Cls, type] of READ_VIEWS) {
+  const proto = (Cls as { prototype: Record<string, unknown> }).prototype as {
+    renderBlock: () => unknown
+    updated?: (c: unknown) => void
+    disconnectedCallback?: () => void
+  }
+  const renderEdit = proto.renderBlock
+  proto.renderBlock = function (this: { doc?: { readonly?: boolean } }) {
+    if (this.doc?.readonly) return html`<div class="weat-readonly-view" contenteditable="false"></div>`
+    return renderEdit.call(this)
+  }
+  const updated = proto.updated
+  proto.updated = function (this: HTMLElement & { doc?: { readonly?: boolean }; model?: { data?: string } }, changed: unknown) {
+    updated?.call(this, changed)
+    if (!this.doc?.readonly) return
+    const host = this.querySelector('.weat-readonly-view')
+    if (host) void mountReadView(this, host, type, this.model?.data ?? '')
+  }
+  const disconnected = proto.disconnectedCallback
+  proto.disconnectedCallback = function (this: HTMLElement & { __readView?: ReadView }) {
+    this.__readView?.root?.unmount()
+    this.__readView = undefined
+    disconnected?.call(this)
+  }
 }

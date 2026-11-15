@@ -57,7 +57,7 @@ const MAX_TAGS = 5
 
 
 /** markdown — тело редактора: рендер тем же BlockSuite (только чтение), что и в редакторе */
-function Preview({ article, markdown }: { article: Article; markdown: string }) {
+function Preview({ article, markdown, doc }: { article: Article; markdown: string; doc: import('yjs').Doc | null }) {
   return (
     <div className="rounded-md border border-border bg-background p-6">
       <p className="meta">Предпросмотр</p>
@@ -79,7 +79,7 @@ function Preview({ article, markdown }: { article: Article; markdown: string }) 
           <p className="text-sm text-muted-foreground">Текст пока пуст — начните писать слева.</p>
         ) : (
           // тот же BlockSuite, что в редакторе — разметка одинаковая; опросы — превью без голосов
-          <BlocksEditor key={markdown} value={markdown} onChange={() => {}} readOnly />
+          <BlocksEditor value={markdown} onChange={() => {}} readOnly mirror={doc} />
         )}
       </div>
     </div>
@@ -251,6 +251,8 @@ export default function ComposePage() {
   const [sharedToken, setSharedToken] = useState<string | null>(null)
   const [reviewers, setReviewers] = useState<SharedPerson[]>([])
   const [shareError, setShareError] = useState('')
+  // живой документ редактора шага 1 — предпросмотр шага 2 его зеркалит (и правки соавторов тоже)
+  const [liveDoc, setLiveDoc] = useState<import('yjs').Doc | null>(null)
 
   // Черновик = текст (шаг 1) + настройки публикации (шаг 2). Видео-файл не сохраняется — только ссылка.
   const draftMeta = useMemo(
@@ -579,7 +581,9 @@ export default function ComposePage() {
           </p>
         )}
 
-        {step === 1 ? (
+        {/* шаг 1 не размонтируется: редактор живёт всё время — его документ показывает предпросмотр,
+            карточки ссылок и заголовок не пересобираются из markdown при переходе между шагами */}
+        <div hidden={step !== 1}>
           <Reveal key="article-step" className="mt-8 space-y-6">
           {/* Тип контента — выбирается на первом шаге, до текста; детали видео/монетизации — на шаге 2 */}
           <div role="radiogroup" aria-label="Тип контента" className="flex flex-wrap gap-3">
@@ -615,6 +619,7 @@ export default function ComposePage() {
               {importReady ? <BlocksEditor
                 key={sharedToken ?? 'solo'}
                 serverRoom={sharedToken ? { token: sharedToken, isOwner: true } : undefined}
+                onDoc={setLiveDoc}
                 value={bodyText}
                 title={title}
                 onContentInspect={(info) => setHasVideoEmbed(info.hasVideo)}
@@ -652,7 +657,8 @@ export default function ComposePage() {
               <p className="meta">черновик между шагами не теряется</p>
             </div>
           </Reveal>
-        ) : (
+        </div>
+        {step === 2 && (
           <Reveal key="publish-step" className="mt-8 space-y-5">
           {/* Тип контента выбран на шаге 1 */}
           <p className="meta inline-flex items-center gap-1.5">
@@ -1202,7 +1208,7 @@ export default function ComposePage() {
 
             <div className="rule pt-6">
               <p className="meta mb-3">Предпросмотр всей статьи</p>
-              <Preview article={draft} markdown={fullText.replace(/^#\s+.*(?:\n+|$)/, '')} />
+              <Preview article={draft} markdown={fullText.replace(/^#\s+.*(?:\n+|$)/, '')} doc={liveDoc} />
             </div>
 
                       <div className="flex flex-wrap items-center gap-3">

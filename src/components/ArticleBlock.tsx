@@ -1,5 +1,5 @@
 import { renderInline } from '@/lib/inline'
-import { safeImageSrc } from '@/lib/safeUrl'
+import { safeHref, safeImageSrc } from '@/lib/safeUrl'
 import ArticleCarousel from '@/components/ArticleCarousel'
 import CalloutView from '@/components/CalloutView'
 import UserBlockView from '@/components/UserBlockView'
@@ -20,6 +20,7 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
   if (block.type === 'ivideo') return <InteractiveVideo raw={block.text} />
   if (block.type === 'faq') return <FaqView raw={block.text} />
   if (block.type === 'button') return <ActionButtonView raw={block.text} />
+  if (block.type === 'bookmark') return <BookmarkCard raw={block.text} />
   if (block.type === 'h2') {
     // id — якорь для TOC; scroll-mt под sticky-шапку (~64px)
     return <h2 id={id} className="mt-10 scroll-mt-28 text-2xl font-extrabold tracking-tight">{renderInline(block.text)}</h2>
@@ -66,4 +67,38 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
     )
   }
   return <p className="mt-5 text-[17px] leading-[1.75]">{renderInline(block.text)}</p>
+}
+
+/** карточка ссылки из редактора («/link»): заголовок, описание, картинка — как в BlockSuite */
+function BookmarkCard({ raw }: { raw: string }) {
+  let b: { url?: string; title?: string; description?: string; icon?: string; image?: string } = {}
+  try {
+    b = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  const href = safeHref(b.url ?? '')
+  if (!href) return null
+  const host = (() => {
+    try {
+      return new URL(href).hostname.replace(/^www\./, '')
+    } catch {
+      return href
+    }
+  })()
+  const img = b.image ? safeImageSrc(b.image) : undefined
+  const icon = b.icon ? safeImageSrc(b.icon) : undefined
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="mt-5 flex overflow-hidden rounded-lg border border-border bg-secondary/40 transition-colors hover:border-accent">
+      <span className="flex min-w-0 flex-1 flex-col gap-1 p-4">
+        <span className="flex min-w-0 items-center gap-2 font-semibold">
+          {icon && <img src={icon} alt="" className="h-4 w-4 shrink-0" loading="lazy" referrerPolicy="no-referrer" />}
+          <span className="truncate">{b.title || host}</span>
+        </span>
+        {b.description && <span className="line-clamp-2 text-sm text-muted-foreground">{b.description}</span>}
+        <span className="meta mt-auto truncate !normal-case tracking-normal text-accent">{host}</span>
+      </span>
+      {img && <img src={img} alt="" className="hidden w-40 shrink-0 object-cover sm:block" loading="lazy" referrerPolicy="no-referrer" />}
+    </a>
+  )
 }
