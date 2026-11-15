@@ -142,7 +142,7 @@ export const UpdateClientBody = CreateClientBody.partial()
 
 export const ApiArticleBody = z.object({
   title: z.string().trim().min(1).max(300),
-  text: z.string().min(1).max(200_000).describe('Markdown'),
+  text: z.string().min(1).max(200_000).describe('Markdown (формат — раздел «Формат текста статьи» на weat.media/api): ## и ### заголовки, абзацы, списки - и 1., > цитаты, ``` код, **жирный**, *курсив*, ~~зачёркнутый~~, <u>подчёркнутый</u>, [ссылка](https://…), ![картинка](https://…); свои блоки — фенсы с JSON: ```faq, ```button, ```poll, ```bookmark, ```callout, ```carousel.'),
   excerpt: z.string().trim().max(500).optional(),
   tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),

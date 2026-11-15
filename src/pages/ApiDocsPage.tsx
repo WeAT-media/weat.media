@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { ArrowLeft, Check, ChevronRight, Copy, Download, Lock, Terminal } from 'lucide-react'
 import Reveal from '@/components/Reveal'
+import ArticleFormatDocs from '@/components/ArticleFormatDocs'
 import { HANDLE_DOMAIN, SITE_NAME } from '@/config/site'
 
 /* ── минимальные типы OpenAPI 3.1, которые мы рисуем ─────────────────── */
@@ -381,6 +382,11 @@ export default function ApiDocsPage() {
                   </a>
                 </li>
               ))}
+              <li className="shrink-0">
+                <a href="#article-format" className="flex items-center justify-between gap-3 rounded-md px-3 py-2 font-mono text-[12px] font-semibold tracking-[0.03em] text-accent hover:bg-secondary">
+                  Формат текста статьи
+                </a>
+              </li>
             </ul>
             <p className="meta mt-4 hidden lg:block">{total} операций</p>
           </nav>
@@ -400,6 +406,11 @@ export default function ApiDocsPage() {
                 </section>
               </Reveal>
             ))}
+            {!query && (
+              <Reveal>
+                <ArticleFormatDocs />
+              </Reveal>
+            )}
           </div>
         </div>
       )}

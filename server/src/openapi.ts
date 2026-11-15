@@ -60,6 +60,10 @@ const TAGS = {
     name: 'Разработчикам',
     description: 'Персональные токены и OAuth-приложения («Войти через weat.media»). Управление — обычной сессией из настроек; токен и секрет клиента показываются один раз.',
   },
+  articles: {
+    name: 'Статьи',
+    description: 'Публикация с сайта (сессия) и чтение статей. Текст — markdown, формат и свои блоки описаны в разделе «Формат текста статьи». Статьи с сайта первые 24 ч в периоде охлаждения: видны только на weat.media, правятся и удаляются через /me/pending, потом уходят в AT-репозиторий автора по тому же at:// адресу. publishAt — отложенный пост: охлаждение считается от выхода. Публикация токеном (/v1/articles) идёт в репозиторий сразу.',
+  },
   publicApi: {
     name: 'Публичный API (v1)',
     description: 'Публикация по персональному токену: Authorization: Bearer wm_pat_…. Запись уходит в AT-репозиторий автора как media.weat.article.',
@@ -338,7 +342,7 @@ const ops: Op[] = [
   { method: 'get', path: '/v1/me', tag: 'publicApi', summary: 'Владелец токена', auth: 'pat', ok: { status: 200, schema: z.object({ did: z.string(), handle: z.string(), displayName: z.string().nullable() }), description: 'Профиль' }, errors: [[401, 'InvalidToken'], [403, 'Forbidden — нет profile:read']] },
   {
     method: 'post', path: '/v1/articles', tag: 'publicApi', summary: 'Опубликовать статью', auth: 'pat',
-    description: 'Нужен scope articles:write. Платные статьи через API пока не публикуются.',
+    description: 'Нужен scope articles:write. Запись сразу уходит в AT-репозиторий (без периода охлаждения). Текст — markdown, формат — раздел «Формат текста статьи». Платные статьи через API пока не публикуются.',
     body: ApiArticleBody, ok: { status: 201, schema: z.object({ uri: z.string(), cid: z.string() }), description: 'Опубликовано' },
     errors: [[400, 'InvalidRequest'], [401, 'InvalidToken'], [403, 'Forbidden — нет articles:write']],
   },
@@ -381,14 +385,14 @@ const ops: Op[] = [
     ok: { status: 200, description: '{ articles: [{ uri, cid, did, handle, createdAt, indexedAt, record }], cursor }' },
   },
   {
-    method: 'get', path: '/feed/article', tag: 'profile', summary: 'Статья целиком',
+    method: 'get', path: '/feed/article', tag: 'articles', summary: 'Статья целиком',
     query: { uri: { description: 'at://did/media.weat.article/rkey', required: true } },
     ok: { status: 200, description: '{ uri, cid, did, handle, createdAt, record, textLength }' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']],
   },
   {
-    method: 'post', path: '/me/articles', tag: 'profile', summary: 'Опубликовать статью или видео', auth: 'bearer',
-    description: 'Запись media.weat.article в репозитории автора. kind=video — с плейлистом videos (native — https-адрес файла, youtube/loom — videoId). Платные — через /me/articles/paid.',
-    body: PublishArticleBody, ok: { status: 201, schema: z.object({ uri: z.string(), cid: z.string() }), description: 'Опубликовано' },
+    method: 'post', path: '/me/articles', tag: 'articles', summary: 'Опубликовать статью или видео', auth: 'bearer',
+    description: 'Статья (media.weat.article) с сайта. Первые 24 ч — период охлаждения: ответ сразу даёт uri (он не изменится), cid пустой, pendingUntil — когда запись уйдёт в AT-репозиторий; до этого правка и удаление — /me/pending. publishAt — отложенный пост: на сайте в это время, в AT — через 24 ч после него. draftId — черновик: рецензенты из совместного редактирования попадут в запись. kind=video — с плейлистом videos (native — https-адрес файла, youtube/loom — videoId). Платные — через /me/articles/paid.',
+    body: PublishArticleBody, ok: { status: 201, schema: z.object({ uri: z.string(), cid: z.string().describe('пусто, пока запись в охлаждении'), pendingUntil: z.string().optional().describe('когда уйдёт в AT'), visibleAt: z.string().optional().describe('когда выйдет на сайте') }), description: 'Опубликовано (на сайте; в AT — после охлаждения)' },
     errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },
   // ── комментарии
@@ -480,12 +484,12 @@ const ops: Op[] = [
     errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired'], [409, 'BelowMinimum | BalanceChanged']],
   },
   {
-    method: 'get', path: '/share/article/{id}', tag: 'profile', summary: 'Превью ссылки на статью (Open Graph)',
+    method: 'get', path: '/share/article/{id}', tag: 'articles', summary: 'Превью ссылки на статью (Open Graph)',
     description: 'HTML с og:/twitter:-тегами для ботов соцсетей; id — из адреса /article/<id>. Людям Caddy отдаёт сайт.',
     ok: { status: 200, schema: z.string().describe('text/html'), description: 'Страница превью' },
   },
   { method: 'get', path: '/blob/{did}/{cid}', tag: 'profile', summary: 'Файл автора (фото профиля) с его PDS', description: 'Редирект 302 на com.atproto.sync.getBlob PDS из DID-документа автора — работает для авторов любого контура и сторонних PDS.', ok: { status: 302, schema: z.string(), description: 'Редирект на PDS автора' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']] },
-  { method: 'get', path: '/og/article/{file}', tag: 'profile', summary: 'Картинка превью статьи (1200×630)', description: 'file — <id>.png из адреса /article/<id>: название статьи, имя и фото автора. Нет статьи или закрыта в контуре — редирект на общую /og-image.png.', ok: { status: 200, schema: z.string().describe('image/png'), description: 'PNG' } },
+  { method: 'get', path: '/og/article/{file}', tag: 'articles', summary: 'Картинка превью статьи (1200×630)', description: 'file — <id>.png из адреса /article/<id>: название статьи, имя и фото автора. Нет статьи или закрыта в контуре — редирект на общую /og-image.png.', ok: { status: 200, schema: z.string().describe('image/png'), description: 'PNG' } },
   { method: 'post', path: '/link-preview', tag: 'profile', summary: 'Превью ссылки для редактора', auth: 'bearer', description: 'Open Graph страницы по ссылке (карточка «/link»). Только http(s) на 80/443, внутренние адреса запрещены, кэш — час.', body: z.object({ url: z.string().max(2000) }), ok: { status: 200, schema: z.object({ url: z.string(), title: z.string().nullable(), description: z.string().nullable(), image: z.string().nullable(), icon: z.string().nullable() }), description: 'Превью' }, errors: [[401, 'AuthenticationRequired'], [404, 'NotFound']] },
   { method: 'get', path: '/labelers', tag: 'profile', summary: 'Коллегии присяжных и их метки', ok: { status: 200, schema: z.object({ labelers: z.array(z.record(z.string(), z.unknown())) }), description: 'Коллегии' }, errors: [[502, 'LabelerUnavailable'], [503, 'LabelerDisabled']] },
   { method: 'get', path: '/labels', tag: 'profile', summary: 'Действующие метки на записях', query: { uris: { description: 'at://… через запятую, до 100', required: true } }, ok: { status: 200, schema: z.object({ labels: z.array(z.record(z.string(), z.unknown())) }), description: 'Подписанные метки (com.atproto.label.defs#label)' } },
@@ -509,9 +513,9 @@ const ops: Op[] = [
   { method: 'put', path: '/me/drafts/{id}', tag: 'profile', summary: 'Сохранить черновик', auth: 'bearer', body: DraftBody, ok: { status: 200, schema: DraftDto, description: 'Сохранён' }, errors: [[404, 'NotFound']] },
   { method: 'delete', path: '/me/drafts/{id}', tag: 'profile', summary: 'Удалить черновик', auth: 'bearer', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[404, 'NotFound']] },
   // ── период охлаждения: 24 ч запись только на сайте, потом — в репозиторий автора по тому же адресу
-  { method: 'get', path: '/me/pending', tag: 'profile', summary: 'Мои записи в периоде охлаждения', auth: 'bearer', description: 'Статьи и комментарии, которые ещё не ушли в AT (pendingUntil — когда уйдут; scheduledAt — отложенный пост ещё не вышел на сайте).', ok: { status: 200, schema: z.object({ items: z.array(z.record(z.string(), z.unknown())) }), description: 'Ждущие записи' } },
-  { method: 'put', path: '/me/pending', tag: 'profile', summary: 'Исправить запись в охлаждении', auth: 'bearer', query: { uri: { description: 'at://… записи', required: true } }, description: 'Статья: title, subtitle, text, excerpt, tags. Комментарий: text. После ухода в AT — 409.', body: z.record(z.string(), z.unknown()), ok: { status: 200, schema: z.record(z.string(), z.unknown()), description: 'Обновлённая запись' }, errors: [[404, 'NotFound'], [409, 'AlreadyPublished']] },
-  { method: 'delete', path: '/me/pending', tag: 'profile', summary: 'Удалить запись в охлаждении без следа', auth: 'bearer', query: { uri: { description: 'at://… записи', required: true } }, ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалена — в сеть не уходила' }, errors: [[404, 'NotFound'], [409, 'AlreadyPublished']] },
+  { method: 'get', path: '/me/pending', tag: 'articles', summary: 'Мои записи в периоде охлаждения', auth: 'bearer', description: 'Статьи и комментарии, которые ещё не ушли в AT (pendingUntil — когда уйдут; scheduledAt — отложенный пост ещё не вышел на сайте).', ok: { status: 200, schema: z.object({ items: z.array(z.record(z.string(), z.unknown())) }), description: 'Ждущие записи' } },
+  { method: 'put', path: '/me/pending', tag: 'articles', summary: 'Исправить запись в охлаждении', auth: 'bearer', query: { uri: { description: 'at://… записи', required: true } }, description: 'Статья: title, subtitle, text, excerpt, tags. Комментарий: text. После ухода в AT — 409.', body: z.record(z.string(), z.unknown()), ok: { status: 200, schema: z.record(z.string(), z.unknown()), description: 'Обновлённая запись' }, errors: [[404, 'NotFound'], [409, 'AlreadyPublished']] },
+  { method: 'delete', path: '/me/pending', tag: 'articles', summary: 'Удалить запись в охлаждении без следа', auth: 'bearer', query: { uri: { description: 'at://… записи', required: true } }, ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалена — в сеть не уходила' }, errors: [[404, 'NotFound'], [409, 'AlreadyPublished']] },
   { method: 'get', path: '/admin/cooldown', tag: 'admin', summary: 'Очередь охлаждения (модерация)', auth: 'staff', description: 'Роль moderator. Все ждущие записи, включая отложенные до выхода. Только просмотр; метка — POST /admin/labels по тому же at:// адресу.', ok: { status: 200, schema: z.object({ items: z.array(z.record(z.string(), z.unknown())) }), description: 'Очередь' } },
   // ── совместное редактирование черновика по ссылке (24 ч, только для вошедших)
   { method: 'post', path: '/me/drafts/{id}/share', tag: 'profile', summary: 'Ссылка для совместного редактирования', auth: 'bearer', description: 'Создаёт ссылку /shared-draft/<token> на 24 ч или возвращает действующую.', ok: { status: 201, schema: z.object({ token: z.string(), expiresAt: z.string() }), description: 'Ссылка' }, errors: [[404, 'NotFound']] },

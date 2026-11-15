@@ -39,7 +39,7 @@ export const PublishArticleBody = z
   .object({
     title: z.string().trim().min(1).max(300),
     subtitle: z.string().trim().max(300).optional(),
-    text: z.string().max(200_000).describe('Markdown; у видео-записи может быть пустым'),
+    text: z.string().max(200_000).describe('Markdown (формат — раздел «Формат текста статьи» на weat.media/api): ## и ### заголовки, абзацы, списки - и 1., > цитаты, ``` код, **жирный**, *курсив*, ~~зачёркнутый~~, <u>подчёркнутый</u>, [ссылка](https://…), ![картинка](https://…); свои блоки — фенсы с JSON: ```faq, ```button, ```poll, ```bookmark, ```callout, ```carousel. У видео-записи может быть пустым.'),
     excerpt: z.string().trim().max(500).optional(),
     tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
     langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),
