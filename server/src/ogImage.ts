@@ -41,6 +41,8 @@ export interface ArticleCard {
   title: string
   author: string
   handle?: string | null
+  /** статья краулера: сайт оригинала вместо handle (без «@») */
+  site?: string | null
   /** data: URI фото автора (png/jpeg) */
   avatar?: string | null
   siteName: string
@@ -84,7 +86,7 @@ export async function renderArticleCard(a: ArticleCard): Promise<Buffer> {
           'div',
           { flexDirection: 'column', marginLeft: 22 },
           h('div', { fontSize: 32, fontWeight: 800 }, clamp(a.author, 40)),
-          ...(a.handle ? [h('div', { marginTop: 4, fontSize: 24, fontWeight: 500, color: MUTED }, `@${clamp(a.handle, 48)}`)] : []),
+          ...(a.handle || a.site ? [h('div', { marginTop: 4, fontSize: 24, fontWeight: 500, color: MUTED }, a.handle ? `@${clamp(a.handle, 48)}` : `с ${clamp(a.site!, 48)}`)] : []),
         ),
       ),
     ),

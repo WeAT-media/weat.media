@@ -129,7 +129,8 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     const png = await renderArticleCard({
       title: r.title,
       author: crawled || p.name || a.handle || siteName,
-      handle: crawled ? (r.source?.site ?? null) : (a.handle ?? null),
+      handle: crawled ? null : (a.handle ?? null),
+      site: crawled ? (r.source?.site ?? null) : null,
       avatar: p.avatar,
       siteName,
     }).catch(() => null)
