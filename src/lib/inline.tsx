@@ -6,7 +6,7 @@ import { safeHref, safeImageSrc } from '@/lib/safeUrl'
  * MarkdownAdapter), поэтому понимаем и его конструкции: экранирование `\x`, подчёркивание как
  * `<u>…</u>` (в т. ч. экранированное `\<u>`), вложенность — **жирный со [ссылкой](url)** и т. п.
  *
- *   **жирный** / __жирный__, *курсив* / _курсив_, ~~зачёркнутый~~, `код`, <u>подчёркнутый</u>,
+ *   **жирный** / __жирный__, *курсив* / _курсив_, ***жирный курсив***, ~~зачёркнутый~~, `код`, <u>подчёркнутый</u>,
  *   [текст](url), ![alt](src)
  */
 
@@ -111,6 +111,21 @@ export function renderInline(input: string): ReactNode[] {
         continue
       }
     }
+    // ***жирный курсив*** (и ___…___): иначе ** закрывался внутри *** и оставлял звёздочки
+    const triple = s.startsWith('***', i) ? '***' : s.startsWith('___', i) ? '___' : null
+    if (triple) {
+      const end = findClose(s, i + 3, triple)
+      if (end > i + 3) {
+        const inner = renderInline(s.slice(i + 3, end))
+        wrap((k) => (
+          <strong key={k} className="font-bold">
+            <em>{inner}</em>
+          </strong>
+        ))
+        i = end + 2
+        continue
+      }
+    }
     const pair = s.startsWith('**', i) ? '**' : s.startsWith('__', i) ? '__' : s.startsWith('~~', i) ? '~~' : null
     if (pair) {
       const end = findClose(s, i + 2, pair)
@@ -144,6 +159,6 @@ export function inlinePlain(input: string): string {
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/<\/?u>/g, '')
-    .replace(/(\*\*|__|~~|`)/g, '')
+    .replace(/(\*\*\*|___|\*\*|__|~~|`)/g, '')
     .replace(/(^|[^\w])[*_]([^*_]+)[*_](?=[^\w]|$)/g, '$1$2')
 }
