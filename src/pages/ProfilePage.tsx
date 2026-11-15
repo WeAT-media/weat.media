@@ -8,6 +8,7 @@ import Stamp from '@/components/Stamp'
 import Reveal from '@/components/Reveal'
 import ReportDialog from '@/components/ReportDialog'
 import RssButton from '@/components/RssButton'
+import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { buildAuthorFeed } from '@/lib/rss'
 import { api, comments as commentsApi, countryLabel, type ApiUser, type AuthorComment, avatarUrl } from '@/lib/api'
 import { commentAnchor, remoteId } from '@/lib/remoteFeed'
@@ -369,12 +370,12 @@ export default function ProfilePage() {
                     <Stamp verdict={a.verdict} small />
                   </div>
                   <h2 className="mt-2.5 text-xl font-extrabold leading-snug tracking-tight">
-                    <Link
-                      to={`/article/${a.id}`}
+                    <ArticleForesightLink
+                      article={a}
                       className="decoration-accent decoration-2 underline-offset-4 transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {a.title}
-                    </Link>
+                    </ArticleForesightLink>
                   </h2>
                   <p className="meta mt-2">
                     {a.readingTime} мин · {a.comments.length} коммент.

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
 import { Flame } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import Stamp from '@/components/Stamp'
 import Reveal from '@/components/Reveal'
 import PaywallBadge from '@/components/PaywallBadge'
+import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { commentCount, hotness } from '@/lib/analytics'
 import { fetchRanked } from '@/lib/remoteFeed'
 import { SOURCE_URL } from '@/config/site'
@@ -92,13 +92,13 @@ export default function HotPage() {
                     <span className="meta">score {score}</span>
                   </div>
                   <h2 className="mt-1.5 text-xl font-extrabold leading-snug tracking-tight">
-                    <Link
-                      to={`/article/${a.id}`}
+                    <ArticleForesightLink
+                      article={a}
                       className="decoration-accent decoration-2 underline-offset-4 hover:underline"
                     >
                       {a.title}
                       <PaywallBadge hasPaywall={!!a.paywall} unlocked={!!unlocked[a.id]} />
-                    </Link>
+                    </ArticleForesightLink>
                   </h2>
                   <p className="meta mt-1.5">
                     @{a.author.handle} · {commentCount(a)} коммент. · {a.readingTime} мин

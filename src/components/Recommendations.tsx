@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
 import { Flame } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { fetchRelated } from '@/lib/remoteFeed'
+import ArticleForesightLink from '@/components/ArticleForesightLink'
 import type { Article } from '@/types/types'
 
 /**
@@ -48,8 +48,8 @@ export default function Recommendations({ excludeId }: { excludeId?: string }) {
       <ul className="mt-5">
         {list.map((a, i) => (
           <li key={a.id} className="rule py-4 first:border-t-0">
-            <Link
-              to={`/article/${a.id}`}
+            <ArticleForesightLink
+              article={a}
               className="group flex items-baseline gap-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="meta w-6 shrink-0 text-accent">0{i + 1}</span>
@@ -61,7 +61,7 @@ export default function Recommendations({ excludeId }: { excludeId?: string }) {
                   @{a.author.handle} · {a.tags.slice(0, 2).map((t) => `#${t}`).join(' ')} · {a.readingTime} мин
                 </span>
               </span>
-            </Link>
+            </ArticleForesightLink>
           </li>
         ))}
       </ul>

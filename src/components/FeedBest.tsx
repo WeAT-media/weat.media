@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router'
 import { MessageSquare, Trophy, ArrowBigUp } from 'lucide-react'
 import { commentCount, upvoteCount } from '@/lib/analytics'
 import { fetchRanked } from '@/lib/remoteFeed'
+import ArticleForesightLink from '@/components/ArticleForesightLink'
 import type { Article } from '@/types/types'
 
 type Period = 'day' | 'week' | 'month'
@@ -91,9 +91,9 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
             <li key={a.id} className="flex gap-3">
               <span className="font-mono text-lg font-bold leading-none text-accent">{i + 1}</span>
               <div className="min-w-0">
-                <Link to={`/article/${a.id}`} className="block text-sm font-semibold leading-snug underline-offset-4 hover:text-accent hover:underline">
+                <ArticleForesightLink article={a} className="block text-sm font-semibold leading-snug underline-offset-4 hover:text-accent hover:underline">
                   {a.title}
-                </Link>
+                </ArticleForesightLink>
                 <span className="meta mt-1 inline-flex items-center gap-1">
                   {metric === 'comments' ? <MessageSquare size={11} aria-hidden="true" /> : <ArrowBigUp size={12} aria-hidden="true" />}
                   {score} · @{a.author.handle}

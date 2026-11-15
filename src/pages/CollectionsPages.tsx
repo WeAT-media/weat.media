@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store'
 import Reveal from '@/components/Reveal'
 import Stamp from '@/components/Stamp'
 import PaywallBadge from '@/components/PaywallBadge'
+import ArticleForesightLink from '@/components/ArticleForesightLink'
 
 export function CollectionsPage() {
   const { collections, articles, user, createCollection } = useStore()
@@ -141,10 +142,10 @@ export function CollectionPage({ id }: { id?: string }) {
                     <Stamp verdict={a.verdict} small />
                   </div>
                   <h2 className="mt-1 text-lg font-extrabold tracking-tight">
-                    <Link to={`/article/${a.id}`} className="decoration-accent underline-offset-4 hover:underline">
+                    <ArticleForesightLink article={a} className="decoration-accent underline-offset-4 hover:underline">
                       {a.title}
                       <PaywallBadge hasPaywall={!!a.paywall} unlocked={!!unlocked[a.id]} />
-                    </Link>
+                    </ArticleForesightLink>
                   </h2>
                   <p className="meta mt-1">{a.readingTime} мин</p>
                 </div>
