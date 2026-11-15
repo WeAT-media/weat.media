@@ -37,7 +37,7 @@ import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutReques
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
 import { PublishArticleBody } from './articles.js'
 import { DirectMessageBody, MessageBody, TicketBody, TicketDto, TicketPatch } from './tickets.js'
-import { ApiArticleBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
+import { ApiArticleBody, ApiDraftBody, ApiCommentBody, ApiProfileBody, RotateTokenBody, ClientDto, CreateClientBody, CreateTokenBody, TokenDto, UpdateClientBody } from './developer.js'
 
 const TAGS = {
   auth: { name: 'Вход и регистрация', description: 'Аккаунт на PDS Indie.media: регистрация, вход по паролю, обновление сессии.' },
@@ -345,6 +345,12 @@ const ops: Op[] = [
     description: 'Нужен scope articles:write. Запись сразу уходит в AT-репозиторий (без периода охлаждения). Текст — markdown, формат — раздел «Формат текста статьи». Платные статьи через API пока не публикуются.',
     body: ApiArticleBody, ok: { status: 201, schema: z.object({ uri: z.string(), cid: z.string() }), description: 'Опубликовано' },
     errors: [[400, 'InvalidRequest'], [401, 'InvalidToken'], [403, 'Forbidden — нет articles:write']],
+  },
+  {
+    method: 'post', path: '/v1/drafts', tag: 'publicApi', summary: 'Создать черновик', auth: 'pat',
+    description: 'Нужен scope articles:write. Черновик не публикуется и в репозиторий не пишется — его видит только автор (Настройки → Черновики, /compose?draft=<id>), вычитывает в редакторе и публикует сам. Удобно для переноса статей с других площадок. Текст — markdown, формат — раздел «Формат текста статьи». До 200 черновиков на автора.',
+    body: ApiDraftBody, ok: { status: 201, schema: z.object({ id: z.string(), editUrl: z.string(), createdAt: z.string() }), description: 'Черновик создан' },
+    errors: [[400, 'InvalidRequest'], [401, 'InvalidToken'], [403, 'Forbidden — нет articles:write'], [409, 'TooManyDrafts']],
   },
   { method: 'delete', path: '/v1/articles/{rkey}', tag: 'publicApi', summary: 'Удалить статью', auth: 'pat', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалена' }, errors: [[401, 'InvalidToken'], [403, 'Forbidden — нет articles:delete']] },
   {

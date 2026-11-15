@@ -336,7 +336,7 @@ export function createApp(deps: Deps) {
   mountSharedRoutes(app, { pds: d.pds, drafts: d.drafts, shared, users: d.users }, { bearer })
   mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown }, { bearer })
   mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource(d.config.ATPROTO_PLC_URL, d.config.ATPROTO_ALLOW_HTTP) }, { bearer })
-  mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets }, { bearer })
+  mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets, drafts: d.drafts }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })
   mountSystemAccountRoutes(app, { pds: d.pds, users: d.users, system: d.system, secrets: d.secrets, handleDomain: d.config.PDS_HANDLE_DOMAIN }, { requireStaff, audit, issueHandoff: ids.issueHandoff, sessionDto })
 

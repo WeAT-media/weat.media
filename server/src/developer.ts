@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { profileOps } from './profile.js'
 import type { Sql, UserRepo, UserRow } from './db.js'
 import { PdsError, type PdsClient } from './pds.js'
+import type { DraftRepo } from './drafts.js'
 import type { SecretBox } from './secretbox.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
 
@@ -140,6 +141,15 @@ export const CreateClientBody = z.object({
 })
 export const UpdateClientBody = CreateClientBody.partial()
 
+export const ApiDraftBody = z.object({
+  title: z.string().trim().min(1).max(300),
+  subtitle: z.string().trim().max(300).optional(),
+  text: z.string().max(200_000).describe('Markdown — формат как у статьи (раздел «Формат текста статьи»); заголовок не дублируйте, он в title'),
+  tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+  langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),
+  canonicalUrl: z.string().url().max(2000).optional().describe('оригинал (при переносе) — для заметки в черновике'),
+})
+
 export const ApiArticleBody = z.object({
   title: z.string().trim().min(1).max(300),
   text: z.string().min(1).max(200_000).describe('Markdown (формат — раздел «Формат текста статьи» на weat.media/api): ## и ### заголовки, абзацы, списки - и 1., > цитаты, ``` код, **жирный**, *курсив*, ~~зачёркнутый~~, <u>подчёркнутый</u>, [ссылка](https://…), ![картинка](https://…); свои блоки — фенсы с JSON: ```faq, ```button, ```poll, ```bookmark, ```callout, ```carousel.'),
@@ -203,6 +213,8 @@ export interface DeveloperDeps {
   pds: PdsClient
   developer: DeveloperRepo
   secrets: SecretBox
+  /** черновики — для POST /v1/drafts (перенос статей черновиками) */
+  drafts?: DraftRepo
 }
 
 const fail = (code: string, message: string, status: 400 | 401 | 403 | 404) => new PdsError(status, code, message)
@@ -447,6 +459,26 @@ export function mountDeveloperRoutes(app: Hono, d: DeveloperDeps, h: { bearer(c:
     }
     const { uri, cid } = await d.pds.createRecord(s.accessJwt, user.did, ARTICLE_COLLECTION, record)
     return c.json({ uri, cid }, 201)
+  })
+
+  // черновик по токену: перенос статей с других площадок — автор вычитает их в редакторе и опубликует сам.
+  // В репозиторий (он публичен) не пишется; виден только автору: «Настройки → Черновики», /compose?draft=<id>
+  app.post('/v1/drafts', async (c) => {
+    if (!d.drafts) throw fail('NotConfigured', 'Черновики недоступны', 404)
+    const { user } = await byToken(c, 'articles:write')
+    const b = await parse(c, ApiDraftBody)
+    if ((await d.drafts.count(user.did)) >= 200) throw new PdsError(409, 'TooManyDrafts', 'Черновиков больше 200 — удалите ненужные')
+    const id = `dr_${randomBytes(9).toString('base64url')}`
+    // заголовок — первой строкой «# …»: так его показывает редактор
+    const text = `# ${b.title}\n\n${b.text}`
+    const meta = {
+      ...(b.subtitle ? { subtitle: b.subtitle } : {}),
+      ...(b.tags.length ? { tags: b.tags } : {}),
+      ...(b.langs[0] ? { language: b.langs[0] } : {}),
+      ...(b.canonicalUrl ? { canonicalUrl: b.canonicalUrl } : {}),
+    }
+    const r = await d.drafts.save(user.did, id, b.title, text, meta)
+    return c.json({ id: r.id, editUrl: `/compose?draft=${r.id}`, createdAt: r.created_at.toISOString() }, 201)
   })
 
   app.delete('/v1/articles/:rkey', async (c) => {

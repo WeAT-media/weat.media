@@ -1797,6 +1797,17 @@ test('personal token: publish via public API, scopes, revoke kills PDS access', 
   assert.ok(uri.startsWith(`at://${author.user.did}/media.weat.article/`))
   assert.equal(published.at(-1)!.record.title, 'Из CI')
 
+  // черновик токеном: в репозиторий не пишется, автор видит его в своих черновиках
+  const before = published.length
+  const dr = await app.request('/api/v1/drafts', { method: 'POST', headers: auth(tok.token), body: JSON.stringify({ title: 'Перенос с Хабра', text: 'Текст **статьи**', tags: ['habr'], langs: ['ru'] }) })
+  assert.equal(dr.status, 201)
+  const draft = await dr.json()
+  assert.equal(draft.editUrl, `/compose?draft=${draft.id}`)
+  assert.equal(published.length, before, 'черновик не публикуется')
+  const mine = await (await app.request(`/api/me/drafts/${draft.id}`, { headers: auth(author.accessJwt) })).json()
+  assert.equal(mine.text, '# Перенос с Хабра\n\nТекст **статьи**')
+  assert.deepEqual(mine.meta, { tags: ['habr'], language: 'ru' })
+
   assert.equal((await app.request('/api/v1/me', { headers: auth(tok.token) })).status, 403, 'нет profile:read')
   assert.equal((await app.request('/api/v1/articles', { method: 'POST', headers: auth('wm_pat_nope'), body: '{}' })).status, 401)
 
