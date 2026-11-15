@@ -2433,3 +2433,14 @@ test('yandex: account from the other contour — sign in there, no duplicate acc
   assert.equal(again.user.did, nlUser.user.did, 'тот же аккаунт')
   assert.equal(await (await ru.request('/api/users/ivan-petrov-2.indie.media')).status === 200, false, 'дубля в RU нет')
 })
+
+test('republished article: source {url, site, publishedAt} without crawledAt', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'reprint', email: 'rp@example.com' }, '5.1.1.1'))).json()
+  const H = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
+  const res = await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'Zod умер', text: 'текст', republished: { url: 'https://www.habr.com/ru/articles/789384/', publishedAt: '2024-01-26' } }) })
+  assert.equal(res.status, 201)
+  assert.deepEqual(published.at(-1)!.record.source, { url: 'https://www.habr.com/ru/articles/789384/', site: 'habr.com', publishedAt: '2024-01-26T00:00:00.000Z' })
+  const bad = await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'x', text: 'y', republished: { url: 'javascript:alert(1)' } }) })
+  assert.equal(bad.status, 400)
+})

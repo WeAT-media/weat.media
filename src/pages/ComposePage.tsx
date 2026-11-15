@@ -273,6 +273,10 @@ export default function ComposePage() {
   const [step, setStep] = useState<1 | 2>(1)
   const [collectionId, setCollectionId] = useState('')
   const [noindex, setNoindex] = useState(false)
+  // перепечатка: статья уже выходила — ссылка на оригинал и дата первой публикации (пишутся в запись: source)
+  const [republish, setRepublish] = useState(false)
+  const [republishUrl, setRepublishUrl] = useState('')
+  const [republishDate, setRepublishDate] = useState('')
   const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now')
   const [publishAtInput, setPublishAtInput] = useState('')
   // min для datetime-local вычисляется один раз при монтировании шага
@@ -287,8 +291,8 @@ export default function ComposePage() {
 
   // Черновик = текст (шаг 1) + настройки публикации (шаг 2). Видео-файл не сохраняется — только ссылка.
   const draftMeta = useMemo(
-    () => ({ step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput }),
-    [step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput],
+    () => ({ step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput, republish, republishUrl, republishDate }),
+    [step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput, republish, republishUrl, republishDate],
   )
   // настройки из черновика приходят асинхронно (после загрузки) — разовое применение к полям формы
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -318,6 +322,16 @@ export default function ComposePage() {
     str(m.previewEnd, setPreviewEnd)
     str(m.collectionId, setCollectionId)
     bool(m.noindex, setNoindex)
+    bool(m.republish, setRepublish)
+    str(m.republishUrl, setRepublishUrl)
+    str(m.republishDate, setRepublishDate)
+    // черновик из переноса (POST /v1/drafts: canonicalUrl, originalPublishedAt) — сразу перепечатка
+    const extra = loadedMeta as { canonicalUrl?: unknown; originalPublishedAt?: unknown }
+    if (typeof extra.canonicalUrl === 'string' && m.republish === undefined) {
+      setRepublish(true)
+      setRepublishUrl(extra.canonicalUrl)
+      if (typeof extra.originalPublishedAt === 'string') setRepublishDate(extra.originalPublishedAt.slice(0, 10))
+    }
     if (m.scheduleMode === 'now' || m.scheduleMode === 'later') setScheduleMode(m.scheduleMode)
     str(m.publishAtInput, setPublishAtInput)
     if (m.step === 1 || m.step === 2) setStep(m.step)
@@ -405,6 +419,9 @@ export default function ComposePage() {
       kind,
       collectionId: collectionId || undefined,
       noindex: noindex || undefined,
+      ...(republish && /^https?:\/\/\S+$/.test(republishUrl.trim())
+        ? { republished: { url: republishUrl.trim(), site: (() => { try { return new URL(republishUrl.trim()).hostname.replace(/^www\./, '') } catch { return '' } })(), ...(republishDate ? { publishedAt: republishDate } : {}) } }
+        : {}),
       publishAt:
         scheduleMode === 'later' && publishAtInput ? new Date(publishAtInput).toISOString() : undefined,
       videoUrl: kind === 'video' && videoMode === 'link' ? videoUrl : undefined,
@@ -430,7 +447,7 @@ export default function ComposePage() {
         return { price: Number(price) || 0, currency, period, accessType }
       })(),
     }),
-    [title, subtitle, tags, language, fullText, kind, collectionId, noindex, scheduleMode, publishAtInput, videoMode, videoUrl, videoDesc, videoPreview, isPaid, accessType, tierId, tiers, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, user],
+    [title, subtitle, tags, language, fullText, kind, collectionId, noindex, scheduleMode, publishAtInput, videoMode, videoUrl, videoDesc, videoPreview, isPaid, accessType, tierId, tiers, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, user, republish, republishUrl, republishDate],
   )
 
 
@@ -1224,6 +1241,25 @@ export default function ComposePage() {
                   <p className="meta mt-2">
                     запись появится в ленте автоматически, когда время наступит (publishAt)
                   </p>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-start gap-2.5 text-sm">
+                <input type="checkbox" checked={republish} onChange={(e) => setRepublish(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Перепечатка — статья уже публиковалась
+                  <span className="meta mt-0.5 block !normal-case tracking-normal">
+                    ссылка на оригинал и дата попадут в запись: даже если оригинал удалят, читатель откроет его копию в Wayback Machine
+                  </span>
+                </span>
+              </label>
+              {republish && (
+                <div className="grid gap-2 pl-6 sm:grid-cols-[minmax(0,1fr)_180px]">
+                  <input type="url" value={republishUrl} onChange={(e) => setRepublishUrl(e.target.value)} placeholder="https://habr.com/ru/articles/…" aria-label="Ссылка на оригинал" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  <input type="date" value={republishDate} onChange={(e) => setRepublishDate(e.target.value)} aria-label="Дата первой публикации" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  {republishUrl.trim() && !/^https?:\/\/\S+$/.test(republishUrl.trim()) && <p className="text-sm text-destructive sm:col-span-2">Ссылка должна начинаться с https://</p>}
                 </div>
               )}
             </div>

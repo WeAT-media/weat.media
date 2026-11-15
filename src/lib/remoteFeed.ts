@@ -26,7 +26,7 @@ interface FeedItem {
     createdAt?: string
     paywall?: { accessType?: 'one-time' | 'subscription'; price?: number; currency?: 'RUB' | 'USD' | 'EUR'; tierId?: string }
     privateContent?: { id?: string }
-    source?: { url?: string; site?: string; author?: string; publishedAt?: string }
+    source?: { url?: string; site?: string; author?: string; publishedAt?: string; crawledAt?: string }
     kind?: string
     videos?: RecordVideo[]
     noindex?: boolean
@@ -140,16 +140,19 @@ export function toArticle(i: FeedItem): Article | null {
   // ≈ 6 символов на слово, 200 слов в минуту
   const words = r.text ? r.text.split(/\s+/).length : Math.round((i.textLength ?? 0) / 6)
   const created = r.createdAt ?? new Date().toISOString()
-  const crawled = !!r.source?.url
+  // краулер ставит crawledAt (и пишет от учёток crawler-*); source без них — перепечатка, указанная самим автором
+  const crawled = !!r.source?.url && (!!r.source.crawledAt || i.handle.startsWith('crawler-'))
+  const republished = !crawled && !!r.source?.url && /^https?:\/\//.test(r.source.url)
   const videos = toVideos(i)
   const preview = r.videos?.[0]?.preview
   return {
     id: remoteId(i.uri),
     title: r.title,
-    author: { name: r.source?.author ?? i.handle.split('.')[0] ?? i.handle, handle: i.handle, did: i.did },
-    publishedAt: (r.source?.publishedAt ?? created).slice(0, 10),
-    // новость с источника — по времени оригинала, своя запись — по времени публикации
-    publishedAtFull: r.source?.publishedAt ?? created,
+    author: { name: (crawled ? r.source?.author : undefined) ?? i.handle.split('.')[0] ?? i.handle, handle: i.handle, did: i.did },
+    publishedAt: ((crawled ? r.source?.publishedAt : undefined) ?? created).slice(0, 10),
+    // новость с источника — по времени оригинала, своя запись (и перепечатка) — по времени публикации здесь
+    publishedAtFull: (crawled ? r.source?.publishedAt : undefined) ?? created,
+    ...(republished ? { republished: { url: r.source!.url!, site: r.source!.site ?? new URL(r.source!.url!).hostname, ...(r.source!.publishedAt ? { publishedAt: r.source!.publishedAt } : {}) } } : {}),
     language: (r.langs?.[0]?.slice(0, 2) ?? 'ru') as Article['language'],
     tags: r.tags ?? [],
     readingTime: Math.max(1, Math.round(words / 200)),

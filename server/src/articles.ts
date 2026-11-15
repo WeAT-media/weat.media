@@ -49,6 +49,13 @@ export const PublishArticleBody = z
     noindex: z.boolean().optional(),
     /** черновик, из которого публикуется: его рецензенты (правили по ссылке) попадают в запись */
     draftId: z.string().max(64).optional(),
+    /** перепечатка: статья уже выходила — ссылка на оригинал (даже если его удалили) и дата первой публикации */
+    republished: z
+      .object({
+        url: z.string().url().max(2000).refine((u) => /^https?:\/\//.test(u), 'url: http(s)://…'),
+        publishedAt: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+      })
+      .optional(),
     /** отложенный пост: выход на сайте; в AT — через 24 ч после него (период охлаждения) */
     publishAt: z.string().datetime({ offset: true }).optional(),
   })
@@ -56,6 +63,12 @@ export const PublishArticleBody = z
   .refine((b) => b.kind === 'video' || b.text.trim().length > 0, 'text: напишите хотя бы абзац')
 
 const fail = (code: string, message: string, status: 400 | 401) => new PdsError(status, code, message)
+
+/** перепечатка → source записи (без crawledAt: это не краулер, а сам автор указал оригинал) */
+export function sourceOf(url: string, publishedAt?: string) {
+  const day = publishedAt && /^\d{4}-\d{2}-\d{2}$/.test(publishedAt) ? `${publishedAt}T00:00:00.000Z` : publishedAt
+  return { url, site: new URL(url).hostname.replace(/^www\./, ''), ...(day ? { publishedAt: new Date(day).toISOString() } : {}) }
+}
 
 export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new Date(), reviewers: { did: string; handle?: string }[] = []) {
   return {
@@ -69,6 +82,7 @@ export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new D
     ...(b.kind === 'video' ? { kind: 'video', videos: b.videos } : {}),
     ...(b.noindex ? { noindex: true } : {}),
     ...(reviewers.length ? { reviewers } : {}),
+    ...(b.republished ? { source: sourceOf(b.republished.url, b.republished.publishedAt) } : {}),
     createdAt: now.toISOString(),
   }
 }

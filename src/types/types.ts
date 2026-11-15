@@ -141,6 +141,8 @@ export interface Article {
   reviewers?: { did: string; handle?: string }[]
   /** период охлаждения: до этого времени запись только на сайте (в AT ещё не ушла) */
   pendingUntil?: string
+  /** перепечатка: статья уже выходила — оригинал (даже удалённый: есть Wayback Machine) и дата первой публикации */
+  republished?: { url: string; site: string; publishedAt?: string }
   paywall?: Paywall
   source?: SourceRef
   collectionId?: string

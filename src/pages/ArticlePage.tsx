@@ -552,6 +552,20 @@ export default function ArticlePage() {
               </Link>
             </p>
           )}
+          {article.republished && (() => {
+            const r = article.republished
+            const day = r.publishedAt ? new Date(r.publishedAt) : null
+            // Wayback Machine: ближайший к дате снимок (оригинал может быть удалён)
+            const wayback = `https://web.archive.org/web/${day ? day.toISOString().slice(0, 10).replace(/-/g, '') : '2'}/${r.url}`
+            return (
+              <p className="meta mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 border border-dashed border-border bg-secondary/40 p-4 !normal-case tracking-normal">
+                <Rss size={11} aria-hidden="true" /> Перепечатка: впервые опубликовано
+                {day && <> {day.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</>} на {r.site} ·
+                <a href={safeHref(r.url)} target="_blank" rel="noreferrer" className="text-accent underline-offset-4 hover:underline">оригинал</a> ·
+                <a href={wayback} target="_blank" rel="noreferrer" className="text-accent underline-offset-4 hover:underline">архив (Wayback Machine)</a>
+              </p>
+            )
+          })()}
           {article.source && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-border bg-secondary/40 p-4">
               <p className="meta inline-flex min-w-0 flex-wrap items-center gap-1.5">

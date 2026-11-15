@@ -376,6 +376,8 @@ export const articles = {
     /** черновик-источник: сервер добавит в запись его рецензентов */
     draftId?: string
     publishAt?: string
+    /** перепечатка: оригинал и дата первой публикации (YYYY-MM-DD или ISO) */
+    republished?: { url: string; publishedAt?: string }
   }) => authed<{ uri: string; cid: string; pendingUntil?: string; visibleAt?: string }>('/me/articles', post(b)),
 }
 

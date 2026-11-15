@@ -1,3 +1,4 @@
+import { sourceOf } from './articles.js'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
@@ -147,7 +148,8 @@ export const ApiDraftBody = z.object({
   text: z.string().max(200_000).describe('Markdown — формат как у статьи (раздел «Формат текста статьи»); заголовок не дублируйте, он в title'),
   tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),
-  canonicalUrl: z.string().url().max(2000).optional().describe('оригинал (при переносе) — для заметки в черновике'),
+  canonicalUrl: z.string().url().max(2000).optional().describe('оригинал (при переносе) — в черновике станет «Перепечаткой»'),
+  originalPublishedAt: z.string().datetime({ offset: true }).optional().describe('когда статья впервые вышла в оригинале'),
 })
 
 export const ApiArticleBody = z.object({
@@ -156,7 +158,8 @@ export const ApiArticleBody = z.object({
   excerpt: z.string().trim().max(500).optional(),
   tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),
-  canonicalUrl: z.url().optional().describe('Оригинал, если статья уже опубликована где-то ещё'),
+  canonicalUrl: z.url().optional().describe('Оригинал, если статья уже опубликована где-то ещё (перепечатка)'),
+  originalPublishedAt: z.string().datetime({ offset: true }).optional().describe('когда статья впервые вышла в оригинале'),
 })
 
 const AtUri = z.string().regex(/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/[a-zA-Z0-9.-]+\/[A-Za-z0-9._~:-]+$/, 'нужен at://did/коллекция/rkey')
@@ -454,7 +457,7 @@ export function mountDeveloperRoutes(app: Hono, d: DeveloperDeps, h: { bearer(c:
       excerpt: b.excerpt ?? b.text.slice(0, 500),
       tags: b.tags,
       ...(b.langs.length ? { langs: b.langs } : {}),
-      ...(b.canonicalUrl ? { source: { url: b.canonicalUrl } } : {}),
+      ...(b.canonicalUrl ? { source: sourceOf(b.canonicalUrl, b.originalPublishedAt) } : {}),
       createdAt: new Date().toISOString(),
     }
     const { uri, cid } = await d.pds.createRecord(s.accessJwt, user.did, ARTICLE_COLLECTION, record)
@@ -476,6 +479,7 @@ export function mountDeveloperRoutes(app: Hono, d: DeveloperDeps, h: { bearer(c:
       ...(b.tags.length ? { tags: b.tags } : {}),
       ...(b.langs[0] ? { language: b.langs[0] } : {}),
       ...(b.canonicalUrl ? { canonicalUrl: b.canonicalUrl } : {}),
+      ...(b.originalPublishedAt ? { originalPublishedAt: b.originalPublishedAt } : {}),
     }
     const r = await d.drafts.save(user.did, id, b.title, text, meta)
     return c.json({ id: r.id, editUrl: `/compose?draft=${r.id}`, createdAt: r.created_at.toISOString() }, 201)
