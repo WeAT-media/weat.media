@@ -139,6 +139,7 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
       author: crawled || p.name || a.handle || siteName,
       handle: crawled ? null : (a.handle ?? null),
       site: crawled ? (r.source?.site ?? null) : null,
+      tags: Array.isArray((r as { tags?: unknown }).tags) ? ((r as { tags: unknown[] }).tags.filter((t): t is string => typeof t === 'string')) : [],
       avatar: p.avatar,
       siteName,
     }).catch(() => null)

@@ -43,6 +43,8 @@ export interface ArticleCard {
   handle?: string | null
   /** статья краулера: сайт оригинала вместо handle (без «@») */
   site?: string | null
+  /** теги статьи — чипами под заголовком (до 4) */
+  tags?: string[]
   /** data: URI фото автора (png/jpeg) */
   avatar?: string | null
   siteName: string
@@ -52,7 +54,9 @@ const clamp = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).tri
 
 export async function renderArticleCard(a: ArticleCard): Promise<Buffer> {
   const title = clamp(a.title.trim(), 140)
-  const size = title.length <= 40 ? 76 : title.length <= 80 ? 62 : 50
+  const tags = [...new Set((a.tags ?? []).map((t) => t.trim().replace(/^#/, '')).filter(Boolean))].slice(0, 4)
+  // с тегами заголовку на строку меньше места
+  const size = title.length <= 40 ? 76 : title.length <= 80 ? (tags.length ? 56 : 62) : tags.length ? 44 : 50
   const initial = (a.author.trim()[0] ?? '?').toUpperCase()
 
   // «атмосфера»: концентрические дуги справа внизу, как на общей картинке
@@ -77,6 +81,17 @@ export async function renderArticleCard(a: ArticleCard): Promise<Buffer> {
         { flexDirection: 'column' },
         h('div', { fontFamily: 'JBMono-latin, JBMono-cyrillic', fontWeight: 700, fontSize: 22, letterSpacing: 1, color: ACC }, `${a.siteName} · статья`),
         h('div', { marginTop: 28, fontSize: size, fontWeight: 800, lineHeight: 1.12, letterSpacing: -1 }, title),
+        ...(tags.length
+          ? [
+              h(
+                'div',
+                { marginTop: 26, flexWrap: 'wrap', gap: 12 },
+                ...tags.map((t) =>
+                  h('div', { fontFamily: 'JBMono-latin, JBMono-cyrillic', fontWeight: 700, fontSize: 20, color: FG, background: BG, border: `2px solid ${LINE}`, borderRadius: 22, padding: '8px 18px' }, `#${clamp(t, 28)}`),
+                ),
+              ),
+            ]
+          : []),
       ),
       h(
         'div',
