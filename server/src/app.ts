@@ -21,6 +21,7 @@ import { mountClaimRoutes, type ClaimRepo } from './claims.js'
 import { mountTicketRoutes, type TicketRepo } from './tickets.js'
 import { mountMailboxRoutes, type MailboxClient } from './mailbox.js'
 import { mountPayoutRoutes, type PayoutRepo } from './payouts.js'
+import { isProvider } from './providers.js'
 import { mountShareRoutes } from './share.js'
 import { mountLinkPreviewRoutes } from './linkPreview.js'
 import { createRestrictedFilter, RESTRICTED_COLLEGIA } from './restricted.js'
@@ -543,6 +544,24 @@ export function createApp(deps: Deps) {
    * app.bsky.actor.profile, как через API. Человек — только имя на сайте (модерация): его репозиторий без его
    * сессии не изменить, в Bluesky имя останется прежним.
    */
+  // Способы входа пользователя (Яндекс, Google…) и их отвязка. Нужна для дублей из разных контуров: у второго
+  // аккаунта отвязывают провайдера — вход через него находит основной аккаунт в соседнем контуре.
+  app.get('/admin/users/:did/identities', async (c) => {
+    await requireStaff(c, 'support')
+    const list = await d.identities.listByDid(c.req.param('did'))
+    return c.json({ identities: list.map((i) => ({ provider: i.provider, display: i.display, createdAt: i.createdAt })) })
+  })
+  app.delete('/admin/users/:did/identities/:provider', async (c) => {
+    const staff = await requireStaff(c, 'admin')
+    const provider = c.req.param('provider')
+    if (!isProvider(provider)) return c.json({ error: 'InvalidRequest', message: 'Неизвестный провайдер' }, 400)
+    const reason = (await c.req.json().catch(() => ({})) as { reason?: unknown }).reason
+    const removed = await d.identities.remove(c.req.param('did'), provider)
+    if (!removed) return c.json({ error: 'NotFound', message: 'Этот способ входа не привязан' }, 404)
+    await audit(staff, 'user.identity.unlink', c.req.param('did'), { provider, reason: typeof reason === 'string' ? reason.slice(0, 300) : undefined })
+    return c.json({ ok: true })
+  })
+
   app.put('/admin/users/:did/profile', async (c) => {
     const staff = await requireStaff(c, 'admin')
     const body = AdminProfileBody.safeParse(await c.req.json().catch(() => null))

@@ -26,7 +26,7 @@ export interface IdentityDeps {
   secrets: SecretBox
   oauth: Partial<Record<OAuthProviderId, OAuthClient>>
   atproto?: AtprotoAuth
-  peer?: { resolve(handle: string): Promise<string | null>; publicUrl?: string; oauthLogin?(provider: string, providerUserId: string, country: string): Promise<string | null> }
+  peer?: { resolve(handle: string): Promise<string | null>; publicUrl?: string; oauthLogin?(provider: string, providerUserId: string, country: string, olderThan?: string): Promise<string | null> }
 }
 
 interface Helpers {
@@ -348,10 +348,13 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
         await linkTo(user, s.accessJwt, provider, profile)
         return back({ linked: provider })
       }
-      // привязки в этом контуре нет — аккаунт может быть у соседа (вошли раньше из другой страны):
-      // входим туда, а не создаём второй аккаунт
-      if (!(await d.identities.find(provider, profile.id)) && d.peer?.oauthLogin && d.peer.publicUrl) {
-        const code = await d.peer.oauthLogin(provider, profile.id, h.geoOf(c).country).catch(() => null)
+      // аккаунт с этой привязкой может быть у соседа (вошли раньше из другой страны). Привязки здесь нет —
+      // входим туда, а не создаём второй аккаунт. Есть и здесь, и там (дубль, созданный до этой проверки) —
+      // основной тот, что создан раньше: туда и входим
+      const local = await d.identities.find(provider, profile.id)
+      const localUser = local ? await d.users.findByDid(local.did) : undefined
+      if (d.peer?.oauthLogin && d.peer.publicUrl) {
+        const code = await d.peer.oauthLogin(provider, profile.id, h.geoOf(c).country, localUser?.created_at.toISOString()).catch(() => null)
         if (code) return c.redirect(`${d.peer.publicUrl}/login?${new URLSearchParams({ handoff: code, returnTo: s.returnTo ?? '/feed' })}`)
       }
       return back({ handoff: issueHandoff(await loginWith(provider, profile, c, s.utm, s.consent)) })
@@ -367,13 +370,16 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
     if (c.req.header('x-indie-peer-hop') !== '1' || !d.config.PEER_SECRET || !h.safeEqual(auth, d.config.PEER_SECRET)) {
       return c.json({ error: 'NotFound', message: 'Не найдено' }, 404)
     }
-    const b = (await c.req.json().catch(() => null)) as { provider?: unknown; providerUserId?: unknown; country?: unknown } | null
+    const b = (await c.req.json().catch(() => null)) as { provider?: unknown; providerUserId?: unknown; country?: unknown; olderThan?: unknown } | null
     const provider = typeof b?.provider === 'string' && isProvider(b.provider) ? b.provider : null
     const id = typeof b?.providerUserId === 'string' ? b.providerUserId : ''
     if (!provider || !id) return c.json({ error: 'InvalidRequest', message: 'provider, providerUserId' }, 400)
     const existing = await d.identities.find(provider, id)
     const user = existing ? await d.users.findByDid(existing.did) : undefined
     if (!existing || !user) return c.json({ error: 'NotFound', message: 'Нет такого аккаунта' }, 404)
+    // у спрашивающего тоже есть аккаунт — отдаём вход, только если наш старше (он основной)
+    const olderThan = typeof b?.olderThan === 'string' ? Date.parse(b.olderThan) : NaN
+    if (!Number.isNaN(olderThan) && user.created_at.getTime() >= olderThan) return c.json({ error: 'NotFound', message: 'Основной аккаунт — у вас' }, 404)
     const country = typeof b?.country === 'string' ? b.country : 'ZZ'
     if (!providerAllowed(provider, d.config.CONTOUR, user.signup_country, country)) return c.json({ error: 'ProviderForbidden', message: 'Вход через этот сервис запрещён' }, 403)
     const session = await d.pds.createSession(user.handle, d.secrets.open(existing.pdsPasswordEnc))

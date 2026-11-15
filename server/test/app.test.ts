@@ -279,6 +279,8 @@ function memSessions(): SessionRepo {
 }
 
 const auditLog: AuditEntry[] = []
+/** порядок создания пользователей во всех тестовых приложениях */
+let userSeq = 0
 const memAudit: AuditRepo = {
   async log(e) { auditLog.push({ ...e, at: new Date().toISOString() }) },
   async recent(n) { return auditLog.slice(-n).reverse() },
@@ -295,7 +297,8 @@ function memRepo(): UserRepo {
         signup_country: u.signupCountry,
         tier: 'free',
         premium_since: null,
-        created_at: new Date('2026-11-12T10:00:00Z'),
+        // секунда на каждого следующего: «кто создан раньше» различим
+        created_at: new Date(Date.parse('2026-11-12T10:00:00Z') + userSeq++ * 1000),
         password_login: u.passwordLogin ?? true,
         signup_utm: u.signupUtm ?? null,
       }
@@ -2443,4 +2446,35 @@ test('republished article: source {url, site, publishedAt} without crawledAt', a
   assert.deepEqual(published.at(-1)!.record.source, { url: 'https://www.habr.com/ru/articles/789384/', site: 'habr.com', publishedAt: '2024-01-26T00:00:00.000Z' })
   const bad = await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'x', text: 'y', republished: { url: 'javascript:alert(1)' } }) })
   assert.equal(bad.status, 400)
+})
+
+test('yandex: existing duplicate in this contour — the older account (peer) wins', async () => {
+  const SECRET = 'peer-secret-0123456789-0123456789-abcd'
+  const nl = makeApp({ contour: 'global', peerSecret: SECRET, ipCountry: { '5.1.1.1': 'NL', '95.1.1.1': 'RU' } })
+  const first = await yandexFlow(nl, 'code-ivan', '5.1.1.1')
+  const nlUser = await (await nl.request('/api/auth/handoff', json({ code: first.searchParams.get('handoff')! }, '5.1.1.1'))).json()
+  let peerOn = false
+  const ru = makeApp({
+    contour: 'ru',
+    ipCountry: { '95.1.1.1': 'RU' },
+    peer: {
+      publicUrl: 'https://nl-1.weat.test',
+      resolve: async () => null,
+      profile: async () => null,
+      oauthLogin: async (provider, providerUserId, country, olderThan) => {
+        if (!peerOn) return null
+        const r = await nl.request('/api/peer/oauth-login', { method: 'POST', headers: { 'x-indie-peer-hop': '1', 'content-type': 'application/json', authorization: `Bearer ${SECRET}` }, body: JSON.stringify({ provider, providerUserId, country, olderThan }) })
+        return r.ok ? ((await r.json()) as { code: string }).code : null
+      },
+    },
+  })
+  // дубль создан, пока проверки соседа не было
+  await new Promise((r) => setTimeout(r, 5))
+  const dup = await yandexFlow(ru, 'code-ivan', '95.1.1.1')
+  assert.ok(dup.searchParams.get('handoff'), 'в RU появился свой (более новый) аккаунт')
+  peerOn = true
+  const again = await yandexFlow(ru, 'code-ivan', '95.1.1.1')
+  assert.equal(again.origin, 'https://nl-1.weat.test', 'основной — старший, в NL')
+  const s = await (await nl.request('/api/auth/handoff', json({ code: again.searchParams.get('handoff')! }, '95.1.1.1'))).json()
+  assert.equal(s.user.did, nlUser.user.did)
 })

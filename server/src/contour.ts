@@ -22,7 +22,7 @@ export interface PeerContour {
    * он выдаёт одноразовый код входа (/login?handoff=…) на своём адресе. null — у соседа такого аккаунта нет.
    * Передаётся только провайдер, id аккаунта у провайдера и страна входа — без email и имени.
    */
-  oauthLogin?(provider: string, providerUserId: string, country: string): Promise<string | null>
+  oauthLogin?(provider: string, providerUserId: string, country: string, olderThan?: string): Promise<string | null>
 }
 
 export const PEER_HOP_HEADER = 'x-indie-peer-hop'
@@ -61,11 +61,11 @@ export function createPeer(url: string, timeoutMs = 3000, secret?: string): Peer
     },
     ...(secret
       ? {
-          async oauthLogin(provider: string, providerUserId: string, country: string) {
+          async oauthLogin(provider: string, providerUserId: string, country: string, olderThan?: string) {
             const res = await fetch(`${url.replace(/\/$/, '')}/api/peer/oauth-login`, {
               method: 'POST',
               headers: { [PEER_HOP_HEADER]: '1', authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
-              body: JSON.stringify({ provider, providerUserId, country }),
+              body: JSON.stringify({ provider, providerUserId, country, ...(olderThan ? { olderThan } : {}) }),
               signal: AbortSignal.timeout(timeoutMs),
             }).catch(() => null)
             if (!res?.ok) return null

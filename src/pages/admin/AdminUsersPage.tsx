@@ -70,11 +70,27 @@ export default function AdminUsersPage() {
       if (c.service) void profile.get(c.did).then((p) => setProfAbout(p.description ?? ''))
       setResidence([c.residenceCountry])
       setTicketRef('')
+      void call<{ identities: { provider: string; display: string | null; createdAt: string }[] }>(`/admin/users/${encodeURIComponent(did)}/identities`).then((r) => setIdentities(r.identities), () => setIdentities([]))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось')
     }
   }
 
+  const [identities, setIdentities] = useState<{ provider: string; display: string | null; createdAt: string }[]>([])
+  /** дубль из другого контура: отвязать провайдера — вход через него найдёт основной аккаунт у соседа */
+  const unlink = async (provider: string) => {
+    if (!card) return
+    const reason = window.prompt(`Отвязать ${provider} от @${card.handle}? Вход через ${provider} перестанет вести в этот аккаунт (найдёт аккаунт в соседнем контуре, если он есть). Причина — в журнал:`)
+    if (reason === null) return
+    setError('')
+    try {
+      await call(`/admin/users/${encodeURIComponent(card.did)}/identities/${provider}`, { method: 'DELETE', body: JSON.stringify({ reason }) })
+      setDone(`${provider} отвязан от @${card.handle}`)
+      await open(card.did)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось')
+    }
+  }
   const [profName, setProfName] = useState('')
   const [profAbout, setProfAbout] = useState('')
   /** профиль: служебной учётки — её запись AT; человека — только имя на сайте (модерация) */
@@ -220,6 +236,23 @@ export default function AdminUsersPage() {
             <p className="meta mt-1 !normal-case tracking-normal">
               {card.service ? 'служебная учётка: меняется её профиль в сети AT' : 'пользователь: меняется только имя на сайте; его профиль в сети AT меняет он сам'} · только admin; пишется в аудит
             </p>
+
+            <h3 className="mt-6 text-sm font-semibold">Способы входа</h3>
+            {identities.length === 0 ? (
+              <p className="meta mt-2 !normal-case tracking-normal">только пароль (или вход через AT Protocol)</p>
+            ) : (
+              <ul className="mt-2 space-y-1.5">
+                {identities.map((i) => (
+                  <li key={i.provider} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span>
+                      <b>{i.provider}</b> {i.display && <span className="meta !normal-case tracking-normal">· {i.display}</span>} <span className="meta">· с {when(i.createdAt)}</span>
+                    </span>
+                    <button type="button" onClick={() => void unlink(i.provider)} className="btn-ghost !px-3 !py-1.5 !text-[11px] text-destructive">Отвязать</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="meta mt-1 !normal-case tracking-normal">дубль из другого контура: отвяжите провайдера у лишнего аккаунта — вход найдёт основной · только admin; пишется в аудит</p>
 
             <h3 className="mt-6 text-sm font-semibold">Тариф</h3>
             <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
