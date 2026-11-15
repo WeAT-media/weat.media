@@ -9,6 +9,7 @@ declare global {
   interface Window {
     __blocksuiteCeGuard?: boolean
     __blocksuiteFocusGuard?: boolean
+    __blocksuiteLinkPreview?: boolean
     __blocksuiteEffectsReady?: Promise<void>
   }
 }
@@ -41,6 +42,25 @@ export async function setupBlocksuite(): Promise<void> {
     const focus = HTMLElement.prototype.focus
     HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
       return focus.call(this, inPopup(this) ? { ...options, preventScroll: true } : options)
+    }
+  }
+
+  // Превью ссылок («/link», вставка URL): BlockSuite шлёт POST на сервис AFFiNE — он нам недоступен
+  // («Failed to retrieve link information»). Подмена сервиса в классе не помогает: в сборке несколько копий
+  // BlockSuite. Перехватываем сам запрос и отвечаем превью от своего AppView в формате сервиса AFFiNE.
+  if (!window.__blocksuiteLinkPreview) {
+    window.__blocksuiteLinkPreview = true
+    const AFFINE = 'https://affine-worker.toeverything.workers.dev/api/worker/link-preview'
+    const origFetch = window.fetch.bind(window)
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url !== AFFINE) return origFetch(input, init)
+      const { linkPreview } = await import('@/lib/api')
+      const target = (JSON.parse(String(init?.body ?? '{}')) as { url?: string }).url ?? ''
+      const p = await linkPreview(target, init?.signal ?? undefined).catch(() => null)
+      if (!p) return new Response(JSON.stringify({ error: 'NotFound' }), { status: 404, headers: { 'content-type': 'application/json' } })
+      const body = { url: p.url, title: p.title ?? '', description: p.description ?? '', favicons: p.icon ? [p.icon] : [], images: p.image ? [p.image] : [] }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     }
   }
 

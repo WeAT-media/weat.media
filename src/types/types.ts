@@ -227,6 +227,8 @@ export interface User {
 export interface Preferences {
   font: 'sans' | 'serif' | 'mono'
   appearance: 'light' | 'dark' | 'system'
+  /** тему выбрали сами (раньше «светлая» стояла по умолчанию у всех — это не выбор) */
+  appearanceSet?: boolean
   accent: 'terracotta' | 'forest' | 'indigo' | 'crimson'
   /** язык интерфейса; перевода текстов пока нет — применяется к chrome/метаданным */
   uiLang: 'ru' | 'en'
@@ -266,7 +268,7 @@ export interface ReadEntry {
 
 export const defaultPreferences: Preferences = {
   font: 'sans',
-  appearance: 'light',
+  appearance: 'system',
   accent: 'terracotta',
   uiLang: 'ru',
   feedSort: 'new',

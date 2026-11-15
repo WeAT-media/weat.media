@@ -7,6 +7,7 @@ import Header from '@/components/Header'
 import UtmCapture from '@/components/UtmCapture'
 import CookieBanner from '@/components/CookieBanner'
 import ScrollToTop from '@/components/ScrollToTop'
+import BuildWatcher from '@/components/BuildWatcher'
 import Footer from '@/components/Footer'
 import EventTicker from '@/components/EventTicker'
 import Feed from '@/pages/Feed'
@@ -95,6 +96,7 @@ export default function App() {
         <EventTicker />
         <main className="flex-1">
           <ScrollToTop />
+        <BuildWatcher />
           <UtmCapture />
           <CookieBanner />
           <Suspense fallback={<div className="min-h-[60vh]" aria-busy="true" />}>

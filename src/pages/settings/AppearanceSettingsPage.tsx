@@ -30,16 +30,16 @@ export default function AppearanceSettingsPage() {
             </select>
           </div>
           <div>
-            <label htmlFor="pref-appearance" className="meta">Оформление</label>
+            <label htmlFor="pref-appearance" className="meta">Тема</label>
             <select
               id="pref-appearance"
               value={prefs.appearance}
-              onChange={(e) => setPrefs({ appearance: e.target.value as Preferences['appearance'] })}
+              onChange={(e) => setPrefs({ appearance: e.target.value as Preferences['appearance'], appearanceSet: true })}
               className={selectCls}
             >
-              <option value="light">Светлое</option>
-              <option value="dark">Тёмное</option>
               <option value="system">Как в системе</option>
+              <option value="light">Светлая</option>
+              <option value="dark">Тёмная</option>
             </select>
           </div>
           <div>

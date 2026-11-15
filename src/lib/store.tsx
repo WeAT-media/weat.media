@@ -301,18 +301,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // применяем preferences к документу: шрифт, акцент, тема, lang
   useEffect(() => {
     const root = document.documentElement
-    const { font, accent, appearance, uiLang } = persisted.prefs
+    const { font, accent, uiLang } = persisted.prefs
+    // гость — всегда как в системе: выбор темы — у вошедших (Настройки → Внешний вид)
+    const appearance = persisted.user && persisted.prefs.appearanceSet ? persisted.prefs.appearance : 'system'
     root.dataset.font = font
     root.dataset.accent = accent
     root.lang = uiLang
     const mql = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = () =>
-      root.classList.toggle('dark', appearance === 'dark' || (appearance === 'system' && mql.matches))
+    const apply = () => {
+      const dark = appearance === 'dark' || (appearance === 'system' && mql.matches)
+      root.classList.toggle('dark', dark)
+      // BlockSuite (тема AFFiNE) переключается атрибутом data-theme
+      root.dataset.theme = dark ? 'dark' : 'light'
+      root.style.colorScheme = dark ? 'dark' : 'light'
+    }
     apply()
     if (appearance !== 'system') return
     mql.addEventListener('change', apply)
     return () => mql.removeEventListener('change', apply)
-  }, [persisted.prefs])
+  }, [persisted.prefs, persisted.user])
 
   const settings = useMemo(() => initialSettings(persisted.settings), [persisted.settings])
 

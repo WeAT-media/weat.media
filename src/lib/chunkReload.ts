@@ -51,3 +51,32 @@ export function prefetchEditor(): void {
   if (idle) idle(run, { timeout: 8000 })
   else window.setTimeout(run, 4000)
 }
+
+/**
+ * Открытая вкладка живёт на сборке, с которой её загрузили: после деплоя она продолжала работать со старым
+ * кодом (например, публикация шла по старым правилам). Раз в 5 минут (и при возврате на вкладку) сверяем
+ * главный скрипт index.html с нашим; изменился — следующий переход по сайту делает полную загрузку.
+ */
+let newBuild = false
+let lastCheck = 0
+const currentEntry = () => document.querySelector<HTMLScriptElement>('script[type="module"][src*="/assets/index-"]')?.getAttribute('src') ?? null
+
+export async function checkForNewBuild(): Promise<boolean> {
+  if (newBuild) return true
+  if (Date.now() - lastCheck < 5 * 60_000) return false
+  lastCheck = Date.now()
+  const mine = currentEntry()
+  if (!mine) return false
+  const html = await fetch('/', { cache: 'no-cache', headers: { accept: 'text/html' } }).then((r) => (r.ok ? r.text() : ''), () => '')
+  const served = /src="(\/assets\/index-[^"]+\.js)"/.exec(html)?.[1]
+  newBuild = !!served && served !== mine
+  return newBuild
+}
+
+export const hasNewBuild = () => newBuild
+
+if (typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void checkForNewBuild()
+  })
+}

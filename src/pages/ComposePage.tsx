@@ -557,8 +557,8 @@ export default function ComposePage() {
         <p className="meta mt-8">Новая запись · media.weat.article</p>
         <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">Написать</h1>
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
-          Запись уйдёт в ваш репозиторий — её нельзя отредактировать задним числом без следа и нельзя удалить
-          «сверху». Монетизация честная: 90%* с каждой продажи — вам (с Premium — 99%*), остальное — на инфраструктуру
+          Первые 24 часа статья видна только на сайте — её можно исправить или удалить без следа; потом она уходит
+          в ваш AT-репозиторий и в сеть (<Link to="/docs#cooldown" className="underline underline-offset-2">период охлаждения</Link>). Монетизация честная: 90%* с каждой продажи — вам (с Premium — 99%*), остальное — на инфраструктуру
           площадки. <span className="block text-[10px] leading-snug">{FEE_NOTE}</span>
         </p>
       </div>
