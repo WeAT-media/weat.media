@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { PdsError, type PdsClient } from './pds.js'
 import { COMMENT_COLLECTION } from './developer.js'
 import type { Cooldown, PendingSource } from './cooldown.js'
+import type { NotificationService } from './notifications.js'
 
 /**
  * Комментарии с сайта: запись media.weat.comment в репозитории читателя его же сессией,
@@ -40,7 +41,7 @@ export const AuthorCommentDto = z.object({
 
 const fail = (code: string, message: string, status: 400 | 401 | 503) => new PdsError(status, code, message)
 
-export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; cooldown?: Cooldown; pending?: PendingSource }, h: { bearer(c: Context): string | undefined }) {
+export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string; cooldown?: Cooldown; pending?: PendingSource; notifications?: NotificationService }, h: { bearer(c: Context): string | undefined }) {
   const session = async (c: Context) => {
     const token = h.bearer(c)
     if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
@@ -91,6 +92,7 @@ export function mountCommentRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: str
     // период охлаждения: 24 ч комментарий только на сайте
     const held = d.cooldown ? await d.cooldown.hold(s, COMMENT_COLLECTION, record) : null
     const uri = held?.uri ?? (await d.pds.createRecord(s.token, s.did, COMMENT_COLLECTION, record)).uri
+    await d.notifications?.comment({ actorDid: s.did, actorHandle: s.handle, uri, articleUri: b.subject, parentUri: b.parent })
     // форма как в треде: клиент показывает комментарий сразу, не дожидаясь индекса
     return c.json({ uri, did: s.did, handle: s.handle, text: b.text, createdAt, parent: b.parent ?? null, ...(held ? { pendingUntil: held.publish_at.toISOString() } : {}) }, 201)
   })

@@ -18,6 +18,12 @@ const Prefs = z.looseObject({
   currency: z.enum(['RUB', 'USD', 'EUR']).optional(),
 }).refine((p) => JSON.stringify(p).length <= 4_000, 'prefs: слишком большой объём')
 
+const NotificationPrefs = z.strictObject({
+  articles: z.boolean(),
+  comments: z.boolean(),
+  replies: z.boolean(),
+})
+
 const EditorPrefs = z.strictObject({
   customBlocks: z.boolean(),
   calloutVariant: z.enum(['info', 'success', 'warning', 'danger']),
@@ -116,6 +122,7 @@ const ReadHistory = z
 export const SettingsPatch = z
   .strictObject({
     prefs: Prefs,
+    notificationPrefs: NotificationPrefs,
     editorPrefs: EditorPrefs,
     labelers: Labelers,
     juryOptOut: z.boolean(),

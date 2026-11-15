@@ -3,7 +3,7 @@ import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { MfaRepo, UserRepo, UserRow } from './db.js'
 import { PdsError, type PdsClient } from './pds.js'
-import { CodeBody, ConfirmEmailBody, Email2faBody, ForgotPasswordBody, MfaBody, ResetPasswordBody } from './schemas.js'
+import { CodeBody, ConfirmEmailBody, Email2faBody, ForgotPasswordBody, MfaBody, PasswordChangeBody, ResetPasswordBody } from './schemas.js'
 import type { SecretBox } from './secretbox.js'
 import { hashBackupCode, newBackupCodes, newTotpSecret, otpauthUrl, totpStep } from './totp.js'
 
@@ -133,6 +133,34 @@ export function mountSecurityRoutes(
   app.get('/me/security', async (c) => {
     const { user, token } = await requireUser(c)
     return c.json(await view(user, token))
+  })
+
+  app.post('/me/password/email/request', async (c) => {
+    const { token } = await requireUser(c)
+    const info = await d.pds.getSession(token)
+    if (!info.email || !info.emailConfirmed) throw fail('EmailNotConfirmed', 'Сначала подтвердите email')
+    await d.pds.requestPasswordReset(info.email)
+    return c.json({ codeSent: true })
+  })
+
+  app.post('/me/password/change', async (c) => {
+    const { user, token } = await requireUser(c)
+    const { method, code, password } = await body(c, PasswordChangeBody)
+    if (method === 'email') {
+      const info = await d.pds.getSession(token)
+      if (!info.email || !info.emailConfirmed) throw fail('EmailNotConfirmed', 'Сначала подтвердите email')
+      try {
+        await d.pds.resetPassword(code, password)
+      } catch (err) {
+        if (err instanceof PdsError && err.status < 500) throw fail('InvalidCode', 'Код неверный или устарел. Запросите новый.', 401)
+        throw err
+      }
+    } else {
+      if (!(await checkSecondFactor(user.did, code))) throw fail('InvalidCode', 'Неверный код', 401)
+      await d.pds.adminUpdatePassword(user.did, password)
+    }
+    await d.users.setPasswordLogin(user.did, true)
+    return c.json({ ok: true })
   })
 
   app.post('/me/email/confirm/request', async (c) => {

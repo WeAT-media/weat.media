@@ -675,6 +675,11 @@ function fakePds(): PdsClient {
       tokenUser(jwt).acct.app.delete(name)
     },
     async adminUpdateHandle() {},
+    async adminUpdatePassword(did, password) {
+      const hit = byDid(did)
+      if (!hit) throw new PdsError(404, 'RepoNotFound', 'no repo')
+      hit[1].password = password
+    },
     async createRecord(jwt, repo, collection, record) {
       tokenUser(jwt)
       published.push({ repo, collection, record })
@@ -1591,6 +1596,41 @@ test('password reset: same answer for unknown email; Yandex user adopts password
   const again = await oauthFlow(app, 'yandex', 'code-ivan', '95.1.1.1')
   const s = await (await app.request('/api/auth/handoff', json({ code: again.searchParams.get('handoff') }, '95.1.1.1'))).json()
   assert.equal(s.user.handle, 'ivan-petrov.indie.media')
+})
+
+test('authenticated password change with email code requires confirmed email and valid code', async () => {
+  const app = makeApp()
+  const { accessJwt, user } = await registerWithPassword(app, '1.1.1.1')
+  const auth = { authorization: `Bearer ${accessJwt}`, 'content-type': 'application/json' }
+  const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers: auth, body: JSON.stringify(body) })
+  assert.equal((await post('/api/me/password/email/request', {})).status, 400, 'email ещё не подтверждён')
+  await post('/api/me/email/confirm/request', {})
+  assert.equal((await post('/api/me/email/confirm', { code: 'CONF-1' })).status, 200)
+  assert.equal((await post('/api/me/password/email/request', {})).status, 200)
+  const bad = await post('/api/me/password/change', { method: 'email', code: 'RESET-wrong', password: 'new-password-2' })
+  assert.equal(bad.status, 401)
+  const ok = await post('/api/me/password/change', { method: 'email', code: mailbox.reset, password: 'new-password-2' })
+  assert.equal(ok.status, 200)
+  const login = await fakePdsLast!.createSession('alina.indie.media', 'new-password-2', 'TWOFA-1')
+  assert.equal(login.did, user.did)
+  assert.equal((await app.request('/api/me/password/change', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method: 'email', code: mailbox.reset, password: 'attacker-password' }) })).status, 401)
+})
+
+test('authenticated password change with TOTP uses one-time second factor', async () => {
+  const app = makeApp()
+  const { accessJwt, user } = await registerWithPassword(app, '1.1.1.1')
+  const auth = { authorization: `Bearer ${accessJwt}`, 'content-type': 'application/json' }
+  const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers: auth, body: JSON.stringify(body) })
+  const { secret } = await (await post('/api/me/2fa/totp/setup', {})).json()
+  const current = totpCode(secret, Math.floor(Date.now() / 30_000))
+  assert.equal((await post('/api/me/2fa/totp/enable', { code: current })).status, 200)
+  const next = totpCode(secret, Math.floor(Date.now() / 30_000) + 1)
+  const bad = await post('/api/me/password/change', { method: 'totp', code: current, password: 'new-password-3' })
+  assert.equal(bad.status, 401, 'шаг TOTP нельзя переиспользовать')
+  const ok = await post('/api/me/password/change', { method: 'totp', code: next, password: 'new-password-3' })
+  assert.equal(ok.status, 200)
+  const login = await fakePdsLast!.createSession('alina.indie.media', 'new-password-3')
+  assert.equal(login.did, user.did)
 })
 
 test('blockDefs: Premium only, validated', async () => {

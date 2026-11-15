@@ -83,6 +83,11 @@ export const Email2faBody = z.object({
   code: EmailCode.optional().describe('Нужен только для выключения: сначала вызов без кода отправит письмо'),
 })
 export const CodeBody = z.object({ code: Code })
+export const PasswordChangeBody = z.object({
+  method: z.enum(['email', 'totp']),
+  code: z.string().trim().min(6).max(64),
+  password: z.string().min(8).max(256),
+})
 
 // ── администрирование ───────────────────────────────────────────────────
 /** reason — почему выдан/снят вручную (техническая причина, компенсация): в журнал сотрудников */

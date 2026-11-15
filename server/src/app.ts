@@ -43,11 +43,13 @@ import { PdsError, type PdsClient, type PdsSession } from './pds.js'
 import { buildOpenApi } from './openapi.js'
 import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, ResidenceBody, TierBody, AdminProfileBody } from './schemas.js'
 import { SettingsPatch, type SettingsRepo } from './settings.js'
+import { memoryNotificationRepo, mountNotificationRoutes, notificationService, type NotificationService } from './notifications.js'
 
 export interface Deps {
   config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'LAVA_WEBHOOK_SECRET' | 'ATPROTO_PLC_URL' | 'ATPROTO_ALLOW_HTTP' | 'PDS_HOST' | 'PEER_SECRET'>>
   users: UserRepo
   settings: SettingsRepo
+  notifications?: NotificationService
   identities: IdentityRepo
   mfa: MfaRepo
   paid: PaidRepo
@@ -338,12 +340,14 @@ export function createApp(deps: Deps) {
   mountFeedRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, restricted, moved: (uris) => d.claims.movedTo(uris), pending })
   mountShareRoutes(app, { feedUrl: d.feedUrl, siteUrl: d.config.PUBLIC_URL, restricted, pending, plcUrl: d.config.ATPROTO_PLC_URL, allowPrivate: d.config.ATPROTO_ALLOW_HTTP })
   mountLikeRoutes(app, { pds: d.pds, feedUrl: d.feedUrl }, { bearer })
-  mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown, pending }, { bearer })
+  const notifications = d.notifications ?? notificationService(memoryNotificationRepo(), d.settings)
+  mountNotificationRoutes(app, { pds: d.pds, users: d.users, notifications }, { bearer })
+  mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown, pending, notifications }, { bearer })
   // маршруты есть всегда (без охлаждения очередь просто пуста)
   mountCooldownRoutes(app, { pds: d.pds, cooldown: d.cooldown ?? createCooldown({ pds: d.pds, secrets: d.secrets, repo: memCooldown() }) }, { bearer, requireStaff })
   const shared = d.shared ?? memShared()
   mountSharedRoutes(app, { pds: d.pds, drafts: d.drafts, shared, users: d.users }, { bearer })
-  mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown }, { bearer })
+  mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown, notifications }, { bearer })
   mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource(d.config.ATPROTO_PLC_URL, d.config.ATPROTO_ALLOW_HTTP) }, { bearer })
   mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets, drafts: d.drafts }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })

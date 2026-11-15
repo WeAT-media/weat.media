@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FlaskConical, ListVideo } from 'lucide-react'
 import VideoPlayer, { type VideoPlayerHandle } from '@/components/VideoPlayer'
 import { parseIVideo, type IVAction, type IVQuestion } from '@/lib/interactiveVideo'
@@ -17,6 +17,11 @@ export default function InteractiveVideo({ raw }: { raw: string }) {
   // куда перемотать после смены фрагмента
   const pendingSeek = useRef<number | null>(null)
   const visited = useRef(new Set<string>())
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (question) dialogRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+  }, [question, feedback])
 
   const seg = iv?.segments.find((s) => s.id === segId) ?? iv?.segments[0]
 
@@ -109,9 +114,16 @@ export default function InteractiveVideo({ raw }: { raw: string }) {
             </button>
           ))}
           {question && (
-            <div role="dialog" aria-label="Вопрос" className="absolute inset-0 flex items-center justify-center bg-black/70 p-4">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="interactive-question-title" onKeyDown={(e) => {
+              if (e.key !== 'Tab') return
+              const buttons = [...(dialogRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+              const first = buttons[0]
+              const last = buttons.at(-1)
+              if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
+              else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
+            }} className="absolute inset-0 flex items-center justify-center bg-black/70 p-4">
               <div className="w-full max-w-md rounded-md bg-background p-5">
-                <p className="text-lg font-extrabold tracking-tight">{question.prompt}</p>
+                <p id="interactive-question-title" className="text-lg font-extrabold tracking-tight">{question.prompt}</p>
                 <div className="mt-4 grid gap-2">
                   {question.options.map((o, i) => (
                     <button
@@ -127,7 +139,7 @@ export default function InteractiveVideo({ raw }: { raw: string }) {
                 </div>
                 {feedback && (
                   <div className="mt-4 flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold">{feedback}</p>
+                    <p role="status" className="text-sm font-semibold">{feedback}</p>
                     <button type="button" className="btn-primary !py-1.5" onClick={() => go(segId, question.t + 0.8)}>
                       Продолжить
                     </button>

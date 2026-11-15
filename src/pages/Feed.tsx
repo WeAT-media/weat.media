@@ -10,13 +10,15 @@ import PaywallBadge from '@/components/PaywallBadge'
 import UpvoteButton from '@/components/UpvoteButton'
 import BookmarkButton from '@/components/BookmarkButton'
 import FeedBest from '@/components/FeedBest'
-import { prefetchArticle } from '@/lib/prefetch'
+import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { hotness } from '@/lib/analytics'
 import { fetchRanked } from '@/lib/remoteFeed'
 import type { Article } from '@/types/types'
 import { LANGUAGES, languageName } from '@/data/languages'
+import { useI18n } from '@/lib/i18n'
 
 function ArticleRow({ article, unlocked }: { article: Article; unlocked: boolean }) {
+  const { t } = useI18n()
   return (
     <Reveal>
       <article className="rule py-7 first:border-t-0 first:pt-2">
@@ -25,16 +27,13 @@ function ArticleRow({ article, unlocked }: { article: Article; unlocked: boolean
           <Stamp verdict={article.verdict} small />
         </div>
         <h2 className="mt-3 text-[22px] font-extrabold leading-snug tracking-tight md:text-2xl">
-          <Link
-            to={`/article/${article.id}`}
-            onMouseEnter={() => prefetchArticle(article.id, article.atUri, article.bodyPending)}
-            onFocus={() => prefetchArticle(article.id, article.atUri, article.bodyPending)}
-            onTouchStart={() => prefetchArticle(article.id, article.atUri, article.bodyPending)}
+          <ArticleForesightLink
+            article={article}
             className="text-foreground decoration-accent decoration-2 underline-offset-4 transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {article.title}
             <PaywallBadge hasPaywall={!!article.paywall} unlocked={unlocked} />
-          </Link>
+          </ArticleForesightLink>
         </h2>
         {article.subtitle && <p className="mt-1.5 text-[15px] text-muted-foreground">{article.subtitle}</p>}
         <p className="mt-3 max-w-[70ch] text-[15px] leading-relaxed">{plainExcerpt(article.excerpt)}</p>
@@ -53,22 +52,22 @@ function ArticleRow({ article, unlocked }: { article: Article; unlocked: boolean
           {article.paywall && (
             <span className="meta inline-flex items-center gap-1 text-accent">
               {unlocked ? (
-                <><LockOpen size={11} aria-hidden="true" /> Доступ открыт</>
+                <><LockOpen size={11} aria-hidden="true" /> {t('unlocked')}</>
               ) : (
-                <><Lock size={11} aria-hidden="true" /> Платная</>
+                <><Lock size={11} aria-hidden="true" /> {t('paid')}</>
               )}
             </span>
           )}
           {article.kind === 'video' && (
             <span className="meta inline-flex items-center gap-1 text-accent">
-              <Clapperboard size={11} aria-hidden="true" /> Видео
+              <Clapperboard size={11} aria-hidden="true" /> {t('video')}
             </span>
           )}
-          <span className="meta">{article.readingTime} мин</span>
-          <span className="meta rounded-full border border-border px-2 py-0.5" title="Язык публикации">
+          <span className="meta">{t('minutesShort', article.readingTime)}</span>
+          <span className="meta rounded-full border border-border px-2 py-0.5" title={t('publicationLanguage')}>
             {languageName(article.language)}
           </span>
-          <span className="meta">{article.comments.length} коммент.</span>
+          <span className="meta">{t('comments', article.comments.length)}</span>
           {article.tags.map((t) => (
             <span key={t} className="meta !normal-case tracking-normal text-accent">
               #{t}
@@ -92,16 +91,9 @@ function pageNumbers(current: number, total: number): (number | null)[] {
   return out
 }
 
-function pluralCollegia(n: number): string {
-  const n10 = n % 10
-  const n100 = n % 100
-  if (n10 === 1 && n100 !== 11) return 'коллегии'
-  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return 'коллегии'
-  return 'коллегий'
-}
-
 export default function Feed() {
   const { articles, cases, caseStats, settings, prefs, setPrefs, unlocked, upvotes, bookmarks, authorSubscriptions } = useStore()
+  const { t } = useI18n()
   const [hideGuilty, setHideGuilty] = useState(false)
   // фильтры и страница — в URL: ссылкой можно поделиться, «назад» работает
   const [params, setParams] = useSearchParams()
@@ -240,15 +232,15 @@ export default function Feed() {
       {/* Шапка ленты */}
       <div className="flex flex-wrap items-end justify-between gap-4 pb-8 pt-10">
         <div>
-          <p className="meta">Публикации читателей · AT Protocol</p>
-          <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">Лента</h1>
+          <p className="meta">{t('readerPublications')}</p>
+          <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">{t('feed')}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-        <div role="group" aria-label="Сортировка ленты" className="flex rounded-full border border-border bg-secondary/60 p-1">
+        <div role="group" aria-label={t('feedSorting')} className="flex rounded-full border border-border bg-secondary/60 p-1">
           {(
             [
-              { key: 'new', label: 'Свежее' },
-              { key: 'hot', label: 'Горячее' },
+              { key: 'new', label: t('latest') },
+              { key: 'hot', label: t('hot') },
             ] as const
           ).map((o) => (
             <button
@@ -266,12 +258,12 @@ export default function Feed() {
         </div>
         <div
           role="tablist"
-          aria-label="Фильтр ленты"
+          aria-label={t('feedFilter')}
           className="flex rounded-full border border-border bg-secondary/60 p-1"
         >
           {[
-            { key: false, label: 'Все' },
-            { key: true, label: 'Без осуждённых' },
+            { key: false, label: t('all') },
+            { key: true, label: t('withoutCondemned') },
           ].map((tab) => (
             <button
               key={String(tab.key)}
@@ -291,27 +283,27 @@ export default function Feed() {
 
       <div className="grid gap-12 lg:grid-cols-[300px_minmax(0,1fr)]">
         {/* Левая колонка: фильтры, суд и модерация */}
-        <aside className="space-y-10 lg:pt-2" aria-label="Фильтры, суд и модерация">
+        <aside className="space-y-10 lg:pt-2" aria-label={t('feedFilters')}>
           <Reveal>
             <section className="rule pt-6">
-              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Теги</h2>
+              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('tags')}</h2>
               {/* Рекомендации тегов: персональные по активности, иначе честно «Популярное» */}
               {tagReco.tags.length > 0 && (
                 <div className="mt-4">
                   <p className="meta mb-2 inline-flex items-center gap-1.5">
                     <Sparkles size={11} className="text-accent" aria-hidden="true" />
-                    {tagReco.personal ? 'Special for you' : 'Популярное'}
+                    {tagReco.personal ? 'Special for you' : t('popular')}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {tagReco.tags.map((t) => {
-                      const isSelected = feedTags.includes(t)
+                    {tagReco.tags.map((tag) => {
+                      const isSelected = feedTags.includes(tag)
                       return (
                         <button
-                          key={t}
+                          key={tag}
                           type="button"
-                          onClick={() => toggleTag(t)}
+                          onClick={() => toggleTag(tag)}
                           aria-pressed={isSelected}
-                          title={isSelected ? `Снять тег ${t}` : `Добавить тег ${t} к фильтру`}
+                          title={isSelected ? t('removeTag', tag) : t('addTag', tag)}
                           className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                             isSelected
                               ? 'border-primary bg-primary text-primary-foreground'
@@ -319,7 +311,7 @@ export default function Feed() {
                           }`}
                         >
                           {isSelected ? <X size={10} aria-hidden="true" /> : <Plus size={10} aria-hidden="true" />}
-                          #{t}
+                          #{tag}
                         </button>
                       )
                     })}
@@ -331,7 +323,7 @@ export default function Feed() {
               </div>
               {feedTags.length > 1 && (
                 <p className="meta mt-2 !normal-case tracking-normal text-muted-foreground">
-                  показаны записи хотя бы с одним из тегов ({feedTags.length})
+                  {t('anySelectedTags', feedTags.length)}
                 </p>
               )}
             </section>
@@ -343,13 +335,13 @@ export default function Feed() {
 
           <Reveal>
             <section className="rule pt-6">
-              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Тип контента</h2>
-              <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Фильтр по типу контента">
+              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('contentType')}</h2>
+              <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('contentTypeFilter')}>
                 {(
                   [
-                    { key: 'all', label: 'Все' },
-                    { key: 'text', label: 'Текст' },
-                    { key: 'video', label: 'Видео' },
+                    { key: 'all', label: t('all') },
+                    { key: 'text', label: t('text') },
+                    { key: 'video', label: t('video') },
                   ] as const
                 ).map((opt) => (
                   <button
@@ -367,9 +359,9 @@ export default function Feed() {
 
           <Reveal>
             <section className="rule pt-6">
-              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Язык</h2>
-              <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Фильтр по языку">
-                {[{ key: 'all', label: 'Все языки' }, ...presentLangs.map((l) => ({ key: l.code, label: l.name }))].map((opt) => (
+              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('language')}</h2>
+              <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('languageFilter')}>
+                {[{ key: 'all', label: t('allLanguages') }, ...presentLangs.map((l) => ({ key: l.code, label: l.name }))].map((opt) => (
                   <button
                     key={opt.key}
                     onClick={() => setLang(opt.key)}
@@ -387,10 +379,10 @@ export default function Feed() {
             <section className="rule pt-6">
               <div className="flex items-center gap-2">
                 <Gavel size={15} className="text-accent" aria-hidden="true" />
-                <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Суд присяжных</h2>
+                <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('juryCourt')}</h2>
               </div>
               {openCases.length === 0 ? (
-                <p className="mt-4 text-sm text-muted-foreground">Открытых дел нет. Лента чиста — пока.</p>
+                <p className="mt-4 text-sm text-muted-foreground">{t('noOpenCases')}</p>
               ) : (
                 <ul className="mt-4 space-y-4">
                   {openCases.map((c) => {
@@ -406,7 +398,7 @@ export default function Feed() {
                             {c.articleTitle}
                           </span>
                           <span className="meta mt-1.5 block">
-                            Голосов {s.voted}/{c.jurorsTotal} · кворум {c.quorum}
+                            {t('votesOf', s.voted, c.jurorsTotal, c.quorum)}
                           </span>
                           <span className="mt-2 block h-1 overflow-hidden rounded-full bg-secondary">
                             <span
@@ -425,44 +417,38 @@ export default function Feed() {
 
           <Reveal>
             <section className="rule pt-6">
-              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Ваши коллегии</h2>
+              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('yourCollegia')}</h2>
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                Вы доверяете вердиктам{' '}
-                <Link to="/settings" className="font-semibold text-accent underline-offset-4 hover:underline">
-                  {subscribedCount} {pluralCollegia(subscribedCount)}
-                </Link>
-                . Каждая метит контент подписанными метками — удалить статью не может никто.
+                <Link to="/settings" className="font-semibold text-accent underline-offset-4 hover:underline">{t('trustedVerdicts', subscribedCount)}</Link>
               </p>
             </section>
           </Reveal>
 
           <Reveal>
             <section className="rule pt-6">
-              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Принцип платформы</h2>
+              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('platformPrinciple')}</h2>
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-                Статьи живут в репозиториях авторов. Спорный контент рассматривает случайная коллегия из 7
-                читателей, а вы сами решаете, как поступать с вердиктами: скрывать, предупреждать или
-                игнорировать.
+                {t('platformPrincipleText')}
               </p>
               <Link
                 to="/settings"
                 className="mt-4 inline-flex items-center gap-1.5 font-mono text-[12px] font-semibold uppercase tracking-[0.08em] text-accent underline-offset-4 hover:underline"
               >
-                Настроить <ArrowUpRight size={13} aria-hidden="true" />
+                {t('configure')} <ArrowUpRight size={13} aria-hidden="true" />
               </Link>
             </section>
           </Reveal>
         </aside>
 
         {/* Список статей */}
-        <section aria-label="Статьи">
+        <section aria-label={t('articles')}>
           {visible.length === 0 ? (
-            <p className="rule py-10 text-muted-foreground">По этому фильтру статей нет.</p>
+            <p className="rule py-10 text-muted-foreground">{t('noFilteredArticles')}</p>
           ) : (
             pageItems.map((a) => <ArticleRow key={a.id} article={a} unlocked={!!unlocked[a.id]} />)
           )}
           {pages > 1 && (
-            <nav aria-label="Страницы ленты" className="rule mt-4 flex flex-wrap items-center gap-1.5 pt-6">
+            <nav aria-label={t('feedPages')} className="rule mt-4 flex flex-wrap items-center gap-1.5 pt-6">
               {pageNumbers(current, pages).map((n, i) =>
                 n === null ? (
                   <span key={`gap${i}`} className="px-1 text-muted-foreground">…</span>

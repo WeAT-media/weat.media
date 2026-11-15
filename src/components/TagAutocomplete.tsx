@@ -97,7 +97,7 @@ export default function TagAutocomplete({
                 type="button"
                 onClick={() => onToggle(t)}
                 aria-label={`Снять тег ${t}`}
-                className="cursor-pointer transition-colors hover:text-accent-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="-m-1 cursor-pointer rounded-full p-1 transition-colors hover:text-accent-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X size={11} aria-hidden="true" />
               </button>
@@ -143,7 +143,7 @@ export default function TagAutocomplete({
             className="absolute z-30 mt-1.5 max-h-72 w-full overflow-y-auto rounded-md border border-border bg-background shadow-md"
           >
             {suggestions.length === 0 ? (
-              <li className="px-3.5 py-3 text-sm text-muted-foreground" aria-disabled="true">
+              <li role="status" className="px-3.5 py-3 text-sm text-muted-foreground">
                 Тег «{query.trim()}» не найден
               </li>
             ) : (
@@ -160,7 +160,7 @@ export default function TagAutocomplete({
                       key={t}
                       id={`${listId}-opt-${i}`}
                       role="option"
-                      aria-selected={isSelected || i === active}
+                      aria-selected={isSelected}
                       onPointerDown={(e) => e.preventDefault()}
                       onClick={() => pick(t)}
                       onMouseEnter={() => setActive(i)}

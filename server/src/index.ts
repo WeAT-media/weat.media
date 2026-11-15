@@ -25,6 +25,7 @@ import { systemAccountRepo } from './systemAccounts.js'
 import { draftRepo } from './drafts.js'
 import { sharedRepo } from './shared.js'
 import { cooldownRepo, createCooldown } from './cooldown.js'
+import { notificationRepo, notificationService } from './notifications.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
@@ -45,6 +46,7 @@ const app = createApp({
   config,
   users: userRepo(sql),
   settings: settingsRepo(sql),
+  notifications: notificationService(notificationRepo(sql), settingsRepo(sql)),
   identities: identityRepo(sql),
   mfa: mfaRepo(sql),
   paid: paidRepo(sql),

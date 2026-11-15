@@ -30,6 +30,8 @@ export interface PdsClient {
   revokeAppPassword(accessJwt: string, name: string): Promise<void>
   /** admin: смена handle, включая зарезервированные имена */
   adminUpdateHandle(did: string, handle: string): Promise<void>
+  /** admin: смена основного пароля локального аккаунта после подтверждённого AppView второго фактора */
+  adminUpdatePassword(did: string, password: string): Promise<void>
   requestEmailConfirmation(accessJwt: string): Promise<void>
   confirmEmail(accessJwt: string, email: string, token: string): Promise<void>
   /** включение email-2FA: при подтверждённом email срабатывает сразу; выключение — по коду из письма */
@@ -182,6 +184,9 @@ export function createPdsClient(baseUrl: string, adminPassword: string): PdsClie
     },
     async adminUpdateHandle(did, handle) {
       await xrpc('POST', 'com.atproto.admin.updateAccountHandle', { auth: adminAuth, body: { did, handle } })
+    },
+    async adminUpdatePassword(did, password) {
+      await xrpc('POST', 'com.atproto.admin.updateAccountPassword', { auth: adminAuth, body: { did, password } })
     },
     async revokeAppPassword(accessJwt, name) {
       await xrpc('POST', 'com.atproto.server.revokeAppPassword', { auth: `Bearer ${accessJwt}`, body: { name } })

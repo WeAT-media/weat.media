@@ -238,9 +238,37 @@ export function toUser(u: ApiUser): User {
   }
 }
 
+export interface NotificationPreferences {
+  articles: boolean
+  comments: boolean
+  replies: boolean
+}
+
+export interface AppNotification {
+  id: string
+  kind: 'article' | 'comment' | 'reply'
+  actorDid: string
+  actorHandle: string
+  subjectUri: string
+  articleUri: string
+  articleTitle: string
+  createdAt: string
+  readAt: string | null
+}
+
+export const notifications = {
+  list: () => authed<{ notifications: AppNotification[] }>('/me/notifications'),
+  markRead: (ids: string[]) => authed<{ ok: true }>('/me/notifications/read', post({ ids })),
+  markAllRead: () => authed<{ ok: true }>('/me/notifications/read-all', post({})),
+  subscriptions: () => authed<{ authors: string[] }>('/me/author-subscriptions'),
+  subscribe: (authorDid: string) => authed<{ ok: true }>(`/me/author-subscriptions/${encodeURIComponent(authorDid)}`, { method: 'PUT' }),
+  unsubscribe: (authorDid: string) => authed<{ ok: true }>(`/me/author-subscriptions/${encodeURIComponent(authorDid)}`, { method: 'DELETE' }),
+}
+
 /** Серверные настройки пользователя: каждый раздел заменяется целиком */
 export interface ServerSettings {
   prefs?: Preferences
+  notificationPrefs?: NotificationPreferences
   editorPrefs?: EditorPreferences
   labelers?: Record<string, LabelerSettings>
   juryOptOut?: boolean
@@ -294,6 +322,8 @@ const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.strin
 
 export const security = {
   get: () => authed<SecurityView>('/me/security'),
+  requestPasswordCode: () => authed<{ codeSent: true }>('/me/password/email/request', post({})),
+  changePassword: (method: 'email' | 'totp', code: string, password: string) => authed<{ ok: true }>('/me/password/change', post({ method, code, password })),
   requestEmailConfirmation: () => authed<{ ok: true }>('/me/email/confirm/request', post({})),
   confirmEmail: (code: string) => authed<SecurityView>('/me/email/confirm', post({ code })),
   /** выключение: первый вызов без кода шлёт письмо и возвращает { codeSent } */

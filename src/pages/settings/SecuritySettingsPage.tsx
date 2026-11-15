@@ -2,7 +2,7 @@ import DevicesList from '@/components/DevicesList'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import QRCode from 'qrcode'
-import { CheckCircle2, Copy, Mail, ShieldCheck, Smartphone } from 'lucide-react'
+import { CheckCircle2, Copy, KeyRound, Mail, ShieldCheck, Smartphone } from 'lucide-react'
 import Reveal from '@/components/Reveal'
 import { hasSession, security, type SecurityView } from '@/lib/api'
 import { SITE_NAME } from '@/config/site'
@@ -40,6 +40,11 @@ export default function SecuritySettingsPage() {
   const [totpCode, setTotpCode] = useState('')
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
   const [totpOffCode, setTotpOffCode] = useState('')
+  const [passwordMethod, setPasswordMethod] = useState<'email' | 'totp'>('email')
+  const [newPassword, setNewPassword] = useState('')
+  const [passwordRepeat, setPasswordRepeat] = useState('')
+  const [passwordCode, setPasswordCode] = useState('')
+  const [passwordCodeSent, setPasswordCodeSent] = useState(false)
 
   const sessionActive = hasSession()
 
@@ -91,6 +96,55 @@ export default function SecuritySettingsPage() {
 
         {view && (
           <div className="mt-6">
+            <div className={card}>
+              <p className="flex flex-wrap items-center gap-2 text-sm font-semibold"><KeyRound size={16} aria-hidden="true" /> Пароль AT Protocol</p>
+              <p className="mt-1 max-w-[60ch] text-sm text-muted-foreground">
+                Пароль только для вашего аккаунта на PDS {SITE_NAME}. Подтвердите изменение кодом из письма или приложения-аутентификатора.
+              </p>
+              <form onSubmit={(e) => {
+                if (newPassword !== passwordRepeat) {
+                  e.preventDefault()
+                  setError('Пароли не совпадают')
+                  setNotice('')
+                  return
+                }
+                void act(async () => {
+                  await security.changePassword(passwordMethod, passwordCode.trim(), newPassword)
+                  setNewPassword('')
+                  setPasswordRepeat('')
+                  setPasswordCode('')
+                  setPasswordCodeSent(false)
+                  setView((prev) => prev ? { ...prev, passwordLogin: true } : prev)
+                  setNotice('Пароль AT Protocol изменён. Теперь можно войти с новым паролем.')
+                }, e)
+              }} className="mt-4 space-y-3">
+                <fieldset>
+                  <legend className="meta">Способ подтверждения</legend>
+                  <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                    <label className="inline-flex items-center gap-2"><input type="radio" name="password-method" value="email" checked={passwordMethod === 'email'} onChange={() => setPasswordMethod('email')} disabled={!view.emailConfirmed} /> Код на email</label>
+                    <label className="inline-flex items-center gap-2"><input type="radio" name="password-method" value="totp" checked={passwordMethod === 'totp'} onChange={() => setPasswordMethod('totp')} disabled={!view.totpEnabled} /> Приложение-аутентификатор</label>
+                  </div>
+                </fieldset>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm">Новый пароль<input type="password" required minLength={8} maxLength={256} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" className={`${inputCls} mt-1 w-full`} /></label>
+                  <label className="text-sm">Повторите пароль<input type="password" required minLength={8} maxLength={256} value={passwordRepeat} onChange={(e) => setPasswordRepeat(e.target.value)} autoComplete="new-password" className={`${inputCls} mt-1 w-full`} /></label>
+                </div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="min-w-52 flex-1 text-sm">{passwordMethod === 'email' ? 'Код из письма' : 'Код из приложения или резервный код'}
+                    <input required value={passwordCode} onChange={(e) => setPasswordCode(e.target.value)} autoComplete="one-time-code" className={`${inputCls} mt-1 w-full`} />
+                  </label>
+                  {passwordMethod === 'email' && <button type="button" disabled={busy} onClick={() => act(async () => {
+                    await security.requestPasswordCode()
+                    setPasswordCodeSent(true)
+                    setNotice('Код для смены пароля отправлен на email.')
+                  })} className="btn-ghost !px-3.5 !py-2 !text-[11px]">{passwordCodeSent ? 'Прислать снова' : 'Получить код'}</button>}
+                  <button type="submit" disabled={busy || newPassword.length < 8 || !passwordCode.trim()} className="btn-primary !px-3.5 !py-2 !text-[11px]">Сменить пароль</button>
+                </div>
+                {passwordMethod === 'email' && !view.emailConfirmed && <p className="text-sm text-muted-foreground">Сначала подтвердите email ниже.</p>}
+                {passwordMethod === 'totp' && !view.totpEnabled && <p className="text-sm text-muted-foreground">Сначала подключите приложение-аутентификатор ниже.</p>}
+              </form>
+            </div>
+
             {/* Email */}
             <div className={card}>
               <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">

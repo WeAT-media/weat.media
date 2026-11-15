@@ -11,6 +11,8 @@ import BuildWatcher from '@/components/BuildWatcher'
 import Footer from '@/components/Footer'
 import EventTicker from '@/components/EventTicker'
 import Feed from '@/pages/Feed'
+import { I18nProvider } from '@/lib/i18n'
+import SkipLink from '@/components/SkipLink'
 
 // страницы — отдельными чанками: лента (главный вход) не ждёт код редактора, админки и т. п.
 const LandingPage = lazy(() => import('@/pages/LandingPage'))
@@ -29,6 +31,8 @@ const ProfileSettingsPage = lazy(() => import('@/pages/settings/ProfileSettingsP
 const DraftsSettingsPage = lazy(() => import('@/pages/settings/DraftsSettingsPage'))
 const AdPinsSettingsPage = lazy(() => import('@/pages/settings/AdPinsSettingsPage'))
 const AppearanceSettingsPage = lazy(() => import('@/pages/settings/AppearanceSettingsPage'))
+const LanguageSettingsPage = lazy(() => import('@/pages/settings/LanguageSettingsPage'))
+const NotificationsSettingsPage = lazy(() => import('@/pages/settings/NotificationsSettingsPage'))
 const JurySettingsPage = lazy(() => import('@/pages/settings/JurySettingsPage'))
 const PayoutsSettingsPage = lazy(() => import('@/pages/settings/PayoutsSettingsPage'))
 const ModerationSettingsPage = lazy(() => import('@/pages/settings/ModerationSettingsPage'))
@@ -101,10 +105,12 @@ export default function App() {
   }, [])
   return (
     <StoreProvider>
+      <I18nProvider>
       <div className="flex min-h-dvh flex-col">
+        <SkipLink />
         <Header />
         <EventTicker />
-        <main className="flex-1">
+        <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
           <ScrollToTop />
         <BuildWatcher />
           <UtmCapture />
@@ -131,6 +137,8 @@ export default function App() {
               <Route path="drafts" element={<DraftsSettingsPage />} />
               <Route path="feed" element={<FeedSettingsPage />} />
               <Route path="appearance" element={<AppearanceSettingsPage />} />
+              <Route path="language" element={<LanguageSettingsPage />} />
+              <Route path="notifications" element={<NotificationsSettingsPage />} />
               <Route path="history" element={<HistorySettingsPage />} />
               <Route path="editor" element={<EditorSettingsPage />} />
               <Route path="import" element={<ImportSettingsPage />} />
@@ -178,6 +186,7 @@ export default function App() {
         </main>
         <Footer />
       </div>
+      </I18nProvider>
     </StoreProvider>
   )
 }

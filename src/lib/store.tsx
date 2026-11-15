@@ -16,13 +16,14 @@ import type {
   ReadEntry,
   VideoProgressEntry,
 } from '@/types/types'
+import type { NotificationPreferences } from '@/lib/api'
 import { defaultEditorPreferences, defaultPreferences } from '@/types/types'
 // статьи, дела и подборки — только настоящие (индекс ленты и свои); из моков — модераторы и аноним
 import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, toUser, articles as articlesApi, clearSession, comments, SESSION_ENDED_EVENT, SESSION_STORAGE_KEY, hasSession, likes, support as supportApi, type ServerSettings } from '@/lib/api'
+import { api, toUser, articles as articlesApi, clearSession, comments, SESSION_ENDED_EVENT, SESSION_STORAGE_KEY, hasSession, likes, notifications as notificationsApi, support as supportApi, type ServerSettings } from '@/lib/api'
 import { videoFromLink, type RecordVideo } from '@/lib/videoLink'
 
 type SettingsSection = keyof ServerSettings
@@ -111,6 +112,7 @@ interface Persisted {
   /** история прочтений, новые сверху (до HISTORY_MAX) */
   readHistory: ReadEntry[]
   prefs: Preferences
+  notificationPrefs: NotificationPreferences
   /** пользователь сам выбрал язык интерфейса; иначе язык берётся по региону */
   uiLangExplicit?: boolean
   /** пользователь сам выбрал валюту; иначе валюта по стране */
@@ -157,6 +159,7 @@ interface StoreValue extends Persisted {
   /** обращение уходит на сервер (номер — его); копия — в браузере заявителя. Ошибка API пробрасывается */
   addSupportTicket: (t: Omit<SupportTicket, 'id' | 'createdAt' | 'status'> & { status?: SupportTicket['status'] }) => Promise<SupportTicket>
   setPrefs: (patch: Partial<Preferences>) => void
+  setNotificationPrefs: (patch: Partial<NotificationPreferences>) => void
   setEditorPrefs: (patch: Partial<EditorPreferences>) => void
   setBlockDefs: (defs: BlockDef[]) => void
   /**
@@ -242,6 +245,7 @@ function loadPersisted(): Persisted {
     watchedArticles: [],
     supportTickets: [],
     prefs: defaultPreferences,
+    notificationPrefs: { articles: true, comments: true, replies: true },
     editorPrefs: defaultEditorPreferences,
     blockDefs: [],
     ai: { openrouterKey: '', model: 'openrouter/free' },
@@ -388,6 +392,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const localSections = useMemo<Required<ServerSettings>>(
     () => ({
       prefs: persisted.prefs,
+      notificationPrefs: persisted.notificationPrefs,
       editorPrefs: persisted.editorPrefs,
       labelers: settings,
       juryOptOut: persisted.juryOptOut,
@@ -405,7 +410,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
     }),
     [
-      persisted.prefs, persisted.editorPrefs, settings, persisted.juryOptOut, persisted.payoutConnected, persisted.tiers, persisted.blockDefs,
+      persisted.prefs, persisted.notificationPrefs, persisted.editorPrefs, settings, persisted.juryOptOut, persisted.payoutConnected, persisted.tiers, persisted.blockDefs,
       persisted.payoutCountry, persisted.payoutMethod, persisted.payoutAsset, persisted.payoutNetwork, persisted.cryptoAddress,
       persisted.videoProgress, persisted.readHistory,
     ],
@@ -440,6 +445,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setPersisted((prev) => ({
           ...prev,
           prefs: { ...defaultPreferences, ...merged.prefs },
+          notificationPrefs: merged.notificationPrefs,
           editorPrefs: { ...defaultEditorPreferences, ...merged.editorPrefs },
           settings: merged.labelers,
           juryOptOut: merged.juryOptOut,
@@ -549,6 +555,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const local = new Set(persisted.extraArticles.map((a) => a.atUri).filter(Boolean))
     return [...persisted.extraArticles, ...remoteArticles.filter((a) => !local.has(a.atUri))]
   }, [persisted.extraArticles, remoteArticles])
+
+  useEffect(() => {
+    if (!syncDid || articles.length === 0) return
+    let alive = true
+    notificationsApi.subscriptions().then(({ authors }) => {
+      if (!alive) return
+      const subscribed = new Set(authors)
+      const handles = [...new Set(articles.filter((a) => subscribed.has(a.author.did)).map((a) => a.author.handle))]
+      setPersisted((prev) => JSON.stringify(prev.authorSubscriptions) === JSON.stringify(handles) ? prev : { ...prev, authorSubscriptions: handles })
+    }, () => {})
+    return () => { alive = false }
+  }, [syncDid, articles])
+
   // люди для @mention-автодополнения в редакторе: авторы записей + известные профили
   useEffect(() => {
     const byHandle = new Map<string, { name: string; handle: string }>()
@@ -719,6 +738,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...(p.uiLang !== undefined ? { uiLangExplicit: true } : {}),
           ...(p.currency !== undefined ? { currencyExplicit: true } : {}),
         }),
+      setNotificationPrefs: (p) => patch({ notificationPrefs: { ...persisted.notificationPrefs, ...p } }),
       setEditorPrefs: (p) => patch({ editorPrefs: { ...persisted.editorPrefs, ...p } }),
       setBlockDefs: (defs) => patch({ blockDefs: defs }),
       unlock: (articleId) => patch({ unlocked: { ...persisted.unlocked, [articleId]: true } }),
@@ -812,12 +832,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           extraComments: { ...prev.extraComments, [articleId]: (prev.extraComments[articleId] ?? []).filter((c) => c.id !== commentId) },
         }))
       },
-      toggleAuthorSubscription: (handle) =>
-        patch({
-          authorSubscriptions: persisted.authorSubscriptions.includes(handle)
-            ? persisted.authorSubscriptions.filter((h) => h !== handle)
-            : [...persisted.authorSubscriptions, handle],
-        }),
+      toggleAuthorSubscription: (handle) => {
+        const subscribed = persisted.authorSubscriptions.includes(handle)
+        patch({ authorSubscriptions: subscribed ? persisted.authorSubscriptions.filter((h) => h !== handle) : [...persisted.authorSubscriptions, handle] })
+        const author = articles.find((a) => a.author.handle === handle)?.author
+        if (author && hasSession()) {
+          ;(subscribed ? notificationsApi.unsubscribe(author.did) : notificationsApi.subscribe(author.did)).catch(() =>
+            patch({ authorSubscriptions: subscribed ? [...persisted.authorSubscriptions, handle] : persisted.authorSubscriptions.filter((h) => h !== handle) }),
+          )
+        }
+      },
       toggleWatchArticle: (articleId) =>
         patch({
           watchedArticles: persisted.watchedArticles.includes(articleId)

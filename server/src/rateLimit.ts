@@ -24,7 +24,7 @@ export const RULES: RateRule[] = [
     match: (m, p) => m === 'POST' && (/^\/auth\/(login|register|mfa|handoff|password\/(forgot|reset))$/.test(p) || p === '/pds/createSession'),
   },
   // коды подтверждения и 2FA в настройках
-  { name: 'codes', limit: 10, windowMs: 60_000, match: (m, p) => m === 'POST' && /^\/me\/(email|2fa)\//.test(p) },
+  { name: 'codes', limit: 10, windowMs: 60_000, match: (m, p) => m === 'POST' && /^\/me\/(email|2fa|password)\//.test(p) },
   // редиректы к провайдерам: каждый создаёт состояние и запрос наружу
   { name: 'oauth-start', limit: 20, windowMs: 60_000, match: (m, p) => m === 'GET' && /^\/auth\/[a-z]+\/start$/.test(p) },
   // счета lava.top и выпуск токенов

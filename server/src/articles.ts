@@ -7,6 +7,7 @@ import type { UserRepo } from './db.js'
 import type { SharedRepo } from './shared.js'
 import type { DraftRepo } from './drafts.js'
 import type { Cooldown } from './cooldown.js'
+import type { NotificationService } from './notifications.js'
 
 /**
  * Публикация с сайта: запись media.weat.article в репозиторий автора его же сессией.
@@ -87,7 +88,7 @@ export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new D
   }
 }
 
-export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo; cooldown?: Cooldown }, h: { bearer(c: Context): string | undefined }) {
+export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo; cooldown?: Cooldown; notifications?: NotificationService }, h: { bearer(c: Context): string | undefined }) {
   app.post('/me/articles', async (c) => {
     const token = h.bearer(c)
     if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
@@ -108,9 +109,13 @@ export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: Shar
     // период охлаждения: 24 ч запись только на сайте — автор правит или удаляет без следа в сети
     const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, record, visibleAt) : null
     if (draft && d.shared) await d.shared.closeFor(draft.id)
-    if (held) return c.json({ uri: held.uri, cid: '', pendingUntil: held.publish_at.toISOString(), visibleAt: held.visible_at.toISOString() }, 201)
+    if (held) {
+      if (held.visible_at <= new Date()) await d.notifications?.article(did, handle, held.uri, parsed.data.title)
+      return c.json({ uri: held.uri, cid: '', pendingUntil: held.publish_at.toISOString(), visibleAt: held.visible_at.toISOString() }, 201)
+    }
     if (visibleAt && visibleAt > new Date()) throw fail('InvalidRequest', 'Отложенная публикация недоступна для этого входа', 400)
     const { uri, cid } = await d.pds.createRecord(token, did, ARTICLE_COLLECTION, record)
+    await d.notifications?.article(did, handle, uri, parsed.data.title)
     return c.json({ uri, cid }, 201)
   })
 }

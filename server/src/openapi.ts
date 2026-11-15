@@ -161,6 +161,17 @@ const ops: Op[] = [
     ok: { status: 200, schema: S.SecuritySchema, description: 'Email, 2FA, TOTP' },
   },
   {
+    method: 'post', path: '/me/password/email/request', tag: 'security', summary: 'Прислать код для смены пароля', auth: 'bearer',
+    description: 'Для локального PDS-аккаунта с подтверждённым email. Код затем передаётся в /me/password/change.',
+    ok: { status: 200, schema: z.object({ codeSent: z.literal(true) }), description: 'Письмо отправлено' }, errors: [[400, 'EmailNotConfirmed']],
+  },
+  {
+    method: 'post', path: '/me/password/change', tag: 'security', summary: 'Задать или сменить пароль PDS', auth: 'bearer',
+    description: 'method=email: код из письма после /me/password/email/request. method=totp: код приложения или резервный код.',
+    body: S.PasswordChangeBody, ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Пароль изменён' },
+    errors: [[400, 'EmailNotConfirmed'], [401, 'InvalidCode'], [429, 'TooManyAttempts']],
+  },
+  {
     method: 'post', path: '/me/email/confirm/request', tag: 'security', summary: 'Прислать код подтверждения email', auth: 'bearer',
     ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Письмо отправлено' },
   },
@@ -419,6 +430,20 @@ const ops: Op[] = [
     method: 'delete', path: '/me/comments/{rkey}', tag: 'profile', summary: 'Удалить свой комментарий', auth: 'bearer',
     ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },
+  {
+    method: 'get', path: '/me/notifications', tag: 'profile', summary: 'Персональные уведомления', auth: 'bearer',
+    description: 'Только записи авторов по подписке, комментарии к своим записям и ответы на свои комментарии.',
+    query: { limit: { description: '1–100, по умолчанию 50' } },
+    ok: { status: 200, description: '{ notifications: [{ id, kind, actorDid, actorHandle, subjectUri, articleUri, articleTitle, createdAt, readAt }] }' },
+  },
+  {
+    method: 'post', path: '/me/notifications/read', tag: 'profile', summary: 'Отметить уведомления прочитанными', auth: 'bearer',
+    body: z.object({ ids: z.array(z.string()) }), ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Готово' },
+  },
+  { method: 'post', path: '/me/notifications/read-all', tag: 'profile', summary: 'Прочитать все уведомления', auth: 'bearer', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Готово' } },
+  { method: 'get', path: '/me/author-subscriptions', tag: 'profile', summary: 'Подписки на авторов', auth: 'bearer', ok: { status: 200, description: '{ authors: DID[] }' } },
+  { method: 'put', path: '/me/author-subscriptions/{authorDid}', tag: 'profile', summary: 'Подписаться на автора', auth: 'bearer', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Подписка сохранена' }, errors: [[400, 'InvalidRequest'], [404, 'NotFound']] },
+  { method: 'delete', path: '/me/author-subscriptions/{authorDid}', tag: 'profile', summary: 'Отписаться от автора', auth: 'bearer', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Подписка удалена' } },
   {
     method: 'get', path: '/admin/users', tag: 'admin', summary: 'Пользователи', auth: 'staff',
     query: { q: { description: 'начало handle или DID; пусто — последние зарегистрированные' } },
