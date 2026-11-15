@@ -22,7 +22,7 @@ import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, toUser, articles as articlesApi, clearSession, comments, hasSession, likes, support as supportApi, type ServerSettings } from '@/lib/api'
+import { api, toUser, articles as articlesApi, clearSession, comments, SESSION_ENDED_EVENT, SESSION_STORAGE_KEY, hasSession, likes, support as supportApi, type ServerSettings } from '@/lib/api'
 import { videoFromLink, type RecordVideo } from '@/lib/videoLink'
 
 type SettingsSection = keyof ServerSettings
@@ -297,6 +297,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       /* квота — игнорируем */
     }
   }, [persisted])
+
+  // сессия закончилась (здесь или в другой вкладке) — выходим из аккаунта и в интерфейсе
+  useEffect(() => {
+    const ended = () => setPersisted((prev) => (prev.user ? { ...prev, user: null } : prev))
+    // профиль в браузере есть, а токенов уже нет (стёрла соседняя вкладка до исправления) — тоже выход
+    if (!hasSession()) ended()
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === SESSION_STORAGE_KEY && e.newValue === null) ended()
+    }
+    window.addEventListener(SESSION_ENDED_EVENT, ended)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(SESSION_ENDED_EVENT, ended)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
 
   // применяем preferences к документу: шрифт, акцент, тема, lang
   useEffect(() => {

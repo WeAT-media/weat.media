@@ -76,7 +76,8 @@ export class ApiError extends Error {
   }
 }
 
-const SESSION_KEY = 'indie-media:session'
+export const SESSION_STORAGE_KEY = 'indie-media:session'
+const SESSION_KEY = SESSION_STORAGE_KEY
 const BASE = import.meta.env.VITE_API_URL ?? '/api'
 
 interface Tokens {
@@ -96,16 +97,23 @@ function saveSession(s: Tokens) {
   }
 }
 
+/**
+ * Всегда из localStorage: другая вкладка могла обновить сессию (PDS при обновлении выдаёт новый refresh-токен,
+ * старый перестаёт работать) — копия в памяти устаревала, её refresh отклонялся, и вкладка стирала сессию
+ * целиком, вместе со свежими токенами соседней. Память — только если localStorage недоступен.
+ */
 function loadSession(): Tokens | null {
-  if (memTokens) return memTokens
   try {
     const raw = localStorage.getItem(SESSION_KEY)
     memTokens = raw ? (JSON.parse(raw) as Tokens) : null
   } catch {
-    memTokens = null
+    /* приватный режим — живём с копией в памяти */
   }
   return memTokens
 }
+
+/** сессия закончилась (refresh отклонён) — интерфейс выходит из аккаунта, а не показывает «призрачный» профиль */
+export const SESSION_ENDED_EVENT = 'weat:session-ended'
 
 export function hasSession(): boolean {
   return loadSession() !== null
@@ -137,6 +145,28 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 let refreshing: Promise<void> | null = null
 
+async function refreshShared(staleRefresh: string): Promise<void> {
+  const run = async () => {
+    // пока ждали блокировку, соседняя вкладка могла уже обновить — берём её токены
+    const now = loadSession()
+    if (now && now.refreshJwt !== staleRefresh) return
+    try {
+      saveSession(await call<SessionResponse>('/auth/refresh', { method: 'POST', body: JSON.stringify({ refreshJwt: staleRefresh }) }))
+    } catch (e) {
+      // гонка без поддержки locks: токены успели обновиться — не стираем их
+      const after = loadSession()
+      if (after && after.refreshJwt !== staleRefresh) return
+      // сеть пропала — сессию не трогаем, повторим позже
+      if (e instanceof ApiError && e.status === 0) throw e
+      clearSession()
+      window.dispatchEvent(new Event(SESSION_ENDED_EVENT))
+      throw e
+    }
+  }
+  const locks = (navigator as Navigator & { locks?: { request(name: string, cb: () => Promise<void>): Promise<void> } }).locks
+  return locks ? locks.request('weat-session-refresh', run) : run()
+}
+
 /** Запрос от имени пользователя; при истёкшем access-токене один раз обновляет сессию */
 async function authed<T>(path: string, init: RequestInit = {}): Promise<T> {
   const tokens = loadSession()
@@ -146,18 +176,10 @@ async function authed<T>(path: string, init: RequestInit = {}): Promise<T> {
     return await call<T>(path, withAuth(tokens))
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 401) throw err
-    // параллельные запросы ждут одно обновление, а не гоняют refreshJwt наперегонки
-    refreshing ??= call<SessionResponse>('/auth/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refreshJwt: tokens.refreshJwt }),
+    // параллельные запросы ждут одно обновление; между вкладками — общая блокировка
+    refreshing ??= refreshShared(tokens.refreshJwt).finally(() => {
+      refreshing = null
     })
-      .then(saveSession, (e) => {
-        clearSession()
-        throw e
-      })
-      .finally(() => {
-        refreshing = null
-      })
     await refreshing
     return call<T>(path, withAuth(loadSession()!))
   }
