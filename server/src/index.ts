@@ -97,7 +97,7 @@ const app = createApp({
     : undefined,
   pds,
   pdsUrl: config.PDS_URL,
-  peer: config.PEER_CONTOUR_URL ? createPeer(config.PEER_CONTOUR_URL) : undefined,
+  peer: config.PEER_CONTOUR_URL ? createPeer(config.PEER_CONTOUR_URL, 3000, config.PEER_SECRET) : undefined,
   nodeRole: config.NODE_ROLE,
   geo: await createGeo({ dbPath: config.GEOIP_DB_PATH, devCountry: config.GEOIP_DEV_COUNTRY }),
   socketIp: (c) => getConnInfo(c).remote.address ?? '',

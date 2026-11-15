@@ -66,6 +66,8 @@ const Env = z.object({
   NODE_ROLE: z.enum(['primary', 'standby']).default('primary'),
   /** AppView соседнего контура (global <-> ru): общий handle, переадресация входа */
   PEER_CONTOUR_URL: z.string().url().optional(),
+  /** общий секрет контуров: соседу можно спросить «есть ли у тебя этот аккаунт провайдера» (вход без дублей) */
+  PEER_SECRET: z.string().min(32).optional(),
   /** тестовый стенд: все OAuth-эндпоинты провайдеров на один адрес */
   OAUTH_STUB_URL: z.string().url().optional(),
 })

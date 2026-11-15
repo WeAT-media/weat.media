@@ -723,13 +723,14 @@ const fakeAtproto: AtprotoAuth = {
 }
 
 let cooldownLast: Cooldown | undefined
-function makeApp(opts: { cooldown?: boolean; rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean; restricted?: Deps['restricted']; feedUrl?: string } = {}) {
+function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean; restricted?: Deps['restricted']; feedUrl?: string } = {}) {
   const deps: Deps = {
     config: {
       CONTOUR: opts.contour ?? 'global',
       PDS_HANDLE_DOMAIN: 'indie.media',
       TRUST_PROXY: true,
       ADMIN_TOKEN: 'admin-token-0123456789',
+      ...(opts.peerSecret ? { PEER_SECRET: opts.peerSecret } : {}),
       CORS_ORIGIN: 'http://localhost:3000',
       PUBLIC_URL: 'http://localhost:3000',
       LAVA_OFFER_ID: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
@@ -2397,4 +2398,38 @@ test('cooldown: article and comment stay on the site 24h, editable and deletable
   const rkey = res.uri.split('/').pop()
   assert.equal((stored.get(`did:plc:coolwriter/media.weat.article/${rkey}`) as { title?: string } | undefined)?.title, 'Остынет 2')
   assert.equal((await app.request(`/api/me/pending${q}`, { method: 'DELETE', headers: H })).status, 409, 'после публикации — уже не ждущая')
+})
+
+test('yandex: account from the other contour — sign in there, no duplicate account', async () => {
+  const SECRET = 'peer-secret-0123456789-0123456789-abcd'
+  // NL: аккаунт создан раньше, когда входили из-за границы
+  const nl = makeApp({ contour: 'global', peerSecret: SECRET, ipCountry: { '5.1.1.1': 'NL', '95.1.1.1': 'RU' } })
+  const first = await yandexFlow(nl, 'code-ivan', '5.1.1.1')
+  const nlUser = await (await nl.request('/api/auth/handoff', json({ code: first.searchParams.get('handoff')! }, '5.1.1.1'))).json()
+
+  // без общего секрета сосед ничего не отдаёт
+  const ask = (secret?: string) =>
+    nl.request('/api/peer/oauth-login', { method: 'POST', headers: { 'x-indie-peer-hop': '1', 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body: JSON.stringify({ provider: 'yandex', providerUserId: '1001', country: 'RU' }) })
+  assert.equal((await ask()).status, 404)
+  assert.equal((await ask('wrong-secret-wrong-secret-wrong-secret')).status, 404)
+
+  // RU: привязки нет — спрашивает NL и уводит на его адрес с кодом входа
+  const ru = makeApp({
+    contour: 'ru',
+    ipCountry: { '95.1.1.1': 'RU' },
+    peer: {
+      publicUrl: 'https://nl-1.weat.test',
+      resolve: async () => null,
+      profile: async () => null,
+      oauthLogin: async (provider, providerUserId, country) => {
+        const r = await nl.request('/api/peer/oauth-login', { method: 'POST', headers: { 'x-indie-peer-hop': '1', 'content-type': 'application/json', authorization: `Bearer ${SECRET}` }, body: JSON.stringify({ provider, providerUserId, country }) })
+        return r.ok ? ((await r.json()) as { code: string }).code : null
+      },
+    },
+  })
+  const viaRu = await yandexFlow(ru, 'code-ivan', '95.1.1.1')
+  assert.equal(viaRu.origin, 'https://nl-1.weat.test', 'вход — в контуре, где аккаунт')
+  const again = await (await nl.request('/api/auth/handoff', json({ code: viaRu.searchParams.get('handoff')! }, '95.1.1.1'))).json()
+  assert.equal(again.user.did, nlUser.user.did, 'тот же аккаунт')
+  assert.equal(await (await ru.request('/api/users/ivan-petrov-2.indie.media')).status === 200, false, 'дубля в RU нет')
 })

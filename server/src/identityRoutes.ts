@@ -19,14 +19,14 @@ import { AtprotoLinkBody, Handle, HandoffBody, OAuthLinkBody, LEGAL_VERSION, Utm
 import type { SecretBox } from './secretbox.js'
 
 export interface IdentityDeps {
-  config: { CONTOUR: 'global' | 'ru'; PDS_HANDLE_DOMAIN: string; PUBLIC_URL: string }
+  config: { CONTOUR: 'global' | 'ru'; PDS_HANDLE_DOMAIN: string; PUBLIC_URL: string; PEER_SECRET?: string }
   users: UserRepo
   identities: IdentityRepo
   pds: PdsClient
   secrets: SecretBox
   oauth: Partial<Record<OAuthProviderId, OAuthClient>>
   atproto?: AtprotoAuth
-  peer?: { resolve(handle: string): Promise<string | null> }
+  peer?: { resolve(handle: string): Promise<string | null>; publicUrl?: string; oauthLogin?(provider: string, providerUserId: string, country: string): Promise<string | null> }
 }
 
 interface Helpers {
@@ -348,11 +348,36 @@ export function mountIdentityRoutes(app: Hono, d: IdentityDeps, h: Helpers) {
         await linkTo(user, s.accessJwt, provider, profile)
         return back({ linked: provider })
       }
+      // привязки в этом контуре нет — аккаунт может быть у соседа (вошли раньше из другой страны):
+      // входим туда, а не создаём второй аккаунт
+      if (!(await d.identities.find(provider, profile.id)) && d.peer?.oauthLogin && d.peer.publicUrl) {
+        const code = await d.peer.oauthLogin(provider, profile.id, h.geoOf(c).country).catch(() => null)
+        if (code) return c.redirect(`${d.peer.publicUrl}/login?${new URLSearchParams({ handoff: code, returnTo: s.returnTo ?? '/feed' })}`)
+      }
       return back({ handoff: issueHandoff(await loginWith(provider, profile, c, s.utm, s.consent)) })
     } catch (err) {
       if (!(err instanceof PdsError)) console.error(err)
       return back({ error: err instanceof PdsError ? err.code : 'ProviderFailed', provider })
     }
+  })
+
+  // сосед спрашивает: есть ли здесь аккаунт с этой привязкой провайдера → одноразовый код входа на нашем адресе
+  app.post('/peer/oauth-login', async (c) => {
+    const auth = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
+    if (c.req.header('x-indie-peer-hop') !== '1' || !d.config.PEER_SECRET || !h.safeEqual(auth, d.config.PEER_SECRET)) {
+      return c.json({ error: 'NotFound', message: 'Не найдено' }, 404)
+    }
+    const b = (await c.req.json().catch(() => null)) as { provider?: unknown; providerUserId?: unknown; country?: unknown } | null
+    const provider = typeof b?.provider === 'string' && isProvider(b.provider) ? b.provider : null
+    const id = typeof b?.providerUserId === 'string' ? b.providerUserId : ''
+    if (!provider || !id) return c.json({ error: 'InvalidRequest', message: 'provider, providerUserId' }, 400)
+    const existing = await d.identities.find(provider, id)
+    const user = existing ? await d.users.findByDid(existing.did) : undefined
+    if (!existing || !user) return c.json({ error: 'NotFound', message: 'Нет такого аккаунта' }, 404)
+    const country = typeof b?.country === 'string' ? b.country : 'ZZ'
+    if (!providerAllowed(provider, d.config.CONTOUR, user.signup_country, country)) return c.json({ error: 'ProviderForbidden', message: 'Вход через этот сервис запрещён' }, 403)
+    const session = await d.pds.createSession(user.handle, d.secrets.open(existing.pdsPasswordEnc))
+    return c.json({ code: issueHandoff(h.sessionDto(session, user)) })
   })
 
   app.post('/auth/handoff', async (c) => {

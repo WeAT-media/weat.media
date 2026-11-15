@@ -17,6 +17,12 @@ export interface PeerContour {
   profile(id: string): Promise<PeerProfile | null>
   /** публичный адрес соседнего контура для переадресации пользователя */
   publicUrl: string
+  /**
+   * Вход через провайдера (Яндекс…), когда в этом контуре привязки нет: аккаунт может жить у соседа —
+   * он выдаёт одноразовый код входа (/login?handoff=…) на своём адресе. null — у соседа такого аккаунта нет.
+   * Передаётся только провайдер, id аккаунта у провайдера и страна входа — без email и имени.
+   */
+  oauthLogin?(provider: string, providerUserId: string, country: string): Promise<string | null>
 }
 
 export const PEER_HOP_HEADER = 'x-indie-peer-hop'
@@ -34,7 +40,7 @@ export function peerProfile(u: { did: string; handle: string; display_name: stri
   return { did: u.did, handle: u.handle, displayName: u.display_name, createdAt: u.created_at.toISOString(), service: u.service ?? null }
 }
 
-export function createPeer(url: string, timeoutMs = 3000): PeerContour {
+export function createPeer(url: string, timeoutMs = 3000, secret?: string): PeerContour {
   return {
     publicUrl: url.replace(/\/$/, ''),
     async resolve(handle) {
@@ -53,6 +59,21 @@ export function createPeer(url: string, timeoutMs = 3000): PeerContour {
         clearTimeout(t)
       }
     },
+    ...(secret
+      ? {
+          async oauthLogin(provider: string, providerUserId: string, country: string) {
+            const res = await fetch(`${url.replace(/\/$/, '')}/api/peer/oauth-login`, {
+              method: 'POST',
+              headers: { [PEER_HOP_HEADER]: '1', authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+              body: JSON.stringify({ provider, providerUserId, country }),
+              signal: AbortSignal.timeout(timeoutMs),
+            }).catch(() => null)
+            if (!res?.ok) return null
+            const b = (await res.json().catch(() => null)) as { code?: unknown } | null
+            return typeof b?.code === 'string' ? b.code : null
+          },
+        }
+      : {}),
     async profile(id) {
       const res = await fetch(`${url.replace(/\/$/, '')}/api/peer/users/${encodeURIComponent(id)}`, {
         headers: { [PEER_HOP_HEADER]: '1' },
