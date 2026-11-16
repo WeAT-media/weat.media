@@ -135,7 +135,8 @@ export default function ArticlePage() {
   } = useStore()
   const navigate = useNavigate()
   const videoPlayerRef = useRef<VideoPlayerHandle>(null)
-  const card = articles.find((a) => a.id === id)
+  // после публикации адрес — сетевой id (rkey-хвост DID), а копия в браузере могла сохраниться под локальным u-…
+  const card = articles.find((a) => a.id === id) ?? articles.find((a) => !!a.atUri?.startsWith('at://did:') && remoteId(a.atUri) === id)
   // лента приходит без текстов: тело статьи подгружаем здесь
   const [full, setFull] = useState<{ id: string; article: typeof card } | null>(null)
   const pendingUri = card?.bodyPending ? card.atUri : undefined
@@ -444,7 +445,16 @@ export default function ArticlePage() {
 
         <Reveal className="mt-8">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="meta">{article.publishedAt}</span>
+            <time
+              className="meta"
+              dateTime={article.publishedAtFull ?? article.publishedAt}
+              title={article.publishedAtFull ? new Date(article.publishedAtFull).toLocaleString('ru-RU') : undefined}
+            >
+              {/* дата и время публикации (у старых записей — только дата) */}
+              {article.publishedAtFull && !Number.isNaN(Date.parse(article.publishedAtFull))
+                ? new Date(article.publishedAtFull).toLocaleString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : article.publishedAt}
+            </time>
             <span className="meta">{article.readingTime} мин чтения</span>
             <span className="meta rounded-full border border-border px-2 py-0.5" title="Язык публикации">
               {languageName(article.language)}
@@ -560,7 +570,19 @@ export default function ArticlePage() {
             return (
               <p className="meta mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 border border-dashed border-border bg-secondary/40 p-4 !normal-case tracking-normal">
                 <Rss size={11} aria-hidden="true" /> Перепечатка: впервые опубликовано
-                {day && <> {day.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}</>} на {r.site} ·
+                {day && (
+                  <>
+                    {' '}
+                    {day.toLocaleString('ru-RU', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                      // время — если указано (дата без времени хранится как полночь UTC)
+                      ...(day.getUTCHours() || day.getUTCMinutes() ? { hour: '2-digit', minute: '2-digit' } : {}),
+                    })}
+                  </>
+                )}{' '}
+                на {r.site} ·
                 <a href={safeHref(r.url)} target="_blank" rel="noreferrer" className="text-accent underline-offset-4 hover:underline">оригинал</a> ·
                 <a href={wayback} target="_blank" rel="noreferrer" className="text-accent underline-offset-4 hover:underline">архив (Wayback Machine)</a>
               </p>

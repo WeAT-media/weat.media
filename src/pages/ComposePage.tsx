@@ -330,7 +330,11 @@ export default function ComposePage() {
     if (typeof extra.canonicalUrl === 'string' && m.republish === undefined) {
       setRepublish(true)
       setRepublishUrl(extra.canonicalUrl)
-      if (typeof extra.originalPublishedAt === 'string') setRepublishDate(extra.originalPublishedAt.slice(0, 10))
+      // в поле datetime-local — местное время без зоны
+      if (typeof extra.originalPublishedAt === 'string') {
+        const t = new Date(extra.originalPublishedAt)
+        if (!Number.isNaN(t.getTime())) setRepublishDate(new Date(t.getTime() - t.getTimezoneOffset() * 60_000).toISOString().slice(0, 16))
+      }
     }
     if (m.scheduleMode === 'now' || m.scheduleMode === 'later') setScheduleMode(m.scheduleMode)
     str(m.publishAtInput, setPublishAtInput)
@@ -420,7 +424,7 @@ export default function ComposePage() {
       collectionId: collectionId || undefined,
       noindex: noindex || undefined,
       ...(republish && /^https?:\/\/\S+$/.test(republishUrl.trim())
-        ? { republished: { url: republishUrl.trim(), site: (() => { try { return new URL(republishUrl.trim()).hostname.replace(/^www\./, '') } catch { return '' } })(), ...(republishDate ? { publishedAt: republishDate } : {}) } }
+        ? { republished: { url: republishUrl.trim(), site: (() => { try { return new URL(republishUrl.trim()).hostname.replace(/^www\./, '') } catch { return '' } })(), ...(republishDate ? { publishedAt: republishDate.length > 10 ? new Date(republishDate).toISOString() : republishDate } : {}) } }
         : {}),
       publishAt:
         scheduleMode === 'later' && publishAtInput ? new Date(publishAtInput).toISOString() : undefined,
@@ -1256,9 +1260,9 @@ export default function ComposePage() {
                 </span>
               </label>
               {republish && (
-                <div className="grid gap-2 pl-6 sm:grid-cols-[minmax(0,1fr)_180px]">
+                <div className="grid gap-2 pl-6 sm:grid-cols-[minmax(0,1fr)_220px]">
                   <input type="url" value={republishUrl} onChange={(e) => setRepublishUrl(e.target.value)} placeholder="https://habr.com/ru/articles/…" aria-label="Ссылка на оригинал" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                  <input type="date" value={republishDate} onChange={(e) => setRepublishDate(e.target.value)} aria-label="Дата первой публикации" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  <input type="datetime-local" value={republishDate} onChange={(e) => setRepublishDate(e.target.value)} aria-label="Дата и время первой публикации" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                   {republishUrl.trim() && !/^https?:\/\/\S+$/.test(republishUrl.trim()) && <p className="text-sm text-destructive sm:col-span-2">Ссылка должна начинаться с https://</p>}
                 </div>
               )}

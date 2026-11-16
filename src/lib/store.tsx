@@ -37,7 +37,7 @@ import { setEditorCaps } from '@/lib/editorCaps'
 import { setEditorPeople } from '@/lib/editorPeople'
 import { profileMetaSeed } from '@/data/profiles'
 import { PDS_URL } from '@/config/site'
-import { fetchRemoteFeed, toComment } from '@/lib/remoteFeed'
+import { fetchRemoteFeed, remoteId, toComment } from '@/lib/remoteFeed'
 
 const STORAGE_KEY = 'indie-media:v1'
 /** столько же принимает сервер (server/src/settings.ts) */
@@ -789,7 +789,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           extraArticles: [
             {
               ...article,
-              // настоящий адрес записи (в охлаждении CID ещё нет — запись не в репозитории); без сети — ни того, ни другого
+              // настоящий адрес записи (в охлаждении CID ещё нет — запись не в репозитории); без сети — ни того, ни другого.
+              // id — сетевой (как у ленты): страница статьи сразу после публикации открывается по нему, без 404
+              ...(remote ? { id: remoteId(remote.uri) } : {}),
               ...(remote ? { atUri: remote.uri, cid: remote.cid || undefined, fromIndex: true, likeCount: 0, commentCount: 0, ...(remote.pendingUntil ? { pendingUntil: remote.pendingUntil } : {}) } : {}),
               originPds: article.originPds ?? PDS_URL,
               indexedAt: article.indexedAt ?? new Date().toISOString(),

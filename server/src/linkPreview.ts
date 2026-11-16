@@ -120,3 +120,32 @@ export function mountLinkPreviewRoutes(app: Hono, d: { authDid(c: Context): Prom
     return value ? c.json(value) : c.json({ error: 'NotFound', message: 'Не удалось получить превью' }, 404)
   })
 }
+
+
+/**
+ * Картинки для редактора: BlockSuite при загрузке markdown скачивает ![…](https://…) сам, из браузера — а CSP
+ * сайта (connect-src 'self') чужие адреса не пускает, и картинка вечно «грузилась». Отдаём её через AppView:
+ * только http(s) на публичные адреса (safeFetch), только image/*, до 10 МБ, кэш — сутки.
+ */
+export function mountImageProxyRoute(app: Hono, d: { fetch?: (url: string, init?: RequestInit) => Promise<Response> } = {}) {
+  app.get('/image-proxy', async (c) => {
+    const url = c.req.query('url') ?? ''
+    if (!/^https?:\/\//.test(url) || url.length > 2000) return c.json({ error: 'InvalidRequest', message: 'url: http(s)://…' }, 400)
+    const { safeFetch, readBodyLimited } = await import('./safeFetch.js')
+    const res = await (d.fetch ?? safeFetch)(url, { headers: { 'user-agent': UA, accept: 'image/*' }, signal: AbortSignal.timeout(10_000) }).catch(() => null)
+    const type = res?.headers.get('content-type') ?? ''
+    if (!res?.ok || !type.startsWith('image/')) {
+      await res?.body?.cancel().catch(() => {})
+      return c.json({ error: 'NotFound', message: 'Не картинка или недоступна' }, 404)
+    }
+    const body = await readBodyLimited(res, 10 * 1024 * 1024).catch(() => null)
+    if (!body) return c.json({ error: 'TooLarge', message: 'Картинка больше 10 МБ' }, 413)
+    return c.body(new Uint8Array(body), 200, {
+      'content-type': type,
+      'cache-control': 'public, max-age=86400',
+      'x-content-type-options': 'nosniff',
+      // SVG с чужого сайта не должен исполнять скрипты в нашем домене
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    })
+  })
+}

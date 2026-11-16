@@ -36,6 +36,8 @@ export const RULES: RateRule[] = [
   { name: 'link-preview', limit: 30, windowMs: 60_000, match: (m, p) => m === 'POST' && p === '/link-preview' },
   // картинки превью статей: рендер ~0.3 с CPU (кэш — час)
   { name: 'og', limit: 60, windowMs: 60_000, match: (m, p) => m === 'GET' && p.startsWith('/og/') },
+  // прокси картинок редактора — чужие сайты; на статью их десятки, но не сотни в минуту
+  { name: 'image-proxy', limit: 300, windowMs: 60_000, match: (m, p) => m === 'GET' && p === '/image-proxy' },
   { name: 'public-api', limit: 120, windowMs: 60_000, match: (_m, p) => p.startsWith('/v1/') },
   // всё остальное
   { name: 'default', limit: 600, windowMs: 60_000, match: () => true },

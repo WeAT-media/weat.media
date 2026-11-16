@@ -132,7 +132,8 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         )
         schema.register(extendedSchemas)
         schema.register(customBlocksMod.customBlockSchemas)
-        const collection = new DocCollection({ schema, id: `indie-${roomId ?? `solo-${Date.now()}`}` })
+        const { createEditorBlobSource, URL_SOURCE } = await import('@/lib/editorAssets')
+        const collection = new DocCollection({ schema, id: `indie-${roomId ?? `solo-${Date.now()}`}`, blobSources: { main: createEditorBlobSource() as never } })
         // без этого collection.meta._proxy.pages остаётся undefined: addDocMeta молча
         // не добавляет запись, blockCollections не заполняется, createDoc() возвращает null
         collection.meta.initialize()
@@ -144,7 +145,35 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
           ...customBlocksMod.customMarkdownMatchers,
           // карточку ссылки пишет наш bookmarkMarkdownMatcher (```bookmark) — штатный превращал её в обычную ссылку
           ...blocksMod.defaultBlockMarkdownAdapterMatchers.filter((m) => m.flavour !== 'affine:bookmark').map((m) =>
-            m.flavour === 'affine:code'
+            m.flavour === 'affine:image'
+              ? // картинка по https:// — ссылкой (url:…): в markdown остаётся исходный адрес, а не «assets/…»
+                {
+                  ...m,
+                  toBlockSnapshot: {
+                    ...m.toBlockSnapshot,
+                    enter: async (o: Parameters<NonNullable<typeof m.toBlockSnapshot.enter>>[0], ctx: Parameters<NonNullable<typeof m.toBlockSnapshot.enter>>[1]) => {
+                      const url = String((o.node as { url?: string }).url ?? '')
+                      if (!/^https?:\/\//.test(url)) return m.toBlockSnapshot.enter?.(o, ctx)
+                      ctx.walkerContext
+                        .openNode({ type: 'block', id: storeMod.nanoid(), flavour: 'affine:image', props: { sourceId: `${URL_SOURCE}${url}`, caption: (o.node as { alt?: string }).alt || undefined }, children: [] }, 'children')
+                        .closeNode()
+                    },
+                  },
+                  fromBlockSnapshot: {
+                    ...m.fromBlockSnapshot,
+                    enter: async (o: Parameters<NonNullable<typeof m.fromBlockSnapshot.enter>>[0], ctx: Parameters<NonNullable<typeof m.fromBlockSnapshot.enter>>[1]) => {
+                      const id = String((o.node.props as { sourceId?: string }).sourceId ?? '')
+                      if (!id.startsWith(URL_SOURCE)) return m.fromBlockSnapshot.enter?.(o, ctx)
+                      const caption = (o.node.props as { caption?: string | null }).caption ?? null
+                      ctx.walkerContext
+                        .openNode({ type: 'paragraph', children: [] }, 'children')
+                        .openNode({ type: 'image', url: id.slice(URL_SOURCE.length), title: null, alt: caption }, 'children')
+                        .closeNode()
+                        .closeNode()
+                    },
+                  },
+                }
+              : m.flavour === 'affine:code'
               ? { ...m, toMatch: (o: Parameters<typeof m.toMatch>[0]) => m.toMatch(o) && !OWN_FENCES.has(String((o.node as { lang?: string }).lang ?? '')) }
               : m,
           ),
