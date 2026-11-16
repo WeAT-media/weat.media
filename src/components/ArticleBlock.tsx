@@ -21,6 +21,7 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
   if (block.type === 'faq') return <FaqView raw={block.text} />
   if (block.type === 'button') return <ActionButtonView raw={block.text} />
   if (block.type === 'bookmark') return <BookmarkCard raw={block.text} />
+  if (block.type === 'hr') return <hr className="my-10 border-0 border-t border-border" />
   if (block.type === 'h2') {
     // id — якорь для TOC; scroll-mt под sticky-шапку (~64px)
     return <h2 id={id} className="mt-10 scroll-mt-28 text-2xl font-extrabold tracking-tight">{renderInline(block.text)}</h2>

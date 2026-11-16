@@ -99,6 +99,10 @@ export function markdownToBlocks(md: string): ArticleBlock[] {
         const block = customFenceBlock(fence[1], code.join('\n'))
         if (block) blocks.push(block)
       } else blocks.push({ type: 'code', text: code.join('\n'), ...(fence[1] ? { lang: fence[1] } : {}) })
+    } else if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      // ***, ---, ___ (и с пробелами) — разделитель; так BlockSuite пишет блок «Divider»
+      flush()
+      blocks.push({ type: 'hr', text: '' })
     } else if (/^#{1,6}\s/.test(line)) {
       flush()
       blocks.push({ type: 'h2', text: decodeEntities(line.replace(/^#{1,6}\s+/, '')) })
