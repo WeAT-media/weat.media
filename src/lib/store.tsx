@@ -551,9 +551,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [syncDid])
 
   const articles = useMemo(() => {
-    // своя только что опубликованная запись уже есть локально — не дублируем
-    const local = new Set(persisted.extraArticles.map((a) => a.atUri).filter(Boolean))
-    return [...persisted.extraArticles, ...remoteArticles.filter((a) => !local.has(a.atUri))]
+    // запись уже пришла с сервера — показываем её (правки в охлаждении, соавторы), копия в браузере нужна
+    // только пока сервер её ещё не отдаёт (сразу после публикации, отложенная — для автора)
+    const remote = new Set(remoteArticles.map((a) => a.atUri).filter(Boolean))
+    return [...persisted.extraArticles.filter((a) => !a.atUri || !remote.has(a.atUri)), ...remoteArticles]
   }, [persisted.extraArticles, remoteArticles])
 
   useEffect(() => {
