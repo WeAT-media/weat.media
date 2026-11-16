@@ -1243,7 +1243,7 @@ export default function ComposePage() {
                   />
                   {errors.publishAt && <p className="mt-2 text-sm text-destructive">{errors.publishAt}</p>}
                   <p className="meta mt-2">
-                    запись появится в ленте автоматически, когда время наступит (publishAt)
+                    в это время статья уйдёт в сеть AT; на сайте она появится за 24 часа до него (период охлаждения), до этого её видите только вы
                   </p>
                 </div>
               )}

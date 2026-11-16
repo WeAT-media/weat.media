@@ -176,8 +176,11 @@ export interface Cooldown {
   repo: CooldownRepo
   ms: number
   /** отложить запись; null — отложить нельзя (вход без пароля PDS) — тогда публикуем сразу */
-  /** visibleAt — отложенный пост: выход на сайте; в AT — через ms после него */
-  hold(s: { token: string; did: string; handle: string }, collection: string, record: Record<string, unknown>, visibleAt?: Date): Promise<PendingRow | null>
+  /**
+   * scheduledAt — отложенный пост: время ухода в AT (но не раньше чем через ms от сейчас). На сайте запись
+   * появляется за ms до него (охлаждение — последние сутки перед сетью); до этого её видит только автор.
+   */
+  hold(s: { token: string; did: string; handle: string }, collection: string, record: Record<string, unknown>, scheduledAt?: Date): Promise<PendingRow | null>
   /** один проход публикации созревших записей */
   publishDue(): Promise<number>
 }
@@ -187,7 +190,7 @@ export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: Co
   return {
     repo: d.repo,
     ms,
-    async hold(s, collection, record, visibleAt) {
+    async hold(s, collection, record, scheduledAt) {
       if (!(await d.repo.getCreds(s.did))) {
         // app-пароль со старым именем (прошлая попытка) — убираем, иначе PDS откажет «уже существует»
         await d.pds.revokeAppPassword(s.token, APP_PASSWORD_NAME).catch(() => {})
@@ -196,8 +199,10 @@ export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: Co
         await d.repo.setCreds(s.did, d.secrets.seal(pw.password), APP_PASSWORD_NAME)
       }
       const rkey = nextTid()
-      const visible = visibleAt && visibleAt.getTime() > Date.now() ? visibleAt : new Date()
-      return d.repo.insert({ uri: `at://${s.did}/${collection}/${rkey}`, did: s.did, handle: s.handle, collection, rkey, record, visible_at: visible, publish_at: new Date(visible.getTime() + ms) })
+      const now = Date.now()
+      const publish = Math.max(scheduledAt?.getTime() ?? 0, now + ms)
+      const visible = Math.max(now, publish - ms)
+      return d.repo.insert({ uri: `at://${s.did}/${collection}/${rkey}`, did: s.did, handle: s.handle, collection, rkey, record, visible_at: new Date(visible), publish_at: new Date(publish) })
     },
     async publishDue() {
       let n = 0

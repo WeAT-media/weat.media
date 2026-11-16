@@ -57,7 +57,7 @@ export const PublishArticleBody = z
         publishedAt: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
       })
       .optional(),
-    /** отложенный пост: выход на сайте; в AT — через 24 ч после него (период охлаждения) */
+    /** отложенный пост: время ухода в AT; на сайте — за 24 ч до него (период охлаждения), раньше — только автору */
     publishAt: z.string().datetime({ offset: true }).optional(),
   })
   .refine((b) => b.kind === 'text' || b.videos.length > 0, 'у видео-записи нужен хотя бы один ролик')
@@ -104,16 +104,17 @@ export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: Shar
         reviewers.push({ did: r, ...(handle ? { handle } : {}) })
       }
     }
-    const visibleAt = parsed.data.publishAt ? new Date(parsed.data.publishAt) : undefined
-    const record = articleRecord(parsed.data, visibleAt && visibleAt > new Date() ? visibleAt : new Date(), reviewers)
+    const scheduledAt = parsed.data.publishAt ? new Date(parsed.data.publishAt) : undefined
+    // createdAt — момент публикации в сети: назначенное время (не раньше конца минимального охлаждения)
+    const record = articleRecord(parsed.data, scheduledAt && scheduledAt > new Date() ? scheduledAt : new Date(), reviewers)
     // период охлаждения: 24 ч запись только на сайте — автор правит или удаляет без следа в сети
-    const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, record, visibleAt) : null
+    const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, record, scheduledAt) : null
     if (draft && d.shared) await d.shared.closeFor(draft.id)
     if (held) {
       if (held.visible_at <= new Date()) await d.notifications?.article(did, handle, held.uri, parsed.data.title)
       return c.json({ uri: held.uri, cid: '', pendingUntil: held.publish_at.toISOString(), visibleAt: held.visible_at.toISOString() }, 201)
     }
-    if (visibleAt && visibleAt > new Date()) throw fail('InvalidRequest', 'Отложенная публикация недоступна для этого входа', 400)
+    if (scheduledAt && scheduledAt > new Date()) throw fail('InvalidRequest', 'Отложенная публикация недоступна для этого входа', 400)
     const { uri, cid } = await d.pds.createRecord(token, did, ARTICLE_COLLECTION, record)
     await d.notifications?.article(did, handle, uri, parsed.data.title)
     return c.json({ uri, cid }, 201)

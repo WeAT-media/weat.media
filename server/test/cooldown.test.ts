@@ -24,3 +24,18 @@ test('pendingSource: own pending + peer contour pending; peer down — own only'
   const own = pendingSource({ cooldown, peerUrl: 'https://ru.weat.media', fetchImpl })
   assert.deepEqual((await own.list('media.weat.article')).map((i) => i.record.title), ['NL'])
 })
+
+test('scheduled post: AT at the scheduled time (≥24h), visible on the site 24h before', async () => {
+  const repo = memCooldown()
+  await repo.setCreds('did:plc:a', 'x', 'weat-cooldown')
+  const cooldown = createCooldown({ pds: {} as never, secrets: createSecretBox('22'.repeat(32)), repo })
+  const s = { token: 't', did: 'did:plc:a', handle: 'a.weat.media' }
+  const H = 3600_000
+  const t0 = Date.now()
+  const far = await cooldown.hold(s, 'media.weat.article', { title: 'far' }, new Date(t0 + 72 * H))
+  assert.ok(Math.abs(far!.publish_at.getTime() - (t0 + 72 * H)) < 2000, 'в AT — в назначенное время')
+  assert.ok(Math.abs(far!.visible_at.getTime() - (t0 + 48 * H)) < 2000, 'на сайте — за сутки до')
+  const soon = await cooldown.hold(s, 'media.weat.article', { title: 'soon' }, new Date(t0 + 2 * H))
+  assert.ok(soon!.visible_at.getTime() <= Date.now() + 1000, 'меньше суток — на сайте сразу')
+  assert.ok(soon!.publish_at.getTime() >= t0 + 24 * H - 2000, 'в AT — не раньше чем через сутки')
+})
