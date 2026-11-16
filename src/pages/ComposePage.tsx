@@ -135,6 +135,7 @@ export default function ComposePage() {
   const [importReady, setImportReady] = useState(!importId && !draftParam && !pendingUri)
   // настройки шага 2 из черновика — применяются, когда объявлены их состояния (эффект ниже)
   const [loadedMeta, setLoadedMeta] = useState<Record<string, unknown> | null>(null)
+  const [draftMissing, setDraftMissing] = useState(false)
   useEffect(() => {
     if (!draftParam) return
     draftsApi
@@ -145,9 +146,18 @@ export default function ComposePage() {
         if (d.meta) setLoadedMeta(d.meta)
         setDraftSaved(new Date(d.updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
       })
-      .catch(() => setDraftId(null))
+      .catch(() => {
+        // черновика нет (опубликован — тогда он удаляется — или удалён): не открываем пустой редактор молча
+        setDraftId(null)
+        setDraftMissing(true)
+        setSearchParams((p) => {
+          const n = new URLSearchParams(p)
+          n.delete('draft')
+          return n
+        }, { replace: true })
+      })
       .finally(() => setImportReady(true))
-  }, [draftParam])
+  }, [draftParam, setSearchParams])
   useEffect(() => {
     if (!pendingUri) return
     fetch(`/api/feed/article?${new URLSearchParams({ uri: pendingUri })}`)
@@ -617,6 +627,12 @@ export default function ComposePage() {
             )
           })}
         </ol>
+        {draftMissing && (
+          <p role="alert" className="mt-3 border border-border bg-secondary/60 p-3 text-sm">
+            Черновик не найден: его уже опубликовали (после публикации черновик удаляется) или удалили. Это новая статья.{' '}
+            <Link to="/settings/drafts" className="font-semibold text-accent underline underline-offset-2">Мои черновики</Link>
+          </p>
+        )}
         {!hasSession() && (
           <p role="alert" className="mt-3 border border-destructive/60 bg-secondary/60 p-3 text-sm">
             Вы не вошли: черновик не сохраняется, а опубликовать статью не получится.{' '}
@@ -625,11 +641,22 @@ export default function ComposePage() {
         )}
         {hasSession() && (
           <p className="mt-3 flex flex-wrap items-center gap-3">
-            <button type="button" onClick={() => void saveDraftNow()} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
+            <button
+              type="button"
+              onClick={() => {
+                if (!title.trim() && !bodyText.trim()) return setDraftSaved('пусто')
+                void saveDraftNow()
+              }}
+              className="btn-ghost !px-3 !py-1.5 !text-[11px]"
+            >
               Сохранить черновик
             </button>
             <span className="meta">
-              {draftSaved ? `сохранён в ${draftSaved} · текст и настройки публикации` : 'сохраняется сам через 2 с после правки'}
+              {draftSaved === 'пусто'
+                ? 'сохранять нечего: напишите заголовок или текст'
+                : draftSaved
+                  ? `сохранён в ${draftSaved} · текст и настройки публикации`
+                  : 'сохраняется сам через 2 с после правки'}
             </span>
           </p>
         )}
