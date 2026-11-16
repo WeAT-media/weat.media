@@ -53,6 +53,7 @@ const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage'))
 const AtmospherePage = lazy(() => import('@/pages/AtmospherePage'))
 const PremiumPage = lazy(() => import('@/pages/PremiumPage'))
 const PurchaseReturnPage = lazy(() => import('@/pages/PurchaseReturnPage'))
+const AfterPaymentsPage = lazy(() => import('@/pages/AfterPaymentsPage'))
 const AuthCallbackPage = lazy(() => import('@/pages/AuthCallbackPage'))
 const LegalDocPage = lazy(() => import('@/pages/legal/LegalPages').then((m) => ({ default: m.LegalDocPage })))
 const LegalIndexPage = lazy(() => import('@/pages/legal/LegalPages').then((m) => ({ default: m.LegalIndexPage })))
@@ -176,6 +177,7 @@ export default function App() {
             <Route path="/support/legal" element={<SupportLegalPage />} />
             <Route path="/legal" element={<LegalIndexPage />} />
             <Route path="/purchase/:orderId" element={<PurchaseReturnPage />} />
+            <Route path="/after-payments" element={<AfterPaymentsPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route path="/admin" element={<Navigate to="/admin/tickets" replace />} />
             <Route path="/legal/:slug" element={<LegalDocPage />} />
