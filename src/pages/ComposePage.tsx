@@ -591,7 +591,7 @@ export default function ComposePage() {
     'w-full rounded-md border border-input bg-background px-4 py-3 text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
   return (
-    <div className="mx-auto max-w-[1200px] px-5 pb-24 md:px-8">
+    <div className="mx-auto max-w-[1200px] 2xl:max-w-[1520px] px-5 pb-24 md:px-8">
       <div className="pt-10">
         <Link
           to="/feed"
@@ -608,7 +608,8 @@ export default function ComposePage() {
         </p>
       </div>
 
-      <form onSubmit={onPublish} noValidate className="mt-10 max-w-[860px]">
+      {/* широкий экран — шире и поле статьи (было 860px на любом мониторе) */}
+      <form onSubmit={onPublish} noValidate className="mt-10 max-w-[860px] xl:max-w-[1080px] 2xl:max-w-[1320px]">
         {/* Шаги: 1 — статья (заголовок и текст), 2 — настройки публикации и предпросмотр */}
         <ol className="flex flex-wrap items-center gap-2" aria-label="Шаги публикации">
           {(
