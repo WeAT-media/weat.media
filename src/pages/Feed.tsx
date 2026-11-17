@@ -1,7 +1,7 @@
 import { plainExcerpt } from '@/lib/plainText'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { ArrowUpRight, Clapperboard, Gavel, Lock, LockOpen, Plus, Sparkles, X } from 'lucide-react'
+import { ArrowUpRight, Clapperboard, Gavel, Lock, LockOpen, Plus, RotateCcw, Sparkles, X } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import Stamp from '@/components/Stamp'
 import Reveal from '@/components/Reveal'
@@ -80,6 +80,11 @@ function ArticleRow({ article, unlocked }: { article: Article; unlocked: boolean
 }
 
 const PAGE_SIZE = 10
+
+function publicationsCount(count: number) {
+  const forms = { zero: 'публикаций', one: 'публикация', few: 'публикации', many: 'публикаций', two: 'публикации', other: 'публикации' } as const
+  return `${count} ${forms[new Intl.PluralRules('ru').select(count)]}`
+}
 
 /** 1 … 4 5 [6] 7 8 … 20 */
 function pageNumbers(current: number, total: number): (number | null)[] {
@@ -226,14 +231,23 @@ export default function Feed() {
     `cursor-pointer rounded-full border px-3 py-1 font-mono text-[12px] font-semibold tracking-[0.04em] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
       active ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-foreground hover:border-accent hover:text-accent'
     }`
+  const resetFilters = () => {
+    setHideGuilty(false)
+    setPrefs({ feedTags: [] })
+    setParams({})
+  }
 
   return (
     <div className="mx-auto max-w-[1200px] px-5 pb-24 md:px-8">
       {/* Шапка ленты */}
-      <div className="flex flex-wrap items-end justify-between gap-4 pb-8 pt-10">
+      <div className="flex flex-wrap items-end justify-between gap-4 pb-6 pt-8">
         <div>
           <p className="meta">{t('readerPublications')}</p>
-          <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">{t('feed')}</h1>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <h1 className="text-4xl font-extrabold tracking-tight md:text-5xl">{t('feed')}</h1>
+            <span className="text-sm text-muted-foreground" aria-live="polite">{publicationsCount(visible.length)}</span>
+          </div>
+          <p className="mt-2 max-w-[52ch] text-sm text-muted-foreground">Новые тексты и видео от независимых авторов — без рекламного алгоритма.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
         <div role="group" aria-label={t('feedSorting')} className="flex rounded-full border border-border bg-secondary/60 p-1">
@@ -330,10 +344,6 @@ export default function Feed() {
           </Reveal>
 
           <Reveal>
-            <FeedBest articles={articles} upvoted={upvotes} />
-          </Reveal>
-
-          <Reveal>
             <section className="rule pt-6">
               <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('contentType')}</h2>
               <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('contentTypeFilter')}>
@@ -373,6 +383,10 @@ export default function Feed() {
                 ))}
               </div>
             </section>
+          </Reveal>
+
+          <Reveal>
+            <FeedBest articles={articles} upvoted={upvotes} />
           </Reveal>
 
           <Reveal>
@@ -443,7 +457,13 @@ export default function Feed() {
         {/* Список статей */}
         <section aria-label={t('articles')}>
           {visible.length === 0 ? (
-            <p className="rule py-10 text-muted-foreground">{t('noFilteredArticles')}</p>
+            <div className="rule py-12 text-center">
+              <p className="text-lg font-semibold">{t('noFilteredArticles')}</p>
+              <p className="mx-auto mt-2 max-w-[42ch] text-sm text-muted-foreground">Попробуйте убрать часть условий или вернуться ко всем публикациям.</p>
+              <button type="button" onClick={resetFilters} className="btn-primary mt-5">
+                <RotateCcw size={14} aria-hidden="true" /> Сбросить фильтры
+              </button>
+            </div>
           ) : (
             pageItems.map((a) => <ArticleRow key={a.id} article={a} unlocked={!!unlocked[a.id]} />)
           )}

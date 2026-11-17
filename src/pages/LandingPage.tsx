@@ -1,8 +1,8 @@
 import { Link } from 'react-router'
-import { ArrowRight, Landmark, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Check, Landmark, ShieldCheck } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { PerkCard, Press, Reveal, WordReveal } from '@/components/motion/Motion'
-import { AtomIcon, ClapperIcon, CrownRaysIcon, GavelIcon, PeopleIcon, ScaleIcon, SparkleIcon, WriteIcon } from '@/components/motion/AnimatedIcons'
+import { ClapperIcon, GavelIcon, PeopleIcon, ScaleIcon, SparkleIcon, WriteIcon } from '@/components/motion/AnimatedIcons'
 import { SITE_NAME } from '@/config/site'
 import FeeNote from '@/components/FeeNote'
 
@@ -66,42 +66,45 @@ export default function LandingPage() {
   return (
     <div className="mx-auto max-w-[1100px] px-5 pb-24 md:px-8">
       {/* Hero */}
-      <section className="pt-16 md:pt-24">
-        <p className="meta">{SITE_NAME} · поверх AT Protocol</p>
-        <WordReveal text="Дышите свободно в ATmosphere." className="mt-4 max-w-[16ch] text-5xl font-extrabold leading-[1.05] tracking-tight md:text-7xl" />
-        <p className="mt-6 max-w-[62ch] text-lg leading-relaxed text-muted-foreground">
-          <span className="font-semibold text-foreground">we</span> — это мы, сообщество.{' '}
-          <span className="font-semibold text-accent">AT</span> — открытый{' '}
-          <a href="https://atproto.com/" target="_blank" rel="noopener noreferrer" className="underline decoration-accent underline-offset-4 hover:text-accent">AT Protocol</a>, на котором мы стоим. А вместе
-          weat звучит как wheat — пшеница.
-        </p>
-        <p className="mt-4 max-w-[62ch] text-lg leading-relaxed text-muted-foreground">
-          Колос растёт не в одиночку, а полем, и корни у каждого свои. Так и здесь: тексты пускают корни в вашем
-          собственном репозитории, а не в чужом сервере. Площадка лишь собирает урожай в общую ленту — и если
-          однажды вы решите уйти, ваше поле уйдёт вместе с вами: имя, читатели, каждая запись. Сейте мысли, растите
-          смыслы, делитесь хлебом.
-        </p>
-        <Reveal delay={0.35} className="mt-8 flex flex-wrap gap-3">
-          <Press>
-            <Link to="/feed" className="btn-primary !px-6 !py-3 !text-sm">
-              Читать ленту <ArrowRight size={15} aria-hidden="true" />
-            </Link>
-          </Press>
-          <Press>
-            <Link to={user ? '/compose' : '/login?returnTo=/compose'} className="btn-ghost !px-6 !py-3 !text-sm">
-              <WriteIcon /> Стать автором
-            </Link>
-          </Press>
-          <Press>
-            <Link to="/atmosphere" className="btn-ghost !px-6 !py-3 !text-sm">
-              <AtomIcon /> Что такое AT Protocol?
-            </Link>
-          </Press>
-          <Press>
-            <Link to="/premium" className="btn-ghost !px-6 !py-3 !text-sm">
-              <CrownRaysIcon /> Премиум
-            </Link>
-          </Press>
+      <section className="grid items-center gap-10 pb-16 pt-12 md:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)] md:pb-20 md:pt-20">
+        <div>
+          <p className="meta inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-accent" aria-hidden="true" /> Независимая платформа для авторов и читателей</p>
+          <WordReveal text="Ваши тексты. Ваши читатели. Ваши правила." accentFrom={4} className="mt-5 max-w-[13ch] text-[40px] font-extrabold leading-[1.03] tracking-tight sm:text-5xl md:text-7xl" />
+          <p className="mt-6 max-w-[54ch] text-lg leading-relaxed text-muted-foreground md:text-xl">
+            Публикуйте статьи и видео, получайте до 99% с продаж и забирайте аудиторию с собой — благодаря открытому AT Protocol.
+          </p>
+          <Reveal delay={0.2} className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Press>
+              <Link to="/feed" className="btn-primary w-full justify-center !px-6 !py-3 !text-sm sm:w-auto">
+                Читать без регистрации <ArrowRight size={15} aria-hidden="true" />
+              </Link>
+            </Press>
+            <Press>
+              <Link to={user ? '/compose' : '/login?returnTo=/compose'} className="btn-ghost w-full justify-center !px-6 !py-3 !text-sm sm:w-auto">
+                <WriteIcon /> Начать публиковать
+              </Link>
+            </Press>
+          </Reveal>
+          <p className="mt-4 text-sm text-muted-foreground">Уже есть аккаунт ATmosphere? <Link to="/login" className="font-semibold text-accent underline-offset-4 hover:underline">Войти</Link></p>
+        </div>
+        <Reveal delay={0.15} className="border border-border bg-secondary/40 p-6 md:p-7">
+          <p className="meta text-accent">Свобода без мелкого шрифта</p>
+          <ul className="mt-5 space-y-5">
+            {[
+              ['Контент принадлежит вам', 'Публикации хранятся в вашем личном репозитории.'],
+              ['90–99% автору', 'Понятная комиссия и бесплатный тизер платных материалов.'],
+              ['Никакого чёрного ящика', 'Лента, модерация и вердикты — открыты и настраиваются.'],
+            ].map(([title, text]) => (
+              <li key={title} className="flex gap-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent"><Check size={14} strokeWidth={2.5} aria-hidden="true" /></span>
+                <div><h2 className="font-bold leading-snug">{title}</h2><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text}</p></div>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 border-t border-border pt-5 text-sm font-semibold">
+            <Link to="/atmosphere" className="inline-flex items-center gap-1 text-accent hover:underline">Как устроен AT Protocol <ArrowRight size={13} aria-hidden="true" /></Link>
+            <Link to="/premium" className="inline-flex items-center gap-1 hover:text-accent">О Premium <ArrowRight size={13} aria-hidden="true" /></Link>
+          </div>
         </Reveal>
       </section>
 

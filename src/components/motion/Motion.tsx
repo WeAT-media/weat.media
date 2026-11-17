@@ -3,7 +3,7 @@ import { animate, motion, useInView, useReducedMotion } from 'motion/react'
 import { motionTokens, reducedFade, springs } from '@/lib/motionTokens'
 
 /** Заголовок, проявляющийся по словам */
-export function WordReveal({ text, className }: { text: string; className?: string }) {
+export function WordReveal({ text, className, accentFrom = -1 }: { text: string; className?: string; accentFrom?: number }) {
   const reduce = useReducedMotion()
   return (
     <motion.h1
@@ -17,7 +17,7 @@ export function WordReveal({ text, className }: { text: string; className?: stri
         <motion.span
           key={i}
           aria-hidden="true"
-          className="mr-[0.25em] inline-block"
+          className={`mr-[0.25em] inline-block ${i >= accentFrom && accentFrom >= 0 ? 'text-accent underline decoration-accent/30 decoration-[0.14em] underline-offset-[0.12em]' : ''}`}
           variants={{
             hidden: { opacity: 0, y: reduce ? 0 : motionTokens.distance.lg },
             visible: { opacity: 1, y: 0, transition: reduce ? reducedFade : springs.gentle },

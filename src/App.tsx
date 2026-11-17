@@ -116,7 +116,7 @@ export default function App() {
         <BuildWatcher />
           <UtmCapture />
           <CookieBanner />
-          <Suspense fallback={<div className="min-h-[60vh]" aria-busy="true" />}>
+          <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center" role="status"><span className="meta animate-pulse">Загружаем страницу…</span></div>}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/feed" element={<Feed />} />
