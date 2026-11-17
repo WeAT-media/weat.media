@@ -12,7 +12,7 @@ overrides:
 
 patchedDependencies:
   '@blocksuite/affine-components@0.19.5':
-    hash: 6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3
+    hash: c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974
     path: patches/@blocksuite__affine-components@0.19.5.patch
 
 importers:
@@ -4697,7 +4697,7 @@ snapshots:
   '@blocksuite/affine-block-embed@0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
     dependencies:
       '@blocksuite/affine-block-surface': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
-      '@blocksuite/affine-components': 0.19.5(patch_hash=6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
+      '@blocksuite/affine-components': 0.19.5(patch_hash=c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-model': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       '@blocksuite/affine-shared': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/block-std': 0.19.5(yjs@13.6.33)
@@ -4720,7 +4720,7 @@ snapshots:
 
   '@blocksuite/affine-block-list@0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
     dependencies:
-      '@blocksuite/affine-components': 0.19.5(patch_hash=6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
+      '@blocksuite/affine-components': 0.19.5(patch_hash=c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-model': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       '@blocksuite/affine-shared': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/block-std': 0.19.5(yjs@13.6.33)
@@ -4743,7 +4743,7 @@ snapshots:
 
   '@blocksuite/affine-block-paragraph@0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
     dependencies:
-      '@blocksuite/affine-components': 0.19.5(patch_hash=6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
+      '@blocksuite/affine-components': 0.19.5(patch_hash=c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-model': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       '@blocksuite/affine-shared': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/block-std': 0.19.5(yjs@13.6.33)
@@ -4766,7 +4766,7 @@ snapshots:
 
   '@blocksuite/affine-block-surface@0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
     dependencies:
-      '@blocksuite/affine-components': 0.19.5(patch_hash=6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
+      '@blocksuite/affine-components': 0.19.5(patch_hash=c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-model': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       '@blocksuite/affine-shared': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/block-std': 0.19.5(yjs@13.6.33)
@@ -4787,7 +4787,7 @@ snapshots:
       - supports-color
       - yjs
 
-  '@blocksuite/affine-components@0.19.5(patch_hash=6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
+  '@blocksuite/affine-components@0.19.5(patch_hash=c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
     dependencies:
       '@blocksuite/affine-model': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       '@blocksuite/affine-shared': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
@@ -4893,7 +4893,7 @@ snapshots:
       '@blocksuite/affine-block-list': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-block-paragraph': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-block-surface': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
-      '@blocksuite/affine-components': 0.19.5(patch_hash=6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
+      '@blocksuite/affine-components': 0.19.5(patch_hash=c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-model': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       '@blocksuite/affine-shared': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-widget-scroll-anchoring': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
@@ -4948,7 +4948,7 @@ snapshots:
 
   '@blocksuite/data-view@0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
     dependencies:
-      '@blocksuite/affine-components': 0.19.5(patch_hash=6391be79162c5f704f94475123c3aee751bac94e6810bd047b5ef5e18cd1eee3)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
+      '@blocksuite/affine-components': 0.19.5(patch_hash=c93fb087d157a14a656bdc46a898c556831ab9c78ee782892224744536ade974)(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/affine-shared': 0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)
       '@blocksuite/block-std': 0.19.5(yjs@13.6.33)
       '@blocksuite/global': 0.19.5
