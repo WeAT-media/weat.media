@@ -144,11 +144,12 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         const adapter = new MarkdownAdapter(job, [
           ...customBlocksMod.customMarkdownMatchers,
           // карточку ссылки пишет наш bookmarkMarkdownMatcher (```bookmark) — штатный превращал её в обычную ссылку
-          // база данных AFFiNE: из markdown не создаётся (таблицы — простой блок «Таблица»), но уже вставленная
-          // сохраняется markdown-таблицей, а не пропадает
+          // markdown-таблица → «Table View» (база AFFiNE), кроме помеченной простой (<!-- weat:simple-table -->)
           ...blocksMod.defaultBlockMarkdownAdapterMatchers
             .filter((m) => m.flavour !== 'affine:bookmark')
-            .map((m) => (m.flavour === 'affine:database' ? { ...m, toMatch: () => false } : m))
+            .map((m) => (m.flavour === 'affine:database' ? { ...m, toMatch: (o: Parameters<typeof m.toMatch>[0]) => m.toMatch(o) && !customBlocksMod.isSimpleTableNode(o as never) } : m))
+            // метку простой таблицы штатные (абзац и др.) не берут — иначе она копится текстом
+            .map((m) => ({ ...m, toMatch: (o: Parameters<typeof m.toMatch>[0]) => !customBlocksMod.isMarkNode(o.node) && m.toMatch(o) }))
             .map((m) =>
             m.flavour === 'affine:image'
               ? // картинка по https:// — ссылкой (url:…): в markdown остаётся исходный адрес, а не «assets/…»

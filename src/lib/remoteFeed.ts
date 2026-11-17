@@ -99,7 +99,10 @@ export function markdownToBlocks(md: string): ArticleBlock[] {
         const block = customFenceBlock(fence[1], code.join('\n'))
         if (block) blocks.push(block)
       } else blocks.push({ type: 'code', text: code.join('\n'), ...(fence[1] ? { lang: fence[1] } : {}) })
-    } else if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1] ?? '')) {
+    } else if (/^\s*<!--[\s\S]*-->\s*$/.test(line)) {
+      // служебные комментарии редактора (метка простой таблицы и т. п.) — читателю не нужны
+      flush()
+    } else if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(lines[i + 1] ?? '')) {
       // GFM-таблица: | a | b | + строка-разделитель |---|---|; первая строка — заголовок
       flush()
       const cells = (l: string) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((c) => decodeEntities(c.trim().replace(/\\\|/g, '|')))

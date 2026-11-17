@@ -1,0 +1,39 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+deleted file mode 100644
+index eed1a596fae924cceb121f75ae7cf1ba7699e002..0000000000000000000000000000000000000000
+diff --git a/dist/context-menu/menu-renderer.js b/dist/context-menu/menu-renderer.js
+index 180cc00fcc8c51a26f3a8106796434fdd9b12f77..3deb8cb33dcd7fb9e00be29ea69d651ce5655bf5 100644
+--- a/dist/context-menu/menu-renderer.js
++++ b/dist/context-menu/menu-renderer.js
+@@ -527,6 +527,8 @@ export const popMenu = (target, props) => {
+                 ],
+             }),
+             offset(4),
++            // weat.media: меню колонки у края узкого экрана — внутрь окна
++            shift({ crossAxis: true, padding: 8 }),
+         ],
+         container: props.container,
+     });
+diff --git a/dist/context-menu/sub-menu.js b/dist/context-menu/sub-menu.js
+index 6f56b7c245e1a905814bfad3a00454062bd23ac9..c7a42cdf4ffa3dba2bf43345b6db61e6a667ac12 100644
+--- a/dist/context-menu/sub-menu.js
++++ b/dist/context-menu/sub-menu.js
+@@ -34,7 +34,7 @@ var __runInitializers = (this && this.__runInitializers) || function (thisArg, i
+ };
+ import { IS_MOBILE } from '@blocksuite/global/env';
+ import { ArrowRightSmallIcon } from '@blocksuite/icons/lit';
+-import { autoPlacement, autoUpdate, computePosition, offset, } from '@floating-ui/dom';
++import { autoPlacement, autoUpdate, computePosition, offset, shift, } from '@floating-ui/dom';
+ import { html, nothing } from 'lit';
+ import { property } from 'lit/decorators.js';
+ import { classMap } from 'lit/directives/class-map.js';
+@@ -48,7 +48,8 @@ export const subMenuOffset = offset({
+ export const subMenuPlacements = autoPlacement({
+     allowedPlacements: ['right-start', 'left-start', 'right-end', 'left-end'],
+ });
+-export const subMenuMiddleware = [subMenuOffset, subMenuPlacements];
++// weat.media: не помещается ни справа, ни слева — сдвигаем внутрь окна (раньше уезжало за край)
++export const subMenuMiddleware = [subMenuOffset, subMenuPlacements, shift({ crossAxis: true, padding: 8 })];
+ let MenuSubMenu = (() => {
+     let _classSuper = MenuFocusable;
+     let _data_decorators;

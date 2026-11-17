@@ -1062,10 +1062,33 @@ const mdText = (n: unknown): string => {
       return inner()
   }
 }
-/** GFM-таблица (| a | b |) ↔ блок «Таблица»; штатный адаптер делал из неё базу данных AFFiNE */
+/**
+ * Две таблицы — одна запись в markdown (| a | b |). Простая помечается комментарием перед ней
+ * («<!-- weat:simple-table -->», на странице статьи не видна); без метки (импорт, «Table View») — база AFFiNE.
+ */
+export const SIMPLE_TABLE_MARK = 'weat:simple-table'
+type WalkNode = { node: unknown; parent: { node: unknown } | null; index: number | null }
+export const isMarkNode = (n: unknown) => {
+  const x = n as { type?: string; value?: string } | undefined
+  return x?.type === 'html' && (x.value ?? '').includes(SIMPLE_TABLE_MARK)
+}
+export const isSimpleTableNode = (o: WalkNode) => {
+  if ((o.node as { type?: string }).type !== 'table' || o.index === null || !o.parent) return false
+  return isMarkNode(((o.parent.node as { children?: unknown[] }).children ?? [])[o.index - 1])
+}
+/** сама метка — не абзац: пропускаем */
+export const simpleTableMarkMatcher: BlockMarkdownAdapterMatcher = {
+  flavour: 'weat:simple-table-mark',
+  toMatch: (o) => isMarkNode(o.node),
+  fromMatch: () => false,
+  toBlockSnapshot: { enter: (_o, context) => context.walkerContext.skipAllChildren() },
+  fromBlockSnapshot: {},
+}
+
+/** GFM-таблица с меткой ↔ простой блок «Таблица» */
 export const tableMarkdownMatcher: BlockMarkdownAdapterMatcher = {
   flavour: TABLE_FLAVOUR,
-  toMatch: (o) => (o.node as { type?: string }).type === 'table',
+  toMatch: (o) => isSimpleTableNode(o as unknown as WalkNode),
   fromMatch: (o) => o.node.flavour === TABLE_FLAVOUR,
   toBlockSnapshot: {
     enter: (o, context) => {
@@ -1077,6 +1100,7 @@ export const tableMarkdownMatcher: BlockMarkdownAdapterMatcher = {
   fromBlockSnapshot: {
     enter: (o, context) => {
       const { rows } = tableData(o.node.props.data)
+      context.walkerContext.openNode({ type: 'html', value: `<!-- ${SIMPLE_TABLE_MARK} -->` } as never, 'children').closeNode()
       context.walkerContext
         .openNode(
           {
@@ -1129,6 +1153,7 @@ export const bookmarkMarkdownMatcher: BlockMarkdownAdapterMatcher = {
 }
 
 export const customMarkdownMatchers: BlockMarkdownAdapterMatcher[] = [
+  simpleTableMarkMatcher,
   tableMarkdownMatcher,
   bookmarkMarkdownMatcher,
   carouselMarkdownMatcher,
@@ -1308,8 +1333,8 @@ export async function registerCustomSlashMenuItems() {
 
   // убираем «New Doc»/«Linked Doc» — в редакторе статьи нет мультидокументности;
   // фильтр по фактическому name конфигурации, остальные блоки не трогаем
-  // базы данных AFFiNE (Table/Kanban View) — не для статьи: вместо них простая «Таблица»
-  const REMOVED = new Set(['New Doc', 'Linked Doc', 'Table View', 'Kanban View'])
+  // «Table View» (база AFFiNE) остаётся — рядом простая «Таблица»; канбан статье не нужен
+  const REMOVED = new Set(['New Doc', 'Linked Doc', 'Kanban View'])
   const filtered = config.items.filter(
     (it) => !REMOVED.has((it as { name?: string }).name ?? ''),
   )
@@ -1336,8 +1361,8 @@ export async function registerCustomSlashMenuItems() {
     // свои блоки автора (Premium); встроенной «Заметки» больше нет — её собирают в конструкторе
     { groupName: 'Таблица' } as never,
     {
-      name: 'Таблица',
-      description: 'Простая таблица: строки и колонки, в статье — обычная markdown-таблица.',
+      name: 'Простая таблица',
+      description: 'Строки и колонки без настроек — обычная markdown-таблица. Для колонок с типами — «Table View».',
       alias: ['table', 'таблица', 'grid'],
       icon: html`<span style="display:flex;width:20px;height:20px;align-items:center;justify-content:center;font-size:13px">▦</span>`,
       action: (c: SlashMenuActionCtx) => addCustomBlockViaSlashMenu(TABLE_FLAVOUR, { data: JSON.stringify(DEFAULT_TABLE) }, c),

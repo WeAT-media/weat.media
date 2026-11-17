@@ -9,6 +9,8 @@ FROM node:24-alpine AS web
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.11.0 --activate
 COPY package.json pnpm-lock.yaml ./
+# правки сторонних пакетов (pnpm patch): нужны до установки
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 COPY index.html vite.config.ts vite.siteVerification.ts tsconfig*.json postcss.config.js tailwind.config.js components.json ./
 COPY public ./public
