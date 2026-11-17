@@ -303,6 +303,8 @@ export default function ComposePage() {
   const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now')
   const [publishAtInput, setPublishAtInput] = useState('')
   // min для datetime-local вычисляется один раз при монтировании шага
+  // «сейчас» в формате datetime-local — верхняя граница даты перепечатки (в будущем статья выйти не могла)
+  const [nowLocal] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16))
   const [minPublishAt] = useState(() => new Date(Date.now() + 60_000).toISOString().slice(0, 16))
   const [shareLink, setShareLink] = useState('')
   // совместное редактирование: действующая ссылка черновика — редактор автора в той же комнате, что и у рецензентов
@@ -534,6 +536,7 @@ export default function ComposePage() {
         next.previewRange = 'Превью: целые секунды, start ≥ 0 и меньше end.'
       }
     }
+    if (republish && republishDate && new Date(republishDate).getTime() > Date.now()) next.publishAt = 'Перепечатка: дата первой публикации не может быть в будущем.'
     if (scheduleMode === 'later') {
       const at = publishAtInput ? new Date(publishAtInput) : null
       if (!at || Number.isNaN(at.getTime()) || at.getTime() <= Date.now())
@@ -1304,8 +1307,9 @@ export default function ComposePage() {
               {republish && (
                 <div className="grid gap-2 pl-6 sm:grid-cols-[minmax(0,1fr)_220px]">
                   <input type="url" value={republishUrl} onChange={(e) => setRepublishUrl(e.target.value)} placeholder="https://habr.com/ru/articles/…" aria-label="Ссылка на оригинал" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                  <input type="datetime-local" value={republishDate} onChange={(e) => setRepublishDate(e.target.value)} aria-label="Дата и время первой публикации" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  <input type="datetime-local" value={republishDate} max={nowLocal} onChange={(e) => setRepublishDate(e.target.value)} aria-label="Дата и время первой публикации" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                   {republishUrl.trim() && !/^https?:\/\/\S+$/.test(republishUrl.trim()) && <p className="text-sm text-destructive sm:col-span-2">Ссылка должна начинаться с https://</p>}
+                  {republishDate && republishDate > nowLocal && <p className="text-sm text-destructive sm:col-span-2">Перепечатка — статья уже выходила: дата не может быть в будущем</p>}
                 </div>
               )}
             </div>

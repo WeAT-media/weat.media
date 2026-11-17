@@ -54,7 +54,12 @@ export const PublishArticleBody = z
     republished: z
       .object({
         url: z.string().url().max(2000).refine((u) => /^https?:\/\//.test(u), 'url: http(s)://…'),
-        publishedAt: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
+        publishedAt: z
+          .string()
+          .datetime({ offset: true })
+          .or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+          .refine((v) => Date.parse(v) <= Date.now() + 5 * 60_000, 'перепечатка: дата первой публикации не может быть в будущем')
+          .optional(),
       })
       .optional(),
     /** отложенный пост: время ухода в AT; на сайте — за 24 ч до него (период охлаждения), раньше — только автору */

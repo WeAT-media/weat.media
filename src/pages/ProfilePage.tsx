@@ -10,8 +10,8 @@ import ReportDialog from '@/components/ReportDialog'
 import RssButton from '@/components/RssButton'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { buildAuthorFeed } from '@/lib/rss'
-import { api, comments as commentsApi, countryLabel, type ApiUser, type AuthorComment, avatarUrl } from '@/lib/api'
-import { commentAnchor, remoteId } from '@/lib/remoteFeed'
+import { api, comments as commentsApi, countryLabel, pending as pendingApi, type ApiUser, type AuthorComment, type PendingItem, avatarUrl } from '@/lib/api'
+import { commentAnchor, remoteId, toArticle } from '@/lib/remoteFeed'
 import type { Author } from '@/types/types'
 import { PDS_URL } from '@/config/site'
 
@@ -46,6 +46,17 @@ export default function ProfilePage() {
   const [lookedUp, setLookedUp] = useState<string | null>(null)
 
   const decoded = decodeURIComponent(id)
+  // свои записи в охлаждении и отложенные (скрыты от читателей) — для меток в «Публикациях» у самого автора
+  const viewingSelf = !!user && (decoded === user.handle || decoded === user.did)
+  const [myPending, setMyPending] = useState<PendingItem[]>([])
+  useEffect(() => {
+    if (!viewingSelf) return
+    let alive = true
+    pendingApi.list().then((r) => alive && setMyPending(r.items.filter((i) => i.uri.includes('/media.weat.article/'))), () => {})
+    return () => {
+      alive = false
+    }
+  }, [viewingSelf])
 
   const local = useMemo<Author | undefined>(() => {
     const byArticle = articles.find(
@@ -127,7 +138,14 @@ export default function ProfilePage() {
   const isSubscribedToArticles = authorSubscriptions.includes(author.handle)
   const followers = (meta?.followers ?? 0) + (isFollowed ? 1 : 0)
 
-  const posts = articles.filter((a) => a.author.handle === author.handle)
+  // своё в охлаждении и отложенное (ещё скрытое от читателей) — только автору, с меткой (загрузка — выше)
+  const pendingByUri = new Map((isSelf ? myPending : []).map((i) => [i.uri, i]))
+  const listed = articles.filter((a) => a.author.handle === author.handle)
+  const hidden = (isSelf ? myPending : [])
+    .filter((i) => !listed.some((a) => a.atUri === i.uri))
+    .map((i) => toArticle({ ...i, cid: '', did: author.did, handle: author.handle, createdAt: i.record.createdAt ?? '', indexedAt: '', likeCount: 0, commentCount: 0 } as never))
+    .filter((a): a is NonNullable<typeof a> => !!a)
+  const posts = [...hidden, ...listed]
   const authorComments = userComments?.did === author.did ? userComments.list : []
   const cols = collections.filter((c) => c.authorHandle === author.handle)
   // дела, связанные со статьями автора; роль присяжного в данных не смоделирована
@@ -366,6 +384,18 @@ export default function ProfilePage() {
                 <article className="rule py-6 first:border-t-0 first:pt-2">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <span className="meta">{a.publishedAt}</span>
+                    {(() => {
+                      const p = a.atUri ? pendingByUri.get(a.atUri) : undefined
+                      if (!p?.pendingUntil) return null
+                      const fmt = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                      return p.scheduledAt ? (
+                        <span className="meta rounded-full border border-dashed border-accent px-2 py-0.5 text-accent" title="Видите только вы">
+                          Отложено · на сайте с {fmt(p.scheduledAt)} · в AT {fmt(p.pendingUntil)}
+                        </span>
+                      ) : (
+                        <span className="meta rounded-full border border-dashed border-border px-2 py-0.5">в сеть AT — {fmt(p.pendingUntil)}</span>
+                      )
+                    })()}
                     <span className="meta rounded-full border border-border px-2 py-0.5">{languageName(a.language)}</span>
                     <Stamp verdict={a.verdict} small />
                   </div>

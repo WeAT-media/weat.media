@@ -149,7 +149,7 @@ export const ApiDraftBody = z.object({
   tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),
   canonicalUrl: z.string().url().max(2000).optional().describe('оригинал (при переносе) — в черновике станет «Перепечаткой»'),
-  originalPublishedAt: z.string().datetime({ offset: true }).optional().describe('когда статья впервые вышла в оригинале'),
+  originalPublishedAt: z.string().datetime({ offset: true }).refine((v) => Date.parse(v) <= Date.now() + 5 * 60_000, 'не может быть в будущем').optional().describe('когда статья впервые вышла в оригинале'),
 })
 
 export const ApiArticleBody = z.object({
@@ -159,7 +159,7 @@ export const ApiArticleBody = z.object({
   tags: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   langs: z.array(z.string().regex(/^[a-z]{2}(-[A-Za-z]{2})?$/)).max(3).default([]),
   canonicalUrl: z.url().optional().describe('Оригинал, если статья уже опубликована где-то ещё (перепечатка)'),
-  originalPublishedAt: z.string().datetime({ offset: true }).optional().describe('когда статья впервые вышла в оригинале'),
+  originalPublishedAt: z.string().datetime({ offset: true }).refine((v) => Date.parse(v) <= Date.now() + 5 * 60_000, 'не может быть в будущем').optional().describe('когда статья впервые вышла в оригинале'),
 })
 
 const AtUri = z.string().regex(/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/[a-zA-Z0-9.-]+\/[A-Za-z0-9._~:-]+$/, 'нужен at://did/коллекция/rkey')

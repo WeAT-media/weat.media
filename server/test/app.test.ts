@@ -2486,6 +2486,8 @@ test('republished article: source {url, site, publishedAt} without crawledAt', a
   assert.deepEqual(published.at(-1)!.record.source, { url: 'https://www.habr.com/ru/articles/789384/', site: 'habr.com', publishedAt: '2024-01-26T00:00:00.000Z' })
   const bad = await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'x', text: 'y', republished: { url: 'javascript:alert(1)' } }) })
   assert.equal(bad.status, 400)
+  const future = await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'x', text: 'y', republished: { url: 'https://habr.com/a', publishedAt: new Date(Date.now() + 86_400_000).toISOString() } }) })
+  assert.equal(future.status, 400, 'перепечатка из будущего')
 })
 
 test('yandex: existing duplicate in this contour — the older account (peer) wins', async () => {
