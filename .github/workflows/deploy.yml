@@ -288,8 +288,22 @@ jobs:
                 || compose exec -T postgres psql -U indie -d indie -qc 'CREATE DATABASE labeler OWNER indie' </dev/null
             fi
           fi
+          # резерв на Supabase (логическая реплика): DDL не реплицируется — миграции туда до перезапуска AppView,
+          # иначе первая же строка новой таблицы/колонки роняет подписку в цикл переподключений
+          SUPA=$(grep '^SUPABASE_DSN=' .env | cut -d= -f2- || true)
+          if [ -n "$SUPA" ]; then
+            docker run --rm -e DATABASE_URL="$SUPA" --entrypoint node "$APPVIEW" --input-type=module -e '
+              const { createDb } = await import("/app/dist/db.js"); const { migrate } = await import("/app/dist/migrate.js")
+              const sql = createDb(process.env.DATABASE_URL); await migrate(sql, { standby: true }); await sql.end()' </dev/null 2>&1 \
+              | sed -E 's#postgres(ql)?://[^ ]*#<dsn>#g' | tail -5 || echo "::warning::Supabase: миграции не применились"
+          fi
           compose up -d --remove-orphans
           docker image prune -f >/dev/null
+          if [ -n "$SUPA" ]; then
+            # новые таблицы публикации — в подписку (с копированием данных)
+            docker run --rm -e D="$SUPA" postgres:17-alpine psql "$SUPA" -X -q -c 'ALTER SUBSCRIPTION weat_nl1 REFRESH PUBLICATION WITH (copy_data = true)' </dev/null 2>&1 \
+              | sed -E 's#postgres(ql)?://[^ ]*#<dsn>#g' || echo "::warning::Supabase: подписка не обновилась"
+          fi
           # пользователь репликации и публикация всех таблиц — если узел держит свой Postgres и пароль задан
           if grep -q '^REPLICATION_PASSWORD=' .env && compose ps --services --status running | grep -qx postgres; then
             sleep 3
