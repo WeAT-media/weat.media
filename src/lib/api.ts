@@ -461,8 +461,12 @@ export const profile = {
 }
 
 /** Период охлаждения: 24 ч запись только на сайте; автор правит или удаляет без следа в сети */
+export interface PendingItem { uri: string; record: { title?: string; subtitle?: string; text?: string; tags?: string[]; createdAt?: string }; pendingUntil?: string; scheduledAt?: string }
 export const pending = {
-  update: (uri: string, b: { title?: string; subtitle?: string; text: string; excerpt?: string; tags?: string[] }) =>
+  /** мои записи в охлаждении (включая отложенные, ещё не вышедшие на сайте) */
+  list: () => authed<{ items: PendingItem[] }>('/me/pending'),
+  /** publishAt — перенести (время ухода в AT) или null — снять отложенность */
+  update: (uri: string, b: { title?: string; subtitle?: string; text: string; excerpt?: string; tags?: string[]; publishAt?: string | null }) =>
     authed<{ uri: string }>(`/me/pending?${new URLSearchParams({ uri })}`, { method: 'PUT', body: JSON.stringify(b) }),
   remove: (uri: string) => authed<{ ok: true }>(`/me/pending?${new URLSearchParams({ uri })}`, { method: 'DELETE' }),
 }

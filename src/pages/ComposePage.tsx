@@ -130,6 +130,7 @@ export default function ComposePage() {
   const draftParam = searchParams.get('draft')
   // ?pending=<at://…> — правка своей статьи в периоде охлаждения (ещё не ушла в AT)
   const pendingUri = searchParams.get('pending')
+  const wasScheduled = useRef(false)
   const [draftId, setDraftId] = useState<string | null>(draftParam)
   const [draftSaved, setDraftSaved] = useState<string>('')
   const [importReady, setImportReady] = useState(!importId && !draftParam && !pendingUri)
@@ -160,13 +161,25 @@ export default function ComposePage() {
   }, [draftParam, setSearchParams])
   useEffect(() => {
     if (!pendingUri) return
-    fetch(`/api/feed/article?${new URLSearchParams({ uri: pendingUri })}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('Статья не найдена'))))
-      .then((a: { record?: { title?: string; subtitle?: string; text?: string; tags?: string[] } }) => {
+    // через /me/pending: отложенную, ещё скрытую статью публичная ручка не отдаёт
+    pendingApi
+      .list()
+      .then(({ items }) => {
+        const a = items.find((i) => i.uri === pendingUri)
+        if (!a) throw new Error('Статья не найдена')
         const r = a.record ?? {}
         setTitle(r.title ?? '')
         setBodyText(`# ${r.title ?? ''}\n\n${r.text ?? ''}`)
-        setLoadedMeta({ subtitle: r.subtitle ?? '', tags: r.tags ?? [], step: 1 })
+        // отложенная — у неё createdAt = время ухода в AT; в поле — местное время
+        const until = a.pendingUntil ? new Date(a.pendingUntil) : null
+        const scheduled = !!until && !!r.createdAt && Math.abs(new Date(r.createdAt).getTime() - until.getTime()) < 120_000
+        wasScheduled.current = scheduled
+        setLoadedMeta({
+          subtitle: r.subtitle ?? '',
+          tags: r.tags ?? [],
+          step: 1,
+          ...(scheduled && until ? { scheduleMode: 'later', publishAtInput: new Date(until.getTime() - until.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) } : {}),
+        })
       })
       .catch(() => {})
       .finally(() => setImportReady(true))
@@ -544,7 +557,9 @@ export default function ComposePage() {
     if (pendingUri) {
       // правка в охлаждении: та же запись, тот же адрес; в сеть уйдёт уже исправленной
       try {
-        await pendingApi.update(pendingUri, { title: title.trim(), text, tags, ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}), excerpt: draft.excerpt })
+        // отложить / перенести / снять отложенность — сервер пересчитает, когда статья видна на сайте и уходит в AT
+        const publishAt = scheduleMode === 'later' && publishAtInput ? new Date(publishAtInput).toISOString() : wasScheduled.current ? null : undefined
+        await pendingApi.update(pendingUri, { title: title.trim(), text, tags, ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}), excerpt: draft.excerpt, ...(publishAt !== undefined ? { publishAt } : {}) })
         forgetArticle(pendingUri)
         navigate(`/article/${remoteId(pendingUri)}`)
       } catch (err) {

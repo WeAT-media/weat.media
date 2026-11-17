@@ -2518,3 +2518,21 @@ test('yandex: existing duplicate in this contour — the older account (peer) wi
   const s = await (await nl.request('/api/auth/handoff', json({ code: again.searchParams.get('handoff')! }, '95.1.1.1'))).json()
   assert.equal(s.user.did, nlUser.user.did)
 })
+
+test('cooldown: rescheduling a visible post hides it until 24h before the new time', async () => {
+  const app = makeApp({ cooldown: true, ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'resched', email: 'rs@example.com' }, '5.1.1.1'))).json()
+  const H = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
+  const res = await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'Сначала сразу', text: 'текст' }) })).json()
+  const page = () => app.request(`/api/feed/article?uri=${encodeURIComponent(res.uri)}`)
+  assert.equal((await page()).status, 200, 'обычная — видна сразу')
+  const at = new Date(Date.now() + 72 * 3600_000).toISOString()
+  const put = await app.request(`/api/me/pending?uri=${encodeURIComponent(res.uri)}`, { method: 'PUT', headers: H, body: JSON.stringify({ title: 'Теперь отложена', text: 'текст', publishAt: at }) })
+  assert.equal(put.status, 200)
+  assert.notEqual((await page()).status, 200, 'отложена на 3 дня — гостю не видна')
+  const mine = await (await app.request('/api/me/pending', { headers: H })).json()
+  const item = mine.items.find((i: { uri: string }) => i.uri === res.uri)
+  assert.ok(item.scheduledAt, 'автор видит, когда выйдет на сайте')
+  assert.equal(item.pendingUntil, at, 'в AT — в новое время')
+  assert.equal(item.record.createdAt, at)
+})

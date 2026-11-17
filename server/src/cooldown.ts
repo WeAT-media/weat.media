@@ -41,6 +41,8 @@ export interface CooldownRepo {
   /** visibleOnly — только вышедшие на сайте (отложенные до своего времени видит лишь автор) */
   list(q: { collection: string; did?: string; subject?: string; limit?: number; visibleOnly?: boolean }): Promise<PendingRow[]>
   update(uri: string, record: Record<string, unknown>): Promise<PendingRow | undefined>
+  /** перенос сроков ждущей записи (правка «отложенной» даты) */
+  reschedule(uri: string, visibleAt: Date, publishAt: Date): Promise<PendingRow | undefined>
   remove(uri: string): Promise<boolean>
   due(limit: number): Promise<PendingRow[]>
   /** false — строку удалили, пока шла публикация */
@@ -80,6 +82,12 @@ export function cooldownRepo(sql: Sql): CooldownRepo {
     },
     async remove(uri) {
       return (await sql`DELETE FROM pending_records WHERE uri = ${uri} AND status <> 'published' RETURNING 1`).length > 0
+    },
+    async reschedule(uri, visibleAt, publishAt) {
+      const [row] = await sql<PendingRow[]>`
+        UPDATE pending_records SET visible_at = ${visibleAt}, publish_at = ${publishAt}, updated_at = now()
+        WHERE uri = ${uri} AND status <> 'published' RETURNING *`
+      return row
     },
     due: (limit) => sql<PendingRow[]>`
       SELECT * FROM pending_records WHERE status IN ('pending', 'failed') AND publish_at <= now() AND attempts < 20
@@ -136,6 +144,12 @@ export function memCooldown(): CooldownRepo {
       return r
     },
     remove: async (uri) => rows.get(uri)?.status !== 'published' && rows.delete(uri),
+    async reschedule(uri, visible_at, publish_at) {
+      const r = rows.get(uri)
+      if (!r || r.status === 'published') return undefined
+      Object.assign(r, { visible_at, publish_at, updated_at: new Date() })
+      return r
+    },
     due: async (limit) => [...rows.values()].filter((r) => r.status !== 'published' && r.publish_at <= new Date() && r.attempts < 20).slice(0, limit),
     async markPublished(uri) {
       const r = rows.get(uri)
@@ -172,6 +186,16 @@ export function nextTid(): string {
   return s
 }
 
+/**
+ * Сроки записи: отложенная — в AT ровно в назначенное время, на сайте за ms до него (или сразу, если осталось
+ * меньше); обычная — на сайте сразу, в AT через ms (минимальное охлаждение).
+ */
+export function cooldownWindow(scheduledAt: Date | undefined | null, ms: number, now = Date.now()): { visible: Date; publish: Date } {
+  const scheduled = scheduledAt && scheduledAt.getTime() > now + 60_000 ? scheduledAt.getTime() : null
+  const publish = scheduled ?? now + ms
+  return { visible: new Date(Math.max(now, publish - ms)), publish: new Date(publish) }
+}
+
 export interface Cooldown {
   repo: CooldownRepo
   ms: number
@@ -199,13 +223,8 @@ export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: Co
         await d.repo.setCreds(s.did, d.secrets.seal(pw.password), APP_PASSWORD_NAME)
       }
       const rkey = nextTid()
-      const now = Date.now()
-      // отложенная — в AT ровно в назначенное время (на сайте — за ms до него или сразу, если осталось меньше);
-      // обычная — через ms (минимальное охлаждение)
-      const scheduled = scheduledAt && scheduledAt.getTime() > now + 60_000 ? scheduledAt.getTime() : null
-      const publish = scheduled ?? now + ms
-      const visible = Math.max(now, publish - ms)
-      return d.repo.insert({ uri: `at://${s.did}/${collection}/${rkey}`, did: s.did, handle: s.handle, collection, rkey, record, visible_at: new Date(visible), publish_at: new Date(publish) })
+      const w = cooldownWindow(scheduledAt, ms)
+      return d.repo.insert({ uri: `at://${s.did}/${collection}/${rkey}`, did: s.did, handle: s.handle, collection, rkey, record, visible_at: w.visible, publish_at: w.publish })
     },
     async publishDue() {
       let n = 0
@@ -252,6 +271,8 @@ const ArticleEdit = z.object({
   text: z.string().max(200_000),
   excerpt: z.string().trim().max(500).optional(),
   tags: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  /** перенести: отложенная дата (время ухода в AT) или null — снять отложенную публикацию */
+  publishAt: z.string().datetime({ offset: true }).nullable().optional(),
 })
 const CommentEdit = z.object({ text: z.string().trim().min(1).max(10_000) })
 
@@ -304,7 +325,15 @@ export function mountCooldownRoutes(
     const body = await c.req.json().catch(() => null)
     const parsed = row.collection === 'media.weat.comment' ? CommentEdit.safeParse(body) : ArticleEdit.safeParse(body)
     if (!parsed.success) throw new PdsError(400, 'InvalidRequest', z.prettifyError(parsed.error))
-    const updated = await d.cooldown.repo.update(row.uri, { ...row.record, ...parsed.data })
+    const { publishAt, ...fields } = parsed.data as typeof parsed.data & { publishAt?: string | null }
+    let record: Record<string, unknown> = { ...row.record, ...fields }
+    if (publishAt !== undefined) {
+      // перенос срока: отложить (на сайте — только за сутки до ухода в AT) или снять отложенность
+      const w = publishAt ? cooldownWindow(new Date(publishAt), d.cooldown.ms) : cooldownWindow(null, d.cooldown.ms, Math.max(Date.now(), row.created_at.getTime()))
+      if (!(await d.cooldown.repo.reschedule(row.uri, w.visible, w.publish))) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')
+      record = { ...record, createdAt: publishAt ? w.publish.toISOString() : record.createdAt }
+    }
+    const updated = await d.cooldown.repo.update(row.uri, record)
     if (!updated) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')
     return c.json(pendingFeedItem(updated))
   })
