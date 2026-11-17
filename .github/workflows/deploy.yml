@@ -296,6 +296,9 @@ jobs:
               const { createDb } = await import("/app/dist/db.js"); const { migrate } = await import("/app/dist/migrate.js")
               const sql = createDb(process.env.DATABASE_URL); await migrate(sql, { standby: true }); await sql.end()' </dev/null 2>&1 \
               | sed -E 's#postgres(ql)?://[^ ]*#<dsn>#g' | tail -5 || echo "::warning::Supabase: миграции не применились"
+            # новые таблицы — сразу закрыты от REST API Supabase (RLS + без прав anon/authenticated)
+            docker run --rm -i postgres:17-alpine psql "$SUPA" -X -q -At -v ON_ERROR_STOP=1 < ../db/supabase-lockdown.sql 2>&1 \
+              | sed -E 's#postgres(ql)?://[^ ]*#<dsn>#g' || echo "::warning::Supabase: блокировка public не применилась"
           fi
           compose up -d --remove-orphans
           docker image prune -f >/dev/null
