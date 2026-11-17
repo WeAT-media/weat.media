@@ -81,7 +81,19 @@ const ops: Op[] = [
     method: 'post', path: '/auth/register', tag: 'auth', summary: 'Регистрация',
     description: 'Создаёт аккаунт username.indie.media и отправляет код подтверждения email. В РФ-контуре — только с российского IP.',
     body: S.RegisterBody, ok: { status: 201, schema: S.SessionSchema, description: 'Аккаунт создан' },
-    errors: [[400, 'InvalidRequest'], [403, 'ContourRestricted'], [409, 'HandleTaken · EmailTaken · HandleNotAvailable']],
+    errors: [[400, 'InvalidRequest'], [403, 'ContourRestricted'], [409, 'HandleTaken (с suggestion — свободный вариант) · EmailTaken · HandleNotAvailable']],
+  },
+  {
+    method: 'get', path: '/auth/username/{name}', tag: 'auth', summary: 'Свободен ли username',
+    description: 'Занят — suggestion: свободный вариант name-2, name-3, … (проверяются оба контура).',
+    ok: { status: 200, schema: z.object({ available: z.boolean(), suggestion: z.string().nullable().optional() }), description: 'Ответ' },
+    errors: [[400, 'InvalidRequest']],
+  },
+  {
+    method: 'put', path: '/me/handle', tag: 'auth', summary: 'Сменить username', auth: 'bearer',
+    description: 'Новый handle username.weat.media. Старый освобождается; ссылки на профиль по старому handle перестанут работать.',
+    body: z.object({ username: S.Username }), ok: { status: 200, schema: z.object({ handle: z.string() }), description: 'Handle сменён' },
+    errors: [[400, 'InvalidRequest'], [409, 'HandleTaken (с suggestion)']],
   },
   {
     method: 'post', path: '/auth/login', tag: 'auth', summary: 'Вход по паролю',

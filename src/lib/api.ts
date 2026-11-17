@@ -447,6 +447,11 @@ export interface ProfileView {
 }
 
 /** имя, «О себе», фото — запись app.bsky.actor.profile (видна и в Bluesky) */
+export const handles = {
+  check: (name: string) => call<{ available: boolean; suggestion?: string | null }>(`/auth/username/${encodeURIComponent(name)}`),
+  change: (username: string) => authed<{ handle: string }>('/me/handle', { method: 'PUT', body: JSON.stringify({ username }) }),
+}
+
 export const profile = {
   /** текущая запись профиля — публично с PDS */
   async get(did: string): Promise<{ displayName: string | null; description: string | null }> {

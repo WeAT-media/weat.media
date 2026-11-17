@@ -22,6 +22,8 @@ export default function LoginPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [identifier, setIdentifier] = useState('')
   const [username, setUsername] = useState('')
+  /** свободный вариант занятого username (name-2…) — подставить одним нажатием; можно ввести и свой */
+  const [suggestion, setSuggestion] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   // 152-ФЗ: согласие на ПДн — отдельной отметкой, не заранее отмеченной; соглашение — своей
@@ -104,6 +106,11 @@ export default function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'WrongContour' && typeof err.data.redirect === 'string') {
         setContourRedirect(err.data.redirect)
+        setFormError(err.message)
+        return
+      }
+      if (err instanceof ApiError && err.code === 'HandleTaken') {
+        setSuggestion(typeof err.data.suggestion === 'string' ? err.data.suggestion : '')
         setFormError(err.message)
         return
       }
@@ -266,7 +273,10 @@ export default function LoginPage() {
                         <div className="flex items-center gap-2">
                           <input
                             value={username}
-                            onChange={(e) => setUsername(e.target.value)}
+                            onChange={(e) => {
+                              setUsername(e.target.value)
+                              setSuggestion('')
+                            }}
                             placeholder="username"
                             aria-label="Username"
                             autoComplete="username"
@@ -325,6 +335,23 @@ export default function LoginPage() {
                     </button>
                   </fieldset>
                   {formError && <p role="alert" className="mt-2 text-sm text-destructive">{formError}</p>}
+                  {mode === 'register' && suggestion && (
+                    <p className="mt-2 text-sm">
+                      Свободно:{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUsername(suggestion)
+                          setSuggestion('')
+                          setFormError('')
+                        }}
+                        className="font-semibold text-accent underline underline-offset-2"
+                      >
+                        {suggestion}.{HANDLE_DOMAIN}
+                      </button>{' '}
+                      — или введите другое имя.
+                    </p>
+                  )}
                   {contourRedirect && (
                     <a href={contourRedirect} className="btn-primary mt-2 w-full !py-2.5">
                       Продолжить вход на {new URL(contourRedirect).host}

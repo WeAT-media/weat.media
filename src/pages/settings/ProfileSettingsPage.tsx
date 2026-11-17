@@ -2,14 +2,19 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ImagePlus, Trash2 } from 'lucide-react'
 import Reveal from '@/components/Reveal'
 import { useStore } from '@/lib/store'
-import { api, avatarUrl, profile } from '@/lib/api'
+import { useNavigate } from 'react-router'
+import { ApiError, api, avatarUrl, handles, profile } from '@/lib/api'
+import { HANDLE_DOMAIN } from '@/config/site'
 
 /**
  * Имя, «О себе» и фото профиля. Всё хранится в записи app.bsky.actor.profile вашего репозитория —
  * поэтому видно и в Bluesky, и в других приложениях AT. То же доступно по API (PATCH /v1/me, POST /v1/me/avatar).
  */
 export default function ProfileSettingsPage() {
-  const { user } = useStore()
+  const { user, login } = useStore()
+  const navigate = useNavigate()
+  const [nick, setNick] = useState('')
+  const [nickSuggestion, setNickSuggestion] = useState('')
   const [name, setName] = useState('')
   const [about, setAbout] = useState('')
   const [avatar, setAvatar] = useState<string | null>(null)
@@ -54,6 +59,24 @@ export default function ProfileSettingsPage() {
     void run(async () => {
       setAvatar((await profile.setAvatar(file)).avatar)
     }, 'Фото обновлено')
+  }
+
+  const currentNick = user?.handle.replace(new RegExp(`\\.${HANDLE_DOMAIN.replace(/\./g, '\\.')}$`), '') ?? ''
+  const changeNick = (e: FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+    setNickSuggestion('')
+    void run(async () => {
+      try {
+        const { handle } = await handles.change(nick.trim().toLowerCase())
+        login({ ...user, handle })
+        setNick('')
+        navigate(`/profile/${handle}/settings/profile`, { replace: true })
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'HandleTaken' && typeof err.data.suggestion === 'string') setNickSuggestion(err.data.suggestion)
+        throw err
+      }
+    }, 'Username сменён')
   }
 
   if (!user) return null
@@ -102,6 +125,36 @@ export default function ProfileSettingsPage() {
           <button type="submit" disabled={busy} className="btn-primary !px-4 !py-2 sm:w-fit">
             {busy ? 'Сохраняем…' : 'Сохранить'}
           </button>
+        </form>
+        <form onSubmit={changeNick} className="mt-8 grid max-w-[560px] gap-2">
+          <label className="grid gap-1 text-sm">
+            Username
+            <span className="flex items-center gap-2">
+              <input
+                value={nick}
+                onChange={(e) => {
+                  setNick(e.target.value)
+                  setNickSuggestion('')
+                }}
+                placeholder={currentNick}
+                pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{2,29}"
+                title="3–30 символов: латиница, цифры, дефис"
+                required
+                className={field}
+              />
+              <span className="meta shrink-0">.{HANDLE_DOMAIN}</span>
+            </span>
+            <span className="meta !normal-case tracking-normal">Сейчас: @{user.handle}. Старые ссылки на профиль по прежнему имени перестанут работать.</span>
+          </label>
+          {nickSuggestion && (
+            <p className="text-sm">
+              Свободно:{' '}
+              <button type="button" onClick={() => setNick(nickSuggestion)} className="font-semibold text-accent underline underline-offset-2">
+                {nickSuggestion}
+              </button>
+            </p>
+          )}
+          <button type="submit" disabled={busy || !nick.trim()} className="btn-ghost !px-4 !py-2 sm:w-fit">Сменить username</button>
         </form>
         {notice && <p className="mt-3 text-sm text-accent">{notice}</p>}
         {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}

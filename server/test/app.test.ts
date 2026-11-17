@@ -324,6 +324,10 @@ function memRepo(): UserRepo {
       const term = t.replace(/^@/, '')
       return [...rows.values()].filter((r) => (!term || r.did === term || r.handle.includes(term) || (r.display_name ?? '').toLowerCase().includes(term)) && (!opts?.service || !!r.service)).slice(0, limit)
     },
+    async setHandle(did, handle) {
+      const r = rows.get(did)
+      if (r) r.handle = handle
+    },
     async setService(did, service) {
       const r = rows.get(did)
       if (r) r.service = service
@@ -647,6 +651,12 @@ function fakePds(): PdsClient {
       if (a && a.password === password) return session(identifier, a.did)
       if (a && [...a.app.values()].includes(password)) return session(identifier, a.did, true)
       throw new PdsError(401, 'AuthenticationRequired', 'Invalid identifier or password')
+    },
+    async updateHandle(jwt, handle) {
+      const { handle: old, acct } = tokenUser(jwt)
+      if (accounts.has(handle)) throw new PdsError(409, 'HandleTaken', 'Этот username уже занят')
+      accounts.delete(old)
+      accounts.set(handle, acct)
     },
     async getSession(jwt) {
       const { handle, acct } = tokenUser(jwt)
@@ -2218,6 +2228,27 @@ test('lava.top: invoice, forged webhook refused, access only after API confirms,
   assert.equal((await read()).status, 402, 'после возврата статья снова закрыта')
   assert.equal((await (await app.request(`/api/me/purchases/${orderId}`, { headers: auth(reader.accessJwt) })).json()).status, 'refunded')
   assert.ok(auditLog.some((e) => e.action === 'payment.refund' && e.target === orderId))
+})
+
+test('username taken: register and check suggest a free name-N; user can change handle later', async () => {
+  const app = makeApp()
+  const auth = (t: string) => ({ authorization: `Bearer ${t}`, 'content-type': 'application/json' })
+  const reg1 = (u: string, email: string) => app.request('/api/auth/register', json({ ...reg, username: u, email }, '1.1.1.1'))
+  const a = await (await reg1('takenname', 'tn1@example.com')).json()
+  const dup = await reg1('takenname', 'tn2@example.com')
+  assert.equal(dup.status, 409)
+  assert.equal((await dup.json()).suggestion, 'takenname-2')
+  assert.deepEqual(await (await app.request('/api/auth/username/takenname')).json(), { available: false, suggestion: 'takenname-2' })
+  assert.deepEqual(await (await app.request('/api/auth/username/freename')).json(), { available: true })
+  const b = await (await reg1('takenname-2', 'tn2@example.com')).json()
+  // b меняет ник на свой: занятый — 409 с подсказкой, свободный — новый handle
+  const busy = await app.request('/api/me/handle', { method: 'PUT', headers: auth(b.accessJwt), body: JSON.stringify({ username: 'takenname' }) })
+  assert.equal(busy.status, 409)
+  assert.equal((await busy.json()).suggestion, 'takenname-3')
+  const ok = await app.request('/api/me/handle', { method: 'PUT', headers: auth(b.accessJwt), body: JSON.stringify({ username: 'mynewname' }) })
+  assert.equal(ok.status, 200, await ok.clone().text())
+  assert.match((await (await app.request('/api/me', { headers: auth(b.accessJwt) })).json()).handle, /^mynewname\./)
+  void a
 })
 
 test('lava.top: Premium for 30 days — invoice, webhook turns it on, renewal adds days, refund turns it off', async () => {

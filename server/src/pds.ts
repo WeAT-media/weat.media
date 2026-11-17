@@ -50,6 +50,8 @@ export interface PdsClient {
   /** handle репозитория (публично) */
   describeRepo(repo: string): Promise<{ handle: string; did: string }>
   listRecords(repo: string, collection: string, limit: number, cursor?: string): Promise<{ records: { uri: string; cid: string; value: Record<string, unknown> }[]; cursor?: string }>
+  /** смена handle сессией пользователя (PDS обновляет DID-документ) */
+  updateHandle(accessJwt: string, handle: string): Promise<void>
   requestPasswordReset(email: string): Promise<void>
   resetPassword(token: string, password: string): Promise<void>
 }
@@ -103,6 +105,14 @@ export function createPdsClient(baseUrl: string, adminPassword: string): PdsClie
         if (err instanceof PdsError && err.code === 'HandleNotAvailable') {
           throw new PdsError(409, 'HandleNotAvailable', 'Этот username недоступен')
         }
+        throw err
+      }
+    },
+    async updateHandle(accessJwt, handle) {
+      try {
+        await xrpc<unknown>('POST', 'com.atproto.identity.updateHandle', { auth: `Bearer ${accessJwt}`, body: { handle } })
+      } catch (err) {
+        if (err instanceof PdsError && /already taken/i.test(err.message)) throw new PdsError(409, 'HandleTaken', 'Этот username уже занят')
         throw err
       }
     },

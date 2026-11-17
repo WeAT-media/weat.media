@@ -38,6 +38,12 @@ export type UtmData = z.infer<typeof Utm>
 /** редакция юридических документов; меняется вместе с текстами на /legal/* */
 export const LEGAL_VERSION = '2026-11-12'
 
+export const Username = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9-]{2,29}$/, 'username: 3–30 символов, латиница, цифры и дефис')
+
 export const RegisterBody = z.object({
   username: z
     .string()

@@ -42,6 +42,7 @@ export interface UserRepo {
   search(q: string, limit: number, opts?: { service?: boolean }): Promise<UserRow[]>
   /** отметить учётку служебной (скрипт настройки коллегий) */
   setService(did: string, service: string | null): Promise<void>
+  setHandle(did: string, handle: string): Promise<void>
 }
 
 export interface Identity {
@@ -157,6 +158,9 @@ export function userRepo(sql: Sql): UserRepo {
     },
     async setAvatar(did, cid) {
       await sql`UPDATE users SET avatar_cid = ${cid} WHERE did = ${did}`
+    },
+    async setHandle(did, handle) {
+      await sql`UPDATE users SET handle = ${handle} WHERE did = ${did}`
     },
     async setService(did, service) {
       await sql`UPDATE users SET service = ${service} WHERE did = ${did}`

@@ -41,7 +41,7 @@ import type { OAuthClient, OAuthProviderId } from './providers.js'
 import { contourAllows, type GeoLookup } from './geo.js'
 import { PdsError, type PdsClient, type PdsSession } from './pds.js'
 import { buildOpenApi } from './openapi.js'
-import { LEGAL_VERSION, LoginBody, RefreshBody, RegisterBody, ResidenceBody, TierBody, AdminProfileBody } from './schemas.js'
+import { LEGAL_VERSION, LoginBody, Username, RefreshBody, RegisterBody, ResidenceBody, TierBody, AdminProfileBody } from './schemas.js'
 import { SettingsPatch, type SettingsRepo } from './settings.js'
 import { memoryNotificationRepo, mountNotificationRoutes, notificationService, type NotificationService } from './notifications.js'
 
@@ -386,6 +386,51 @@ export function createApp(deps: Deps) {
     if (did) throw new PdsError(409, 'HandleTaken', 'Этот username уже занят')
   }
 
+  /** свободен ли handle здесь и у соседа; сосед недоступен — считаем занятым (не рискуем дублем) */
+  const handleFree = async (handle: string) => {
+    if (await d.users.findByHandleOrDid(handle)) return false
+    if (!d.peer) return true
+    return (await d.peer.resolve(handle).catch(() => 'unknown')) === null
+  }
+  /** свободный вариант для занятого username: name-2, name-3, … (как при входе через Яндекс) */
+  const suggestUsername = async (username: string): Promise<string | null> => {
+    for (let n = 2; n <= 20; n++) {
+      const cand = `${username.slice(0, 29 - String(n).length)}-${n}`
+      if (await handleFree(`${cand}.${d.config.PDS_HANDLE_DOMAIN}`)) return cand
+    }
+    return null
+  }
+  const handleTaken = async (c: Context, username: string) =>
+    c.json({ error: 'HandleTaken', message: 'Этот username уже занят', suggestion: await suggestUsername(username) }, 409)
+
+  /** проверка username до отправки формы: занят — с подсказкой свободного */
+  app.get('/auth/username/:name', async (c) => {
+    const u = Username.safeParse(c.req.param('name'))
+    if (!u.success) return c.json({ error: 'InvalidRequest', message: z.prettifyError(u.error) }, 400)
+    if (await handleFree(`${u.data}.${d.config.PDS_HANDLE_DOMAIN}`)) return c.json({ available: true })
+    return c.json({ available: false, suggestion: await suggestUsername(u.data) })
+  })
+
+  /** смена username (handle): тот же формат и та же проверка занятости, что при регистрации */
+  app.put('/me/handle', async (c) => {
+    const token = bearer(c)
+    if (!token) return unauthorized(c)
+    const body = z.object({ username: Username }).safeParse(await c.req.json().catch(() => null))
+    if (!body.success) return c.json({ error: 'InvalidRequest', message: z.prettifyError(body.error) }, 400)
+    const info = await d.pds.getSession(token)
+    const handle = `${body.data.username}.${d.config.PDS_HANDLE_DOMAIN}`
+    if (info.handle === handle) return c.json({ handle })
+    if (!(await handleFree(handle))) return handleTaken(c, body.data.username)
+    try {
+      await d.pds.updateHandle(token, handle)
+    } catch (err) {
+      if (err instanceof PdsError && err.code === 'HandleTaken') return handleTaken(c, body.data.username)
+      throw err
+    }
+    await d.users.setHandle(info.did, handle)
+    return c.json({ handle })
+  })
+
   app.post('/auth/register', async (c) => {
     const geo = geoOf(c)
     if (!geo.allowed) return contourDenied(c, geo.country)
@@ -395,9 +440,20 @@ export function createApp(deps: Deps) {
 
     const { username, email, password, displayName, utm } = body.data
     const handle = `${username}.${d.config.PDS_HANDLE_DOMAIN}`
-    if (await d.users.findByHandleOrDid(handle)) throw new PdsError(409, 'HandleTaken', 'Этот username уже занят')
-    await assertHandleFree(handle)
-    const session = await d.pds.createAccount({ handle, email, password })
+    if (await d.users.findByHandleOrDid(handle)) return handleTaken(c, username)
+    try {
+      await assertHandleFree(handle)
+    } catch (err) {
+      if (err instanceof PdsError && err.code === 'HandleTaken') return handleTaken(c, username)
+      throw err
+    }
+    let session
+    try {
+      session = await d.pds.createAccount({ handle, email, password })
+    } catch (err) {
+      if (err instanceof PdsError && err.code === 'HandleTaken') return handleTaken(c, username)
+      throw err
+    }
     const user = await d.users.insert({
       did: session.did,
       handle: session.handle,
