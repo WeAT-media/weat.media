@@ -18,3 +18,4 @@ Disallow: /after-payments
 Allow: /
 
 Host: https://weat.media
+Sitemap: https://weat.media/sitemap.xml

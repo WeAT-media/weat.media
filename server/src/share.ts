@@ -6,10 +6,9 @@ import { ARTICLE_COLLECTION } from './paidContent.js'
 import { createSafeFetch, readBodyLimited, type SafeFetch } from './safeFetch.js'
 
 /**
- * Превью ссылок (Open Graph / Twitter Card) для ботов соцсетей и мессенджеров: они не выполняют JS,
- * поэтому Caddy отдаёт им /article/<id> отсюда, а людям — обычный SPA (deploy/node/Caddyfile, @share_bot).
- * Здесь только публичное: заголовок, подзаголовок/начало текста, автор. Платный текст сюда не попадает —
- * в индексе ленты у платной статьи только тизер.
+ * Читаемый HTML, Open Graph / Twitter Card и BlogPosting для поисковых, AI- и соцсетевых ботов:
+ * Caddy отдаёт им /article/<id> отсюда, а людям — обычный SPA (deploy/node/Caddyfile, @share_bot).
+ * Здесь только публичное. Платный текст сюда не попадает — в индексе ленты у платной статьи только тизер.
  */
 
 const SHORT_ID = /^[A-Za-z0-9._~:]{1,60}-[A-Za-z0-9]{6}$/
@@ -29,17 +28,50 @@ export function plainExcerpt(md: string, max = 200): string {
   return t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t
 }
 
-export function sharePage(o: { siteName: string; siteUrl: string; url: string; title: string; description: string; author?: string; image: string; publishedAt?: string; noindex?: boolean }): string {
+function markdownHtml(markdown: string): string {
+  const blocks = markdown.replace(/\r/g, '').split(/\n{2,}/)
+  return blocks.map((raw) => {
+    const block = raw.trim()
+    if (!block) return ''
+    const heading = /^(#{1,3})\s+(.+)$/.exec(block)
+    if (heading) {
+      const level = Math.min(4, heading[1]!.length + 1)
+      return `<h${level}>${inlineMarkdown(heading[2]!)}</h${level}>`
+    }
+    const lines = block.split('\n').filter(Boolean)
+    if (lines.every((line) => /^[-*]\s+/.test(line))) return `<ul>${lines.map((line) => `<li>${inlineMarkdown(line.replace(/^[-*]\s+/, ''))}</li>`).join('')}</ul>`
+    if (lines.every((line) => /^\d+\.\s+/.test(line))) return `<ol>${lines.map((line) => `<li>${inlineMarkdown(line.replace(/^\d+\.\s+/, ''))}</li>`).join('')}</ol>`
+    return `<p>${lines.map(inlineMarkdown).join('<br>')}</p>`
+  }).join('\n')
+}
+
+function inlineMarkdown(text: string): string {
+  return esc(text)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+}
+
+export function sharePage(o: { siteName: string; siteUrl: string; url: string; title: string; description: string; author?: string; authorUrl?: string; image: string; publishedAt?: string; modifiedAt?: string; text?: string; tags?: string[]; noindex?: boolean }): string {
   const title = esc(o.title)
   const desc = esc(o.description)
+  const ld = JSON.stringify(o.text ? {
+    '@context': 'https://schema.org', '@type': 'BlogPosting', mainEntityOfPage: o.url, headline: o.title, description: o.description,
+    image: [o.image], datePublished: o.publishedAt, dateModified: o.modifiedAt ?? o.publishedAt, inLanguage: 'ru',
+    author: { '@type': 'Person', name: o.author ?? o.siteName, ...(o.authorUrl ? { url: o.authorUrl } : {}) },
+    publisher: { '@type': 'Organization', name: o.siteName, url: o.siteUrl }, keywords: o.tags?.join(', '),
+  } : {
+    '@context': 'https://schema.org', '@type': 'WebSite', name: o.siteName, url: o.siteUrl, description: o.description,
+  }).replace(/</g, '\\u003c')
   return `<!doctype html>
 <html lang="ru"><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title} — ${esc(o.siteName)}</title>
 <meta name="description" content="${desc}">
 ${o.noindex ? '<meta name="robots" content="noindex">\n' : ''}
 <link rel="canonical" href="${esc(o.url)}">
-<meta property="og:type" content="article">
+<meta property="og:type" content="${o.text ? 'article' : 'website'}">
 <meta property="og:site_name" content="${esc(o.siteName)}">
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${desc}">
@@ -52,11 +84,20 @@ ${o.publishedAt ? `<meta property="article:published_time" content="${esc(o.publ
 <meta name="twitter:title" content="${title}">
 <meta name="twitter:description" content="${desc}">
 <meta name="twitter:image" content="${esc(o.image)}">
+<script type="application/ld+json">${ld}</script>
 </head><body>
+<main><article>
 <h1>${title}</h1>
-<p>${desc}</p>
-<p><a href="${esc(o.url)}">Читать на ${esc(o.siteName)}</a></p>
+${o.author ? `<p>Автор: ${o.authorUrl ? `<a href="${esc(o.authorUrl)}">${esc(o.author)}</a>` : esc(o.author)}</p>` : ''}
+${o.publishedAt ? `<p><time datetime="${esc(o.publishedAt)}">${esc(o.publishedAt.slice(0, 10))}</time></p>` : ''}
+<p><strong>${desc}</strong></p>
+${o.text ? markdownHtml(o.text) : ''}
+</article></main>
 </body></html>`
+}
+
+export function sitemapXml(entries: { loc: string; lastmod?: string }[]): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.map((e) => `  <url><loc>${esc(e.loc)}</loc>${e.lastmod ? `<lastmod>${esc(e.lastmod)}</lastmod>` : ''}</url>`).join('\n')}\n</urlset>\n`
 }
 
 interface FeedArticle {
@@ -64,7 +105,7 @@ interface FeedArticle {
   did?: string
   handle?: string | null
   created_at?: string
-  record?: { title?: string; subtitle?: string; excerpt?: string; text?: string; noindex?: boolean; source?: { site?: string; author?: string } }
+  record?: { title?: string; subtitle?: string; excerpt?: string; text?: string; noindex?: boolean; createdAt?: string; updatedAt?: string; tags?: string[]; source?: { site?: string; author?: string } }
 }
 
 /** имя и фото автора из его профиля AT (app.bsky.actor.profile на его PDS) */
@@ -82,7 +123,7 @@ async function authorProfile(did: string, plcUrl: string, fetcher: SafeFetch): P
   return { name: v?.displayName?.trim() || null, avatar }
 }
 
-export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; allowPrivate?: boolean; pending?: PendingSource; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> } }) {
+export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; allowPrivate?: boolean; pending?: PendingSource; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> }; moved?: (uris: string[]) => Promise<Map<string, string>> }) {
   const siteName = d.siteName ?? 'weAT.media'
   const image = `${d.siteUrl}/og-image.png`
   const plcUrl = d.plcUrl ?? 'https://plc.directory'
@@ -162,16 +203,49 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     return c.body(new Uint8Array(png), 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' })
   })
 
+  app.get('/sitemap.xml', async (c) => {
+    if (!d.feedUrl) return c.text('sitemap unavailable', 503)
+    const entries = ['/', '/feed', '/hot', '/collections', '/cases', '/atmosphere', '/premium', '/docs', '/support', '/legal']
+      .map((path) => ({ loc: `${d.siteUrl}${path}` }))
+    const authors = new Set<string>()
+    let cursor = ''
+    for (let page = 0; page < 50; page++) {
+      const q = new URLSearchParams({ limit: '100', sort: 'new', ...(cursor ? { cursor } : {}) })
+      const res = await fetch(`${d.feedUrl}/feed-api/articles?${q}`, { signal: AbortSignal.timeout(5000) }).catch(() => null)
+      if (!res?.ok) return c.text('sitemap unavailable', 503)
+      const body = await res.json() as { articles?: FeedArticle[]; cursor?: string }
+      const articles = body.articles ?? []
+      const uris = articles.flatMap((a) => a.uri ? [a.uri] : [])
+      const [blocked, moved] = await Promise.all([
+        d.restricted?.enabled ? d.restricted.blocked(uris) : Promise.resolve(new Set<string>()),
+        d.moved ? d.moved(uris).catch(() => new Map<string, string>()) : Promise.resolve(new Map<string, string>()),
+      ])
+      for (const a of articles) {
+        if (!a.uri || a.record?.noindex || blocked.has(a.uri) || moved.has(a.uri)) continue
+        const [, , did = '', , rkey = ''] = a.uri.split('/')
+        if (!did || !rkey) continue
+        const date = a.record?.updatedAt ?? a.record?.createdAt ?? a.created_at
+        entries.push({ loc: `${d.siteUrl}/article/${encodeURIComponent(`${rkey}-${did.slice(-6)}`)}`, ...(date ? { lastmod: date.slice(0, 10) } : {}) })
+        if (a.handle) authors.add(a.handle)
+      }
+      if (!body.cursor || articles.length === 0) break
+      cursor = body.cursor
+    }
+    for (const handle of authors) entries.push({ loc: `${d.siteUrl}/profile/${encodeURIComponent(handle)}` })
+    c.header('cache-control', 'public, max-age=300')
+    return c.body(sitemapXml(entries), 200, { 'content-type': 'application/xml; charset=utf-8' })
+  })
+
   app.get('/share/article/:id', async (c) => {
     const id = c.req.param('id')
     const url = `${d.siteUrl}/article/${encodeURIComponent(id)}`
-    const fallback = () => c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: siteName, description: 'Медиа на открытом протоколе AT: ваш аккаунт и тексты принадлежат вам.', image }))
     const a = await article(id)
-    if (!a) return fallback()
+    if (!a) return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: 'Статья не найдена', description: 'Запрошенная публикация не найдена.', image, noindex: true }), 404)
     const r = a.record ?? {}
     const title = (r.title ?? '').trim() || siteName
     const description = (r.subtitle ?? '').trim() || (r.excerpt ?? '').trim() || plainExcerpt(r.text ?? '') || siteName
+    const author = a.handle ? `@${a.handle}` : r.source?.author
     c.header('cache-control', 'public, max-age=300')
-    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: title.slice(0, 200), description: description.slice(0, 300), author: a.handle ? `@${a.handle}` : undefined, image: r.title?.trim() ? `${d.siteUrl}/api/og/article/${encodeURIComponent(id)}.png` : image, publishedAt: a.created_at, noindex: r.noindex === true }))
+    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: title.slice(0, 200), description: description.slice(0, 300), author, authorUrl: a.handle ? `${d.siteUrl}/profile/${encodeURIComponent(a.handle)}` : undefined, image: r.title?.trim() ? `${d.siteUrl}/api/og/article/${encodeURIComponent(id)}.png` : image, publishedAt: r.createdAt ?? a.created_at, modifiedAt: r.updatedAt ?? a.created_at, text: r.text, tags: r.tags, noindex: r.noindex === true }))
   })
 }

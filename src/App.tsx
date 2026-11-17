@@ -13,6 +13,7 @@ import EventTicker from '@/components/EventTicker'
 import Feed from '@/pages/Feed'
 import { I18nProvider } from '@/lib/i18n'
 import SkipLink from '@/components/SkipLink'
+import SeoManager from '@/components/SeoManager'
 
 // страницы — отдельными чанками: лента (главный вход) не ждёт код редактора, админки и т. п.
 const LandingPage = lazy(() => import('@/pages/LandingPage'))
@@ -73,6 +74,7 @@ const MyTicketsPage = lazy(() => import('@/pages/MyTicketsPage'))
 const SupportLegalPage = lazy(() => import('@/pages/SupportLegalPage'))
 const SharedDraftPage = lazy(() => import('@/pages/SharedDraftPage'))
 const ArticleAnalyticsPage = lazy(() => import('@/pages/ArticleAnalyticsPage'))
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 
 function CollectionRoute() {
   const { id } = useParams()
@@ -109,6 +111,7 @@ export default function App() {
       <I18nProvider>
       <div className="flex min-h-dvh flex-col">
         <SkipLink />
+        <SeoManager />
         <Header />
         <EventTicker />
         <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
@@ -182,7 +185,7 @@ export default function App() {
             <Route path="/admin" element={<Navigate to="/admin/tickets" replace />} />
             <Route path="/legal/:slug" element={<LegalDocPage />} />
             <Route path="/shared-draft/:token" element={<SharedDraftPage />} />
-            <Route path="*" element={<Feed />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
           </Suspense>
         </main>

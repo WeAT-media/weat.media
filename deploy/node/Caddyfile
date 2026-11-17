@@ -105,14 +105,20 @@
 	# какой контур ответил — для отладки GeoDNS и мониторинга
 	header X-Indie-Contour {$CONTOUR}
 
-	# превью ссылок: боты соцсетей и мессенджеров JS не выполняют — им HTML с og:-тегами статьи.
-	# Поисковики (Google, Яндекс, Bing) сюда не входят: они выполняют JS и видят полную страницу
+	# Читаемый HTML, метатеги и BlogPosting для соцсетей, поисковых и AI-краулеров.
 	@share_bot {
 		path_regexp article ^/article/([^/]+)$
-		header_regexp User-Agent (?i)(facebookexternalhit|facebot|twitterbot|telegrambot|whatsapp|slackbot|discordbot|linkedinbot|vkshare|skypeuripreview|pinterest|redditbot|embedly|bluesky|cardyb|mastodon|viber)
+		header_regexp User-Agent (?i)(facebookexternalhit|facebot|twitterbot|telegrambot|whatsapp|slackbot|discordbot|linkedinbot|vkshare|skypeuripreview|pinterest|redditbot|embedly|bluesky|cardyb|mastodon|viber|googlebot|bingbot|yandexbot|duckduckbot|baiduspider|gptbot|chatgpt-user|oai-searchbot|claudebot|claude-user|perplexitybot|applebot|amazonbot)
 	}
 	handle @share_bot {
 		rewrite * /api/share/article/{re.article.1}
+		reverse_proxy appview:8787
+	}
+
+	# Карта публичных статей и авторов формируется из того же регионального индекса.
+	@sitemap path /sitemap.xml
+	handle @sitemap {
+		rewrite * /api/sitemap.xml
 		reverse_proxy appview:8787
 	}
 

@@ -59,6 +59,13 @@ const steps = [
   },
 ]
 
+const faq = [
+  ['Что такое weAT.media?', 'Независимая платформа статей и видео на открытом AT Protocol. Читать публикации можно без регистрации, а авторам доступны продажи и аналитика.'],
+  ['Кому принадлежат публикации и аккаунт?', 'Автору. Записи хранятся в его репозитории на PDS. При смене приложения или сервера сохраняются постоянный идентификатор, публикации и аудитория.'],
+  ['Сколько зарабатывает автор?', 'Автор получает 90% с продаж платных материалов, а с подпиской Premium — 99%. Перед покупкой читатель видит бесплатный тизер или превью.'],
+  ['Как работает модерация?', 'Спорные публикации получают открытые метки по решению коллегии присяжных. Читатель сам выбирает службы модерации и решает, скрывать ли помеченные материалы.'],
+] as const
+
 /** Лендинг: что это за площадка, кому и почему */
 export default function LandingPage() {
   const { user } = useStore()
@@ -208,6 +215,20 @@ export default function LandingPage() {
           </p>
         </div>
       </Reveal>
+
+      <section className="mt-20" aria-labelledby="faq-title">
+        <p className="meta">Коротко о главном</p>
+        <h2 id="faq-title" className="mt-3 text-3xl font-extrabold tracking-tight">Частые вопросы</h2>
+        <div className="mt-6 divide-y divide-border border-y border-border">
+          {faq.map(([question, answer]) => (
+            <details key={question} className="group py-2">
+              <summary className="cursor-pointer list-none py-4 text-lg font-bold marker:hidden [&::-webkit-details-marker]:hidden">{question}</summary>
+              <p className="max-w-[70ch] pb-5 text-[15px] leading-relaxed text-muted-foreground">{answer}</p>
+            </details>
+          ))}
+        </div>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map(([name, text]) => ({ '@type': 'Question', name, acceptedAnswer: { '@type': 'Answer', text } })) }).replace(/</g, '\\u003c') }} />
+      </section>
 
       {/* CTA */}
       <Reveal className="mt-20 text-center">

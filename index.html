@@ -8,7 +8,9 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>%VITE_SITE_NAME% — свободное медиа</title>
-    <meta name="description" content="Медиа на открытом протоколе AT: ваш аккаунт и тексты принадлежат вам. Модерация метками, которые читатель настраивает сам; 90% продаж — автору." />
+    <meta name="description" content="Независимое медиа на AT Protocol: публикуйте статьи и видео, получайте до 99% с продаж и сохраняйте свою аудиторию при переезде." />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="%VITE_SITE_URL%/" />
     <!-- превью ссылок: Facebook, VK, Telegram (Open Graph) и Twitter / X -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="%VITE_SITE_NAME%" />
@@ -57,6 +59,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <main>
+        <h1>weAT.media — ваши тексты, ваши читатели, ваши правила</h1>
+        <p>Независимая платформа для авторов и читателей на открытом AT Protocol. Публикуйте статьи и видео, получайте до 99% с продаж и забирайте аудиторию с собой при смене сервера.</p>
+        <ul>
+          <li>Публикации принадлежат авторам и хранятся в их личных репозиториях.</li>
+          <li>Автор получает 90% с продаж, с Premium — 99%.</li>
+          <li>Модерация основана на открытых метках и настраивается читателем.</li>
+        </ul>
+        <nav><a href="/feed">Лента публикаций</a> · <a href="/atmosphere">Что такое AT Protocol</a> · <a href="/premium">Premium</a> · <a href="/docs">Документация</a></nav>
+      </main>
+    </noscript>
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","name":"weAT.media","url":"%VITE_SITE_URL%"},{"@type":"WebSite","name":"weAT.media","url":"%VITE_SITE_URL%","description":"Независимое медиа для авторов и читателей на AT Protocol."}]}</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

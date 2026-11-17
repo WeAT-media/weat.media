@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store'
 import { labelers } from '@/data/mock'
 import { languageName } from '@/data/languages'
 import { renderInline } from '@/lib/inline'
+import { plainExcerpt } from '@/lib/plainText'
 import { getSessionVideo } from '@/lib/videoUploads'
 import { normalizeVideos } from '@/lib/videos'
 import Stamp from '@/components/Stamp'
@@ -488,6 +489,12 @@ export default function ArticlePage() {
             <PaywallBadge hasPaywall={!!article.paywall} unlocked={isUnlocked} />
           </h1>
           {article.subtitle && <p className="mt-3 text-lg text-muted-foreground">{article.subtitle}</p>}
+          {article.excerpt && (
+            <section aria-labelledby="article-summary" className="mt-5 border-l-2 border-accent bg-secondary/40 px-5 py-4">
+              <h2 id="article-summary" className="meta text-accent">Коротко</h2>
+              <p className="mt-2 text-[15px] leading-relaxed">{plainExcerpt(article.excerpt, 320)}</p>
+            </section>
+          )}
           {article.pendingUntil && new Date(article.pendingUntil) > new Date() && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-accent bg-secondary/40 p-4">
               <p className="meta inline-flex min-w-0 flex-wrap items-center gap-1.5 !normal-case tracking-normal">

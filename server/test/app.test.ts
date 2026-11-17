@@ -1146,16 +1146,20 @@ test('admin: 5 bad staff tokens in a row ban the IP; other IPs and anonymous pag
   assert.ok(auditLog.some((e) => e.action === 'staff.ip_banned' && e.target === '7.7.7.7'))
 })
 
-test('share: article preview HTML escapes fields; unknown id falls back to site card', async () => {
-  const { sharePage, plainExcerpt } = await import('../src/share.ts')
-  const html = sharePage({ siteName: 'weAT.media', siteUrl: 'https://weat.media', url: 'https://weat.media/article/x-abcdef', title: 'A <b>"x"</b>', description: 'd&d', image: 'https://weat.media/og-image.png' })
+test('share: readable article HTML escapes fields and includes BlogPosting; unknown id returns 404', async () => {
+  const { sharePage, plainExcerpt, sitemapXml } = await import('../src/share.ts')
+  const html = sharePage({ siteName: 'weAT.media', siteUrl: 'https://weat.media', url: 'https://weat.media/article/x-abcdef', title: 'A <b>"x"</b>', description: 'd&d', image: 'https://weat.media/og-image.png', text: '## Ответ\n\nТекст **важно**', author: '@author', publishedAt: '2026-01-01T00:00:00Z' })
   assert.match(html, /<meta property="og:title" content="A &lt;b&gt;&quot;x&quot;&lt;\/b&gt;">/)
   assert.match(html, /<meta name="twitter:card" content="summary_large_image">/)
+  assert.match(html, /"@type":"BlogPosting"/)
+  assert.match(html, /<h3>Ответ<\/h3>/)
+  assert.match(html, /<strong>важно<\/strong>/)
   assert.equal(plainExcerpt('# Заголовок\n\nТекст со [ссылкой](https://x) и ![img](u) **жирным**'), 'Заголовок Текст со ссылкой и жирным')
+  assert.match(sitemapXml([{ loc: 'https://weat.media/article/a?x=1&y=2', lastmod: '2026-01-01' }]), /<loc>https:\/\/weat.media\/article\/a\?x=1&amp;y=2<\/loc><lastmod>2026-01-01<\/lastmod>/)
   const app = makeApp()
   const res = await app.request('/api/share/article/not%20an%20id')
-  assert.equal(res.status, 200)
-  assert.match(await res.text(), /og:image" content="http:\/\/localhost:3000\/og-image.png"/)
+  assert.equal(res.status, 404)
+  assert.match(await res.text(), /<meta name="robots" content="noindex">/)
 })
 
 test('global contour: from a Russian IP foreign providers (Telegram, Google, AT) are hidden and refused', async () => {

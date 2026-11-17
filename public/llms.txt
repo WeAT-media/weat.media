@@ -1,0 +1,30 @@
+# weAT.media
+
+An independent article and video publishing platform built on the open AT Protocol.
+
+## Key facts
+
+- Authors own their publications and accounts and can move them between servers.
+- Anyone can read articles and watch videos without signing up.
+- Authors receive 90% of paid-content revenue, or 99% with Premium.
+- Moderation uses transparent labels that readers can configure themselves.
+- An open jury reviews disputed content.
+
+## Main sections
+
+- [About the platform](https://weat.media/)
+- [Publications](https://weat.media/feed)
+- [How AT Protocol works](https://weat.media/atmosphere)
+- [Premium](https://weat.media/premium)
+- [Documentation](https://weat.media/docs)
+- [Support](https://weat.media/support)
+- [Policies and legal documents](https://weat.media/legal)
+
+## For search engines and AI systems
+
+- [Sitemap](https://weat.media/sitemap.xml)
+- [Robots](https://weat.media/robots.txt)
+- [API](https://weat.media/api)
+- Author RSS: https://weat.media/rss/author/{handle}
+
+Article pages include canonical URLs and Schema.org BlogPosting markup. Author profiles use ProfilePage markup. Frequently asked questions are marked up as FAQPage.
