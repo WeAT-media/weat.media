@@ -67,6 +67,10 @@ export const POLL_FLAVOUR = 'affine:poll'
 export const CALLOUT_FLAVOUR = 'affine:callout'
 export const IVIDEO_FLAVOUR = 'affine:ivideo'
 export const FAQ_FLAVOUR = 'affine:faq'
+/** простая таблица: в markdown — обычная GFM-таблица (| a | b |), а не база данных AFFiNE */
+export const TABLE_FLAVOUR = 'affine:mdtable'
+export interface TableData { rows: string[][] }
+export const DEFAULT_TABLE: TableData = { rows: [['Колонка 1', 'Колонка 2'], ['', '']] }
 export const BUTTON_FLAVOUR = 'affine:actionbutton'
 
 export interface ActionButtonData {
@@ -133,7 +137,13 @@ export const ActionButtonBlockSchema = defineBlockSchema({
   metadata: { version: 1, role: 'content' },
 })
 
-export const customBlockSchemas = [CarouselBlockSchema, PollBlockSchema, CalloutBlockSchema, UserBlockSchema, IVideoBlockSchema, FaqBlockSchema, ActionButtonBlockSchema]
+export const TableBlockSchema = defineBlockSchema({
+  flavour: TABLE_FLAVOUR,
+  props: (): DataProps => ({ data: JSON.stringify(DEFAULT_TABLE) }),
+  metadata: { version: 1, role: 'content' },
+})
+
+export const customBlockSchemas = [CarouselBlockSchema, PollBlockSchema, CalloutBlockSchema, UserBlockSchema, IVideoBlockSchema, FaqBlockSchema, ActionButtonBlockSchema, TableBlockSchema]
 
 /** Блоки, которые есть только у Premium: у остальных в редакторе превращаются в текст */
 export const PREMIUM_FLAVOURS = new Set<string>([USER_BLOCK_FLAVOUR, CALLOUT_FLAVOUR, FAQ_FLAVOUR, BUTTON_FLAVOUR])
@@ -818,6 +828,64 @@ export class FaqBlockComponent extends BlockComponent<BlockModel<DataProps>> {
   }
 }
 
+/** Таблица: первая строка — заголовок; ячейки — обычный текст (выделение и ссылки — в абзацах) */
+const tableData = (raw: unknown): TableData => {
+  const d = parseData(raw as string, DEFAULT_TABLE)
+  const rows = Array.isArray(d.rows) && d.rows.length ? d.rows.map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? '')) : [])) : DEFAULT_TABLE.rows
+  const cols = Math.max(1, ...rows.map((r) => r.length))
+  return { rows: rows.map((r) => [...r, ...Array(cols - r.length).fill('')]) }
+}
+
+export class TableBlockComponent extends BlockComponent<BlockModel<DataProps>> {
+  static override styles = [
+    blockStyles,
+    css`
+      .indie-table__scroll { overflow-x: auto; }
+      .indie-table { border-collapse: collapse; min-width: 100%; }
+      .indie-table td { border: 1px solid var(--affine-border-color, #e3e2e4); padding: 0; min-width: 96px; }
+      .indie-table tr:first-child input { font-weight: 700; }
+      .indie-table input { width: 100%; border: 0; background: transparent; padding: 6px 8px; font: inherit; color: inherit; }
+      .indie-table__bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    `,
+  ]
+  private get data(): TableData {
+    return tableData(this.model.data)
+  }
+  private persist(next: TableData) {
+    this.doc.updateBlock(this.model, { data: JSON.stringify(next) })
+  }
+  private setCell(r: number, c: number, v: string) {
+    this.persist({ rows: this.data.rows.map((row, i) => (i === r ? row.map((x, j) => (j === c ? v : x)) : row)) })
+  }
+  override renderBlock() {
+    const { rows } = this.data
+    const cols = rows[0]?.length ?? 1
+    return html`
+      <div class="indie-block" contenteditable="false" @keydown=${stopEnter}>
+        <div class="indie-block__label">Таблица · первая строка — заголовок</div>
+        <div class="indie-table__scroll">
+          <table class="indie-table">
+            ${rows.map(
+              (row, r) => html`<tr>
+                ${row.map((cell, c) => html`<td><input .value=${cell} placeholder=${r === 0 ? `Колонка ${c + 1}` : ''} @input=${(e: Event) => this.setCell(r, c, (e.target as HTMLInputElement).value)} /></td>`)}
+              </tr>`,
+            )}
+          </table>
+        </div>
+        <div class="indie-table__bar">
+          <button type="button" class="indie-block__btn" ?disabled=${rows.length >= 100} @click=${() => this.persist({ rows: [...rows, Array(cols).fill('')] })}>+ строка</button>
+          <button type="button" class="indie-block__btn" ?disabled=${cols >= 12} @click=${() => this.persist({ rows: rows.map((row, i) => [...row, i === 0 ? `Колонка ${cols + 1}` : '']) })}>+ колонка</button>
+          <button type="button" class="indie-block__btn indie-block__del" ?disabled=${rows.length <= 2} @click=${() => this.persist({ rows: rows.slice(0, -1) })}>− строка</button>
+          <button type="button" class="indie-block__btn indie-block__del" ?disabled=${cols <= 1} @click=${() => this.persist({ rows: rows.map((row) => row.slice(0, -1)) })}>− колонка</button>
+        </div>
+      </div>
+    `
+  }
+}
+if (!customElements.get('affine-mdtable')) {
+  customElements.define('affine-mdtable', TableBlockComponent)
+}
+
 /** Кнопка с действием (Premium-автор): как ссылка, но заметной кнопкой — «Записаться», «Купить», «Скачать» */
 export class ActionButtonBlockComponent extends BlockComponent<BlockModel<DataProps>> {
   static override styles = [
@@ -898,6 +966,7 @@ const CalloutBlockViewExtension = BlockViewExtension(CALLOUT_FLAVOUR as BlockSui
 const UserBlockViewExtension = BlockViewExtension(USER_BLOCK_FLAVOUR as BlockSuite.Flavour, literal`affine-userblock`)
 const IVideoBlockViewExtension = BlockViewExtension(IVIDEO_FLAVOUR as BlockSuite.Flavour, literal`affine-ivideo`)
 const FaqBlockViewExtension = BlockViewExtension(FAQ_FLAVOUR as BlockSuite.Flavour, literal`affine-faq`)
+const TableBlockViewExtension = BlockViewExtension(TABLE_FLAVOUR as BlockSuite.Flavour, literal`affine-mdtable`)
 const ButtonBlockViewExtension = BlockViewExtension(BUTTON_FLAVOUR as BlockSuite.Flavour, literal`affine-actionbutton`)
 
 /**
@@ -970,7 +1039,61 @@ export const FaqBlockSpec = [BlockMarkdownAdapterExtension(faqMarkdownMatcher), 
 
 export const ButtonBlockSpec = [BlockMarkdownAdapterExtension(buttonMarkdownMatcher), ButtonBlockViewExtension]
 
-export const customBlockSpecs = [...CarouselBlockSpec, ...PollBlockSpec, ...CalloutBlockSpec, ...UserBlockSpec, ...IVideoBlockSpec, ...FaqBlockSpec, ...ButtonBlockSpec]
+/** mdast ячейки → её markdown (выделение, код и ссылки сохраняются; | экранируется) */
+const mdText = (n: unknown): string => {
+  const node = n as { type?: string; value?: string; url?: string; children?: unknown[] }
+  const inner = () => (node.children ?? []).map(mdText).join('')
+  switch (node.type) {
+    case 'text':
+      return (node.value ?? '').replace(/\|/g, '\\|')
+    case 'inlineCode':
+      return `\`${node.value ?? ''}\``
+    case 'strong':
+      return `**${inner()}**`
+    case 'emphasis':
+      return `*${inner()}*`
+    case 'delete':
+      return `~~${inner()}~~`
+    case 'link':
+      return `[${inner()}](${node.url ?? ''})`
+    case 'html':
+      return node.value ?? ''
+    default:
+      return inner()
+  }
+}
+/** GFM-таблица (| a | b |) ↔ блок «Таблица»; штатный адаптер делал из неё базу данных AFFiNE */
+export const tableMarkdownMatcher: BlockMarkdownAdapterMatcher = {
+  flavour: TABLE_FLAVOUR,
+  toMatch: (o) => (o.node as { type?: string }).type === 'table',
+  fromMatch: (o) => o.node.flavour === TABLE_FLAVOUR,
+  toBlockSnapshot: {
+    enter: (o, context) => {
+      const rows = ((o.node as { children?: unknown[] }).children ?? []).map((row) => ((row as { children?: unknown[] }).children ?? []).map((cell) => mdText(cell).trim()))
+      context.walkerContext.openNode({ type: 'block', id: nanoid(), flavour: TABLE_FLAVOUR, props: { data: JSON.stringify(tableData(JSON.stringify({ rows }))) }, children: [] }, 'children').closeNode()
+      context.walkerContext.skipAllChildren()
+    },
+  },
+  fromBlockSnapshot: {
+    enter: (o, context) => {
+      const { rows } = tableData(o.node.props.data)
+      context.walkerContext
+        .openNode(
+          {
+            type: 'table',
+            align: rows[0]!.map(() => null),
+            // ячейка — как есть (html-узел): иначе ** и [](…) экранировались бы
+            children: rows.map((row) => ({ type: 'tableRow', children: row.map((cell) => ({ type: 'tableCell', children: cell ? [{ type: 'html', value: cell }] : [] })) })),
+          } as never,
+          'children',
+        )
+        .closeNode()
+    },
+  },
+}
+export const TableBlockSpec = [BlockMarkdownAdapterExtension(tableMarkdownMatcher), TableBlockViewExtension]
+
+export const customBlockSpecs = [...CarouselBlockSpec, ...PollBlockSpec, ...CalloutBlockSpec, ...UserBlockSpec, ...IVideoBlockSpec, ...FaqBlockSpec, ...ButtonBlockSpec, ...TableBlockSpec]
 /**
  * Карточка ссылки («/link») ↔ ```bookmark {url,title,description,icon,image}```. Штатный адаптер пишет её
  * обычной ссылкой — при следующей загрузке (переход между шагами, черновик) карточка «схлопывалась» в текст.
@@ -1006,6 +1129,7 @@ export const bookmarkMarkdownMatcher: BlockMarkdownAdapterMatcher = {
 }
 
 export const customMarkdownMatchers: BlockMarkdownAdapterMatcher[] = [
+  tableMarkdownMatcher,
   bookmarkMarkdownMatcher,
   carouselMarkdownMatcher,
   pollMarkdownMatcher,
@@ -1184,7 +1308,8 @@ export async function registerCustomSlashMenuItems() {
 
   // убираем «New Doc»/«Linked Doc» — в редакторе статьи нет мультидокументности;
   // фильтр по фактическому name конфигурации, остальные блоки не трогаем
-  const REMOVED = new Set(['New Doc', 'Linked Doc'])
+  // базы данных AFFiNE (Table/Kanban View) — не для статьи: вместо них простая «Таблица»
+  const REMOVED = new Set(['New Doc', 'Linked Doc', 'Table View', 'Kanban View'])
   const filtered = config.items.filter(
     (it) => !REMOVED.has((it as { name?: string }).name ?? ''),
   )
@@ -1209,6 +1334,14 @@ export async function registerCustomSlashMenuItems() {
     createCarouselSlashMenuItem() as never,
     createPollSlashMenuItem() as never,
     // свои блоки автора (Premium); встроенной «Заметки» больше нет — её собирают в конструкторе
+    { groupName: 'Таблица' } as never,
+    {
+      name: 'Таблица',
+      description: 'Простая таблица: строки и колонки, в статье — обычная markdown-таблица.',
+      alias: ['table', 'таблица', 'grid'],
+      icon: html`<span style="display:flex;width:20px;height:20px;align-items:center;justify-content:center;font-size:13px">▦</span>`,
+      action: (c: SlashMenuActionCtx) => addCustomBlockViaSlashMenu(TABLE_FLAVOUR, { data: JSON.stringify(DEFAULT_TABLE) }, c),
+    } as never,
     faqSlashItems as never,
     userBlockSlashItems as never,
     devPreviewSlashItems as never,
@@ -1227,6 +1360,7 @@ const READ_VIEWS: [unknown, string][] = [
   [IVideoBlockComponent, 'ivideo'],
   [FaqBlockComponent, 'faq'],
   [ActionButtonBlockComponent, 'button'],
+  [TableBlockComponent, 'table'],
 ]
 
 async function mountReadView(el: HTMLElement & { __readView?: ReadView }, host: Element, type: string, data: string) {

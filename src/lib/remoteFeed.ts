@@ -99,6 +99,14 @@ export function markdownToBlocks(md: string): ArticleBlock[] {
         const block = customFenceBlock(fence[1], code.join('\n'))
         if (block) blocks.push(block)
       } else blocks.push({ type: 'code', text: code.join('\n'), ...(fence[1] ? { lang: fence[1] } : {}) })
+    } else if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1] ?? '')) {
+      // GFM-таблица: | a | b | + строка-разделитель |---|---|; первая строка — заголовок
+      flush()
+      const cells = (l: string) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((c) => decodeEntities(c.trim().replace(/\\\|/g, '|')))
+      const rows = [cells(line)]
+      i++
+      while (i + 1 < lines.length && /^\s*\|.*\|\s*$/.test(lines[i + 1]!)) rows.push(cells(lines[++i]!))
+      blocks.push({ type: 'table', text: JSON.stringify({ rows }) })
     } else if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) {
       // ***, ---, ___ (и с пробелами) — разделитель; так BlockSuite пишет блок «Divider»
       flush()

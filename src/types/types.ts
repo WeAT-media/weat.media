@@ -2,7 +2,7 @@ export type LabelAction = 'hide' | 'warn' | 'ignore'
 
 export type VerdictStatus = 'clear' | 'trial' | 'guilty' | 'acquitted'
 
-export type BlockType = 'p' | 'h2' | 'code' | 'quote' | 'ul' | 'poll' | 'mdx' | 'carousel' | 'callout' | 'userblock' | 'image' | 'ivideo' | 'faq' | 'button' | 'bookmark' | 'hr'
+export type BlockType = 'p' | 'h2' | 'code' | 'quote' | 'ul' | 'poll' | 'mdx' | 'carousel' | 'callout' | 'userblock' | 'image' | 'ivideo' | 'faq' | 'button' | 'bookmark' | 'hr' | 'table'
 
 /** Видео в плейлисте статьи: свое (native Video.js) или внешняя площадка */
 export interface VideoItem {

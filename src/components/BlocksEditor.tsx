@@ -125,7 +125,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
                 ...s,
                 model: {
                   ...s.model,
-                  children: [...(s.model.children ?? []), 'affine:carousel', 'affine:poll', 'affine:callout', 'affine:userblock', 'affine:ivideo', 'affine:faq', 'affine:actionbutton'],
+                  children: [...(s.model.children ?? []), 'affine:carousel', 'affine:poll', 'affine:callout', 'affine:userblock', 'affine:ivideo', 'affine:faq', 'affine:actionbutton', 'affine:mdtable'],
                 },
               }
             : s,
@@ -144,7 +144,12 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         const adapter = new MarkdownAdapter(job, [
           ...customBlocksMod.customMarkdownMatchers,
           // карточку ссылки пишет наш bookmarkMarkdownMatcher (```bookmark) — штатный превращал её в обычную ссылку
-          ...blocksMod.defaultBlockMarkdownAdapterMatchers.filter((m) => m.flavour !== 'affine:bookmark').map((m) =>
+          // база данных AFFiNE: из markdown не создаётся (таблицы — простой блок «Таблица»), но уже вставленная
+          // сохраняется markdown-таблицей, а не пропадает
+          ...blocksMod.defaultBlockMarkdownAdapterMatchers
+            .filter((m) => m.flavour !== 'affine:bookmark')
+            .map((m) => (m.flavour === 'affine:database' ? { ...m, toMatch: () => false } : m))
+            .map((m) =>
             m.flavour === 'affine:image'
               ? // картинка по https:// — ссылкой (url:…): в markdown остаётся исходный адрес, а не «assets/…»
                 {

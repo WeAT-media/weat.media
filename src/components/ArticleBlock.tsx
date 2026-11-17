@@ -22,6 +22,7 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
   if (block.type === 'button') return <ActionButtonView raw={block.text} />
   if (block.type === 'bookmark') return <BookmarkCard raw={block.text} />
   if (block.type === 'hr') return <hr className="my-10 border-0 border-t border-border" />
+  if (block.type === 'table') return <TableView raw={block.text} />
   if (block.type === 'h2') {
     // id — якорь для TOC; scroll-mt под sticky-шапку (~64px)
     return <h2 id={id} className="mt-10 scroll-mt-28 text-2xl font-extrabold tracking-tight">{renderInline(block.text)}</h2>
@@ -101,5 +102,43 @@ function BookmarkCard({ raw }: { raw: string }) {
       </span>
       {img && <img src={img} alt="" className="hidden w-40 shrink-0 object-cover sm:block" loading="lazy" referrerPolicy="no-referrer" />}
     </a>
+  )
+}
+
+/** простая таблица (GFM): первая строка — заголовок; на узком экране — прокрутка внутри, а не всей страницы */
+function TableView({ raw }: { raw: string }) {
+  let rows: string[][] = []
+  try {
+    rows = (JSON.parse(raw) as { rows?: string[][] }).rows ?? []
+  } catch {
+    return null
+  }
+  if (!rows.length) return null
+  const [head, ...body] = rows
+  return (
+    <div className="my-8 overflow-x-auto rounded-md border border-border">
+      <table className="w-full min-w-max border-collapse text-[15px]">
+        <thead className="bg-secondary/60">
+          <tr>
+            {head!.map((c, i) => (
+              <th key={i} scope="col" className="border-b border-border px-3 py-2 text-left font-semibold">
+                {renderInline(c)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((r, i) => (
+            <tr key={i} className="border-b border-border last:border-0">
+              {r.map((c, j) => (
+                <td key={j} className="px-3 py-2 align-top">
+                  {renderInline(c)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
