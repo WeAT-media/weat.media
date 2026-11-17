@@ -313,8 +313,15 @@ const ops: Op[] = [
     errors: [[400, 'InvalidRequest · EmailRequired'], [404, 'NotFound'], [409, 'AlreadyPurchased'], [502, 'PaymentProviderError'], [503, 'PaymentsDisabled']],
   },
   {
+    method: 'post', path: '/me/premium', tag: 'payments', summary: 'Оплатить Premium на 30 дней', auth: 'bearer',
+    description: 'Создаёт счёт и возвращает paymentUrl. Premium включается после подтверждения оплаты; повторная оплата продлевает срок. После оплаты — /purchase/{orderId}.',
+    body: z.object({ paymentMethod: z.enum(['CARD', 'SBP']).optional() }), ok: { status: 201, schema: z.object({ orderId: z.string(), paymentUrl: z.string().nullable() }), description: 'Счёт создан' },
+    errors: [[400, 'EmailRequired'], [502, 'PaymentProviderError'], [503, 'PaymentsDisabled']],
+  },
+  {
     method: 'get', path: '/me/purchases/{id}', tag: 'payments', summary: 'Статус заказа', auth: 'bearer',
-    ok: { status: 200, schema: z.object({ orderId: z.string(), status: z.enum(['pending', 'paid', 'failed', 'refunded']), contentId: z.string(), amount: z.number(), currency: z.string() }), description: 'Заказ' },
+    description: 'Заказ статьи (ord_…) или Premium (prm_…: kind = premium, paidUntil — до какого момента оплачен).',
+    ok: { status: 200, schema: z.object({ orderId: z.string(), status: z.enum(['pending', 'paid', 'failed', 'refunded']), kind: z.literal('premium').optional(), paidUntil: z.string().nullable().optional(), contentId: z.string().optional(), amount: z.number(), currency: z.string() }), description: 'Заказ' },
     errors: [[404, 'NotFound']],
   },
   {

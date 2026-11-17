@@ -26,7 +26,8 @@ export default function PurchaseReturnPage() {
         if (!alive) return
         setOrder(o)
         if (o.status === 'paid') {
-          setTimeout(() => navigate(returnTo, { replace: true }), 1500)
+          // Premium: полная перезагрузка — профиль в сторе перечитается с новым тарифом
+          setTimeout(() => (o.kind === 'premium' ? window.location.replace(returnTo) : navigate(returnTo, { replace: true })), 1500)
           return
         }
         if (o.status !== 'pending') return
@@ -51,7 +52,7 @@ export default function PurchaseReturnPage() {
         <>
           <CheckCircle2 size={28} className="mx-auto text-accent" aria-hidden="true" />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight">Оплата прошла</h1>
-          <p className="mt-3 text-muted-foreground">Доступ открыт, возвращаем вас к статье…</p>
+          <p className="mt-3 text-muted-foreground">{order?.kind === 'premium' ? 'Premium включён, открываем материалы…' : 'Доступ открыт, возвращаем вас к статье…'}</p>
         </>
       ) : status === 'failed' || error ? (
         <>
@@ -70,7 +71,7 @@ export default function PurchaseReturnPage() {
           </p>
         </>
       )}
-      <Link to={returnTo} className="btn-ghost mt-8">К статье</Link>
+      <Link to={returnTo} className="btn-ghost mt-8">{order?.kind === 'premium' ? 'Дальше' : 'К статье'}</Link>
     </div>
   )
 }

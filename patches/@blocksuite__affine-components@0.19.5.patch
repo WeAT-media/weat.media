@@ -2,7 +2,7 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 deleted file mode 100644
 index eed1a596fae924cceb121f75ae7cf1ba7699e002..0000000000000000000000000000000000000000
 diff --git a/dist/context-menu/menu-renderer.js b/dist/context-menu/menu-renderer.js
-index 180cc00fcc8c51a26f3a8106796434fdd9b12f77..0cd865bc7c49ffec4611246b8810ffbde9bc7473 100644
+index 180cc00fcc8c51a26f3a8106796434fdd9b12f77..34655810eb34964c9e38587fbb193118f0a26618 100644
 --- a/dist/context-menu/menu-renderer.js
 +++ b/dist/context-menu/menu-renderer.js
 @@ -389,8 +389,10 @@ let MobileMenuComponent = (() => {
@@ -17,7 +17,18 @@ index 180cc00fcc8c51a26f3a8106796434fdd9b12f77..0cd865bc7c49ffec4611246b8810ffbd
      if (host) {
          return host;
      }
-@@ -527,6 +529,8 @@ export const popMenu = (target, props) => {
+@@ -399,7 +401,9 @@ export const getDefaultModalRoot = (ele) => {
+ export const createModal = (container = document.body) => {
+     const div = document.createElement('div');
+     div.style.pointerEvents = 'auto';
+-    div.style.position = 'absolute';
++    // weat.media: подложка в <body> — fixed на всё окно; absolute закрывал только первый экран страницы,
++    // и после прокрутки клик мимо меню её не задевал — меню не закрывалось
++    div.style.position = container === document.body ? 'fixed' : 'absolute';
+     div.style.left = '0';
+     div.style.top = '0';
+     div.style.width = '100%';
+@@ -527,6 +531,8 @@ export const popMenu = (target, props) => {
                  ],
              }),
              offset(4),

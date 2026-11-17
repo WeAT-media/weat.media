@@ -28,6 +28,8 @@ const Env = z.object({
   /** секрет, который lava.top присылает в X-Api-Key вебхука (до 80 символов) */
   LAVA_WEBHOOK_SECRET: z.string().min(16).max(80).optional(),
   LAVA_API_URL: z.string().url().default('https://gate.lava.top'),
+  /** цена Premium за 30 дней, ₽ (та же, что VITE_PREMIUM_PRICE_RUB на сайте) */
+  PREMIUM_PRICE_RUB: z.coerce.number().int().positive().default(299),
   /** Zitadel — вход сотрудников (и далее читателей). ISSUER — публичный адрес, JWKS_URL — внутренний (docker) */
   /** почта площадки в админке (deploy/mail): пароли ящиков; ящик без пароля в /admin/email не виден */
   MAIL_DOMAIN: z.string().default('weat.media'),

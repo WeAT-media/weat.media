@@ -13,7 +13,7 @@ import { createPdsClient } from './pds.js'
 import { settingsRepo } from './settings.js'
 import { paidRepo } from './paidContent.js'
 import { developerRepo } from './developer.js'
-import { createLavaClient, orderRepo } from './lava.js'
+import { createLavaClient, orderRepo, premiumOrderRepo } from './lava.js'
 import { auditRepo, createStaffVerifier } from './staff.js'
 import { claimRepo } from './claims.js'
 import { ticketRepo } from './tickets.js'
@@ -33,12 +33,21 @@ await migrate(sql, { standby: config.NODE_ROLE === 'standby' })
 
 const pds = createPdsClient(config.PDS_URL, config.PDS_ADMIN_PASSWORD)
 const secrets = createSecretBox(config.SECRETS_KEY)
+const premiumOrders = premiumOrderRepo(sql)
 const cooldown = createCooldown({ pds, secrets, repo: cooldownRepo(sql) })
 // созревшие записи уходят в AT раз в минуту — только с основного узла (на standby — та же база по репликации)
 if (config.NODE_ROLE === 'primary') {
   setInterval(() => {
     cooldown.publishDue().then((n) => n && console.log(`cooldown: published ${n}`), (e) => console.error('cooldown', e))
   }, 60_000).unref()
+  // оплаченный срок Premium истёк — снова free
+  const users = userRepo(sql)
+  setInterval(() => {
+    premiumOrders.expired().then(
+      async (dids) => { for (const did of dids) await users.setTier(did, 'free'); if (dids.length) console.log(`premium: expired ${dids.length}`) },
+      (e) => console.error('premium expiry', e),
+    )
+  }, 600_000).unref()
 }
 
 const app = createApp({
@@ -52,6 +61,7 @@ const app = createApp({
   paid: paidRepo(sql),
   developer: developerRepo(sql),
   orders: orderRepo(sql),
+  premiumOrders,
   claims: claimRepo(sql),
   tickets: ticketRepo(sql),
   sessions: sessionRepo(sql),

@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Link } from 'react-router'
 import { ArrowRight, BadgePercent, Ban, Blocks, Check, Clapperboard, Crown, FlaskConical, Gavel, LineChart, Minus, Rocket } from 'lucide-react'
 import { Counter, PerkCard, Press, Reveal, SplitBar, WordReveal } from '@/components/motion/Motion'
 import { useStore } from '@/lib/store'
+import { payments } from '@/lib/api'
 import { SITE_NAME } from '@/config/site'
 import { PREMIUM_PRICE_RUB, PREMIUM_SALE_FEE_PCT, PREMIUM_VOTE_WEIGHT, SALE_FEE_PCT } from '@/config/premium'
 import { formatMoney } from '@/lib/money'
@@ -90,12 +92,30 @@ function Cell({ v }: { v: boolean | string }) {
 export default function PremiumPage() {
   const { user, isPremium } = useStore()
   const price = formatMoney(PREMIUM_PRICE_RUB, 'RUB')
+  const [paying, setPaying] = useState(false)
+  const [payError, setPayError] = useState('')
+  // счёт lava.top на 30 дней; Premium включит вебхук, страница /purchase/:id ждёт подтверждения
+  const buy = async () => {
+    setPaying(true)
+    setPayError('')
+    try {
+      const { paymentUrl } = await payments.premium()
+      if (!paymentUrl) throw new Error('Платёжный сервис не вернул ссылку')
+      window.location.href = paymentUrl
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : 'Не удалось создать счёт')
+      setPaying(false)
+    }
+  }
 
   const cta = isPremium ? (
     <span className="btn-ghost !px-6 !py-3 !text-sm"><Crown size={15} aria-hidden="true" /> У вас Premium</span>
   ) : user ? (
-    <span className="btn-primary !px-6 !py-3 !text-sm opacity-80" aria-disabled="true" title="Оплата Premium подключается">
-      <Crown size={15} aria-hidden="true" /> Оформить за {price}/мес · скоро
+    <span className="flex flex-col items-center gap-2">
+      <button type="button" onClick={() => void buy()} disabled={paying} className="btn-primary !px-6 !py-3 !text-sm">
+        <Crown size={15} aria-hidden="true" /> {paying ? 'Переходим к оплате…' : `Оформить за ${price} / 30 дней`}
+      </button>
+      {payError && <span role="alert" className="text-sm text-destructive">{payError}</span>}
     </span>
   ) : (
     <Link to="/login?returnTo=/premium" className="btn-primary !px-6 !py-3 !text-sm">

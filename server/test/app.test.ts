@@ -10,7 +10,7 @@ import { createSecretBox } from '../src/secretbox.ts'
 import type { Settings, SettingsRepo } from '../src/settings.ts'
 import type { PaidContentRow, PaidRepo } from '../src/paidContent.ts'
 import type { DeveloperRepo, OAuthClientRow, PersonalTokenRow } from '../src/developer.ts'
-import type { LavaClient, LavaInvoiceInfo, OrderRepo, OrderRow } from '../src/lava.ts'
+import type { LavaClient, LavaInvoiceInfo, OrderRepo, OrderRow, PremiumOrderRepo, PremiumOrderRow } from '../src/lava.ts'
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { createStaffVerifier, type AuditEntry, type AuditRepo } from '../src/staff.ts'
 import type { ClaimRepo, ClaimRow } from '../src/claims.ts'
@@ -533,6 +533,32 @@ function memOrders(): OrderRepo {
   }
 }
 
+function memPremiumOrders(): PremiumOrderRepo {
+  const rows = new Map<string, PremiumOrderRow>()
+  const until = (did: string) => Math.max(Date.now(), ...[...rows.values()].filter((r) => r.did === did && r.status === 'paid').map((r) => r.paid_until!.getTime()))
+  return {
+    async insert(o) { rows.set(o.id, { ...o, status: 'pending', created_at: new Date(), paid_at: null, paid_until: null }) },
+    async get(id) { return rows.get(id) },
+    async byContract(c) { return [...rows.values()].find((o) => o.contract_id === c) },
+    async pay(id) {
+      const o = rows.get(id)
+      if (!o || o.status !== 'pending') return undefined
+      o.paid_until = new Date(until(o.did) + o.days * 86_400_000)
+      o.status = 'paid'
+      o.paid_at = new Date()
+      return o
+    },
+    async fail(id) { const o = rows.get(id); if (o?.status === 'pending') o.status = 'failed' },
+    async refund(id) {
+      const o = rows.get(id)
+      if (!o || o.status !== 'paid') return undefined
+      o.status = 'refunded'
+      return { did: o.did, stillPaid: [...rows.values()].some((r) => r.did === o.did && r.status === 'paid' && r.paid_until! > new Date()) }
+    },
+    async expired() { return [] },
+  }
+}
+
 /** lava.top в тестах: счета и их статусы задаёт тест */
 const lavaInvoices = new Map<string, LavaInvoiceInfo>()
 const lavaRequests: Record<string, unknown>[] = []
@@ -749,6 +775,7 @@ function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: bo
     paid: memPaid(),
     developer: memDeveloper(),
     orders: (ordersLast = memOrders()),
+    premiumOrders: memPremiumOrders(),
     claims: memClaims(),
     tickets: memTickets(),
     sessions: memSessions(),
@@ -2191,6 +2218,39 @@ test('lava.top: invoice, forged webhook refused, access only after API confirms,
   assert.equal((await read()).status, 402, 'после возврата статья снова закрыта')
   assert.equal((await (await app.request(`/api/me/purchases/${orderId}`, { headers: auth(reader.accessJwt) })).json()).status, 'refunded')
   assert.ok(auditLog.some((e) => e.action === 'payment.refund' && e.target === orderId))
+})
+
+test('lava.top: Premium for 30 days — invoice, webhook turns it on, renewal adds days, refund turns it off', async () => {
+  const app = makeApp()
+  const auth = (t: string) => ({ authorization: `Bearer ${t}`, 'content-type': 'application/json' })
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'buyprem', email: 'buyprem@example.com' }, '1.1.1.1'))).json()
+  const me = async () => (await (await app.request('/api/me', { headers: auth(u.accessJwt) })).json()).tier
+  const hook = (body: unknown) =>
+    app.request('/api/webhooks/payment', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': 'lava-webhook-secret-0123' }, body: JSON.stringify(body) })
+  const buy = async () => {
+    const r = await app.request('/api/me/premium', { method: 'POST', headers: auth(u.accessJwt), body: '{}' })
+    assert.equal(r.status, 201, await r.clone().text())
+    const { orderId } = await r.json()
+    assert.equal(lavaRequests.at(-1)!.amount, 299)
+    const contractId = [...lavaInvoices.keys()].at(-1)!
+    lavaInvoices.set(contractId, { id: contractId, status: 'COMPLETED', receipt: { amount: 299, currency: 'RUB' } })
+    assert.equal((await hook({ eventType: 'payment.success', contractId, amount: 299, currency: 'RUB' })).status, 200)
+    return { orderId, contractId }
+  }
+  assert.equal(await me(), 'free')
+  const first = await buy()
+  assert.equal(await me(), 'premium')
+  const o1 = await (await app.request(`/api/me/purchases/${first.orderId}`, { headers: auth(u.accessJwt) })).json()
+  assert.equal(o1.status, 'paid')
+  assert.equal(o1.kind, 'premium')
+  const second = await buy()
+  const o2 = await (await app.request(`/api/me/purchases/${second.orderId}`, { headers: auth(u.accessJwt) })).json()
+  assert.ok(new Date(o2.paidUntil).getTime() - new Date(o1.paidUntil).getTime() >= 29 * 86_400_000, 'продление прибавляет срок')
+  // возврат одного из двух: второй срок ещё действует
+  await hook({ event_type: 'refund.success', data: { contract_id: first.contractId } })
+  assert.equal(await me(), 'premium')
+  await hook({ event_type: 'refund.success', data: { contract_id: second.contractId } })
+  assert.equal(await me(), 'free')
 })
 
 test('lava.top: Premium author keeps 99% of a sale, regular — 90%', async () => {

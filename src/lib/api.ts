@@ -593,6 +593,9 @@ export const paidContent = {
 export interface Purchase {
   orderId: string
   status: 'pending' | 'paid' | 'failed' | 'refunded'
+  /** заказ Premium (prm_…): contentId нет, есть срок */
+  kind?: 'premium'
+  paidUntil?: string | null
   contentId: string
   amount: number
   currency: string
@@ -602,6 +605,7 @@ export interface Purchase {
 export const payments = {
   buy: (contentId: string, returnTo: string, paymentMethod?: 'CARD' | 'SBP') =>
     authed<{ orderId: string; paymentUrl: string | null }>('/me/purchases', post({ contentId, returnTo, paymentMethod, utm: lastTouchUtm() })),
+  premium: (paymentMethod?: 'CARD' | 'SBP') => authed<{ orderId: string; paymentUrl: string | null }>('/me/premium', post({ paymentMethod })),
   status: (orderId: string) => authed<Purchase>(`/me/purchases/${encodeURIComponent(orderId)}`),
 }
 

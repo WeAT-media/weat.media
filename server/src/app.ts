@@ -35,7 +35,7 @@ import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource 
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
 import type { AuditRepo, Staff, StaffRole, StaffVerifier } from './staff.js'
-import { mountLavaRoutes, type LavaClient, type OrderRepo } from './lava.js'
+import { mountLavaRoutes, type LavaClient, type OrderRepo, type PremiumOrderRepo } from './lava.js'
 import { createMfaGate, MFA_SESSION_TTL, mountSecurityRoutes, tokenHash } from './securityRoutes.js'
 import type { OAuthClient, OAuthProviderId } from './providers.js'
 import { contourAllows, type GeoLookup } from './geo.js'
@@ -46,7 +46,7 @@ import { SettingsPatch, type SettingsRepo } from './settings.js'
 import { memoryNotificationRepo, mountNotificationRoutes, notificationService, type NotificationService } from './notifications.js'
 
 export interface Deps {
-  config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'LAVA_WEBHOOK_SECRET' | 'ATPROTO_PLC_URL' | 'ATPROTO_ALLOW_HTTP' | 'PDS_HOST' | 'PEER_SECRET'>>
+  config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'PREMIUM_PRICE_RUB' | 'LAVA_WEBHOOK_SECRET' | 'ATPROTO_PLC_URL' | 'ATPROTO_ALLOW_HTTP' | 'PDS_HOST' | 'PEER_SECRET'>>
   users: UserRepo
   settings: SettingsRepo
   notifications?: NotificationService
@@ -56,6 +56,7 @@ export interface Deps {
   /** персональные токены и OAuth-приложения разработчиков */
   developer: DeveloperRepo
   orders: OrderRepo
+  premiumOrders?: PremiumOrderRepo
   claims: ClaimRepo
   tickets: TicketRepo
   sessions: SessionRepo
@@ -318,7 +319,7 @@ export function createApp(deps: Deps) {
   )
   mountLavaRoutes(
     app,
-    { users: d.users, pds: d.pds, paid: d.paid, orders: d.orders, lava: d.lava, offerId: d.config.LAVA_OFFER_ID, webhookSecret: d.config.LAVA_WEBHOOK_SECRET, publicUrl: d.config.PUBLIC_URL, audit: (a, t, x) => audit('break-glass', a, t, x) },
+    { users: d.users, pds: d.pds, paid: d.paid, orders: d.orders, premium: d.premiumOrders ? { orders: d.premiumOrders, priceRub: d.config.PREMIUM_PRICE_RUB ?? 299 } : undefined, lava: d.lava, offerId: d.config.LAVA_OFFER_ID, webhookSecret: d.config.LAVA_WEBHOOK_SECRET, publicUrl: d.config.PUBLIC_URL, audit: (a, t, x) => audit('break-glass', a, t, x) },
     { bearer },
   )
   mountClaimRoutes(app, { users: d.users, pds: d.pds, claims: d.claims }, { bearer, requireStaff, audit })

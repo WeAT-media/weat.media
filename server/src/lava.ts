@@ -108,6 +108,74 @@ export function orderRepo(sql: Sql): OrderRepo {
   }
 }
 
+export interface PremiumOrderRow {
+  id: string
+  contract_id: string | null
+  did: string
+  amount: number
+  currency: string
+  days: number
+  status: 'pending' | 'paid' | 'failed' | 'refunded'
+  created_at: Date
+  paid_at: Date | null
+  paid_until: Date | null
+}
+
+export interface PremiumOrderRepo {
+  insert(o: Pick<PremiumOrderRow, 'id' | 'contract_id' | 'did' | 'amount' | 'currency' | 'days'>): Promise<void>
+  get(id: string): Promise<PremiumOrderRow | undefined>
+  byContract(contractId: string): Promise<PremiumOrderRow | undefined>
+  /** pending → paid: срок продлевается от max(now, последний оплаченный срок); повтор вебхука ничего не меняет */
+  pay(id: string): Promise<PremiumOrderRow | undefined>
+  fail(id: string): Promise<void>
+  /** paid → refunded; возвращает пользователя, если у него не осталось оплаченного срока */
+  refund(id: string): Promise<{ did: string; stillPaid: boolean } | undefined>
+  /** пользователи, у которых оплаченный срок истёк (и нет более нового) — им вернуть free */
+  expired(): Promise<string[]>
+}
+
+export function premiumOrderRepo(sql: Sql): PremiumOrderRepo {
+  return {
+    async insert(o) {
+      await sql`INSERT INTO premium_orders (id, contract_id, did, amount, currency, days) VALUES (${o.id}, ${o.contract_id}, ${o.did}, ${o.amount}, ${o.currency}, ${o.days})`
+    },
+    async get(id) {
+      const [r] = await sql<PremiumOrderRow[]>`SELECT * FROM premium_orders WHERE id = ${id}`
+      return r
+    },
+    async byContract(contractId) {
+      const [r] = await sql<PremiumOrderRow[]>`SELECT * FROM premium_orders WHERE contract_id = ${contractId}`
+      return r
+    },
+    async pay(id) {
+      const [r] = await sql<PremiumOrderRow[]>`
+        UPDATE premium_orders o SET status = 'paid', paid_at = now(),
+          paid_until = GREATEST(now(), COALESCE((SELECT max(p.paid_until) FROM premium_orders p WHERE p.did = o.did AND p.status = 'paid'), now()))
+                       + make_interval(days => o.days)
+        WHERE o.id = ${id} AND o.status = 'pending' RETURNING o.*`
+      return r
+    },
+    async fail(id) {
+      await sql`UPDATE premium_orders SET status = 'failed' WHERE id = ${id} AND status = 'pending'`
+    },
+    async refund(id) {
+      const [r] = await sql<{ did: string }[]>`UPDATE premium_orders SET status = 'refunded' WHERE id = ${id} AND status = 'paid' RETURNING did`
+      if (!r) return undefined
+      const [left] = await sql`SELECT 1 FROM premium_orders WHERE did = ${r.did} AND status = 'paid' AND paid_until > now() LIMIT 1`
+      return { did: r.did, stillPaid: !!left }
+    },
+    async expired() {
+      // только те, кто получил Premium оплатой: выданный сотрудником вручную (без заказов) не трогаем
+      const rows = await sql<{ did: string }[]>`
+        SELECT u.did FROM users u
+        WHERE u.tier = 'premium'
+          AND EXISTS (SELECT 1 FROM premium_orders p WHERE p.did = u.did AND p.status = 'paid')
+          AND NOT EXISTS (SELECT 1 FROM premium_orders p WHERE p.did = u.did AND p.status = 'paid' AND p.paid_until > now())`
+      return rows.map((r) => r.did)
+    },
+  }
+}
+
 export const PurchaseBody = z.object({
   contentId: z.string().startsWith('pc_'),
   /** локальный путь, куда вернуть читателя после оплаты */
@@ -130,6 +198,7 @@ export interface LavaDeps {
   pds: PdsClient
   paid: PaidRepo
   orders: OrderRepo
+  premium?: { orders: PremiumOrderRepo; priceRub: number }
   lava?: LavaClient
   offerId?: string
   webhookSecret?: string
@@ -148,6 +217,9 @@ export function refundContract(raw: unknown): { event: string; contractId: strin
   const pick = (...keys: string[]) => keys.map((k) => data[k] ?? r[k]).find((v) => typeof v === 'string' && v.length > 0) as string | undefined
   return { event, contractId: pick('contract_id', 'contractId', 'parent_contract_id', 'parentContractId', 'invoice_id', 'invoiceId') ?? null, data }
 }
+
+/** оплаченный Premium — 30 дней, затем снова free (продлить — новой оплатой) */
+export const PREMIUM_DAYS = 30
 
 const fail = (code: string, message: string, status: 400 | 401 | 403 | 404 | 409 | 503) => new PdsError(status, code, message)
 
@@ -209,9 +281,41 @@ export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context):
     return c.json({ orderId: id, paymentUrl: invoice.paymentUrl }, 201)
   })
 
+  /** Premium на 30 дней: тот же продукт «цена по запросу API», сумма — PREMIUM_PRICE_RUB. Продлить можно заранее — срок прибавится */
+  app.post('/me/premium', async (c) => {
+    if (!d.lava || !d.offerId || !d.premium) throw fail('PaymentsDisabled', 'Оплата пока не подключена', 503)
+    const { user, email } = await session(c)
+    if (!email) throw fail('EmailRequired', 'Для чека нужен email в аккаунте', 400)
+    const body = (await c.req.json().catch(() => ({}))) as { paymentMethod?: unknown }
+    const sbp = body?.paymentMethod === 'SBP'
+    const id = `prm_${randomBytes(9).toString('base64url')}`
+    const back = new URL(`/purchase/${id}`, d.publicUrl)
+    back.searchParams.set('returnTo', '/after-payments')
+    const returns = back.protocol === 'https:'
+      ? { successful_return_url: back.toString(), failure_return_url: back.toString(), cancel_return_url: back.toString() }
+      : {}
+    const amount = d.premium.priceRub * 100
+    const invoice = await d.lava.createInvoice({
+      email,
+      offerId: d.offerId,
+      currency: 'RUB',
+      amount: toMajor(amount),
+      ...(sbp ? { paymentProvider: 'PAY2ME', paymentMethod: 'SBP' } : {}),
+      buyerLanguage: 'RU',
+      ...returns,
+    })
+    await d.premium.orders.insert({ id, contract_id: invoice.id, did: user.did, amount, currency: 'RUB', days: PREMIUM_DAYS })
+    return c.json({ orderId: id, paymentUrl: invoice.paymentUrl }, 201)
+  })
+
   /** Статус заказа для страницы возврата (читатель ждёт подтверждения вебхука) */
   app.get('/me/purchases/:id', async (c) => {
     const { user } = await session(c)
+    if (c.req.param('id').startsWith('prm_')) {
+      const p = await d.premium?.orders.get(c.req.param('id'))
+      if (!p || p.did !== user.did) throw fail('NotFound', 'Заказ не найден', 404)
+      return c.json({ orderId: p.id, status: p.status, kind: 'premium', paidUntil: p.paid_until, amount: p.amount, currency: p.currency.trim() })
+    }
     const o = await d.orders.get(c.req.param('id'))
     if (!o || o.reader_did !== user.did) throw fail('NotFound', 'Заказ не найден', 404)
     return c.json({ orderId: o.id, status: o.status, contentId: o.content_id, amount: o.amount, currency: o.currency })
@@ -234,6 +338,13 @@ export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context):
       // refund.success / chargeback.*: доступ гасим и заказ выводим из баланса автора; не нашли заказ — в журнал
       const refund = refundContract(raw)
       if (refund) {
+        const prem = refund.contractId ? await d.premium?.orders.byContract(refund.contractId) : undefined
+        if (prem) {
+          const r = await d.premium!.orders.refund(prem.id)
+          if (r && !r.stillPaid) await d.users.setTier(r.did, 'free')
+          await d.audit?.('payment.refund', prem.id, { event: refund.event, premium: true, did: prem.did, amount: prem.amount })
+          return c.json({ ok: true })
+        }
         const order = refund.contractId ? await d.orders.byContract(refund.contractId) : undefined
         if (order) {
           await d.orders.refund(order.id)
@@ -248,6 +359,22 @@ export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context):
         })
         console.warn('lava refund without matching order — see staff audit', refund.event, refund.contractId)
       }
+      return c.json({ ok: true })
+    }
+    const prem = await d.premium?.orders.byContract(ev.data.contractId)
+    if (prem) {
+      if (ev.data.eventType === 'payment.failed') {
+        await d.premium!.orders.fail(prem.id)
+        return c.json({ ok: true })
+      }
+      if (ev.data.eventType !== 'payment.success') return c.json({ ok: true })
+      const inv = await d.lava!.getInvoice(prem.contract_id!)
+      const paid = inv.receipt?.amount
+      if (inv.status !== 'COMPLETED' || paid === undefined || Math.round(paid * 100) < prem.amount || inv.receipt?.currency !== prem.currency.trim()) {
+        console.warn('lava premium payment not confirmed', prem.id, inv.status, paid)
+        return c.json({ error: 'NotConfirmed' }, 503)
+      }
+      if (await d.premium!.orders.pay(prem.id)) await d.users.setTier(prem.did, 'premium')
       return c.json({ ok: true })
     }
     const order = await d.orders.byContract(ev.data.contractId)
