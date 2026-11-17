@@ -410,7 +410,7 @@ const ops: Op[] = [
   },
   {
     method: 'post', path: '/me/articles', tag: 'articles', summary: 'Опубликовать статью или видео', auth: 'bearer',
-    description: 'Статья (media.weat.article) с сайта. Первые 24 ч — период охлаждения: ответ сразу даёт uri (он не изменится), cid пустой, pendingUntil — когда запись уйдёт в AT-репозиторий; до этого правка и удаление — /me/pending. publishAt — отложенный пост: время ухода в AT (не раньше чем через 24 ч); на сайте — за 24 ч до него, раньше видит только автор. draftId — черновик: рецензенты из совместного редактирования попадут в запись. kind=video — с плейлистом videos (native — https-адрес файла, youtube/loom — videoId). Платные — через /me/articles/paid.',
+    description: 'Статья (media.weat.article) с сайта. Первые 24 ч — период охлаждения: ответ сразу даёт uri (он не изменится), cid пустой, pendingUntil — когда запись уйдёт в AT-репозиторий; до этого правка и удаление — /me/pending. publishAt — отложенный пост: время ухода в AT (ровно в это время); на сайте — за 24 ч до него (или сразу, если осталось меньше), раньше видит только автор. draftId — черновик: рецензенты из совместного редактирования попадут в запись. kind=video — с плейлистом videos (native — https-адрес файла, youtube/loom — videoId). Платные — через /me/articles/paid.',
     body: PublishArticleBody, ok: { status: 201, schema: z.object({ uri: z.string(), cid: z.string().describe('пусто, пока запись в охлаждении'), pendingUntil: z.string().optional().describe('когда уйдёт в AT'), visibleAt: z.string().optional().describe('когда выйдет на сайте') }), description: 'Опубликовано (на сайте; в AT — после охлаждения)' },
     errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },

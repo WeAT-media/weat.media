@@ -37,5 +37,7 @@ test('scheduled post: AT at the scheduled time (≥24h), visible on the site 24h
   assert.ok(Math.abs(far!.visible_at.getTime() - (t0 + 48 * H)) < 2000, 'на сайте — за сутки до')
   const soon = await cooldown.hold(s, 'media.weat.article', { title: 'soon' }, new Date(t0 + 2 * H))
   assert.ok(soon!.visible_at.getTime() <= Date.now() + 1000, 'меньше суток — на сайте сразу')
-  assert.ok(soon!.publish_at.getTime() >= t0 + 24 * H - 2000, 'в AT — не раньше чем через сутки')
+  assert.ok(Math.abs(soon!.publish_at.getTime() - (t0 + 2 * H)) < 2000, 'в AT — ровно в назначенное время')
+  const plain = await cooldown.hold(s, 'media.weat.article', { title: 'plain' })
+  assert.ok(plain!.publish_at.getTime() >= t0 + 24 * H - 2000, 'обычная — охлаждение сутки')
 })

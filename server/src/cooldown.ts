@@ -177,8 +177,8 @@ export interface Cooldown {
   ms: number
   /** отложить запись; null — отложить нельзя (вход без пароля PDS) — тогда публикуем сразу */
   /**
-   * scheduledAt — отложенный пост: время ухода в AT (но не раньше чем через ms от сейчас). На сайте запись
-   * появляется за ms до него (охлаждение — последние сутки перед сетью); до этого её видит только автор.
+   * scheduledAt — отложенный пост: время ухода в AT (ровно в назначенное время). На сайте запись появляется за ms
+   * до него (охлаждение — последние сутки перед сетью; если осталось меньше — сразу); до этого видит только автор.
    */
   hold(s: { token: string; did: string; handle: string }, collection: string, record: Record<string, unknown>, scheduledAt?: Date): Promise<PendingRow | null>
   /** один проход публикации созревших записей */
@@ -200,7 +200,10 @@ export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: Co
       }
       const rkey = nextTid()
       const now = Date.now()
-      const publish = Math.max(scheduledAt?.getTime() ?? 0, now + ms)
+      // отложенная — в AT ровно в назначенное время (на сайте — за ms до него или сразу, если осталось меньше);
+      // обычная — через ms (минимальное охлаждение)
+      const scheduled = scheduledAt && scheduledAt.getTime() > now + 60_000 ? scheduledAt.getTime() : null
+      const publish = scheduled ?? now + ms
       const visible = Math.max(now, publish - ms)
       return d.repo.insert({ uri: `at://${s.did}/${collection}/${rkey}`, did: s.did, handle: s.handle, collection, rkey, record, visible_at: new Date(visible), publish_at: new Date(publish) })
     },
