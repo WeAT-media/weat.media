@@ -98,6 +98,7 @@ import MdxBlock from '@/components/MdxBlock'
 import Recommendations from '@/components/Recommendations'
 import { SITE_NAME } from '@/config/site'
 import Block from '@/components/ArticleBlock'
+import ImageZoom from '@/components/ImageZoom'
 import { useLiveLabels } from '@/lib/labels'
 import type { Article, ArticleBlock, Comment, LabelAction } from '@/types/types'
 
@@ -957,6 +958,7 @@ export default function ArticlePage() {
                   </aside>
                 </>
               )}
+              <ImageZoom>
               <div id="article-blocks">
               {bodyLoading && (
                 <div className="mt-6 space-y-3" role="status" aria-label="Загружаем текст статьи">
@@ -979,6 +981,7 @@ export default function ArticlePage() {
                 </div>
               ))}
               </div>
+              </ImageZoom>
               {visibleBlocks.length < 3 && <AdBanner articleUri={article.atUri} />}
               {article.paywall && (
                 <Paywall
