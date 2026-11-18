@@ -46,7 +46,11 @@ export default defineConfig({
           // и вход сайта статически тянет весь BlockSuite
           if (id.includes('commonjsHelpers') || id.includes('preload-helper')) return 'runtime'
           if (!id.includes('node_modules')) return
-          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(shiki|@shikijs)\//.test(id)) return
+          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(shiki|@shikijs)\//.test(id)) {
+            // грамматики и темы — свои ленивые чанки; ядро Shiki — отдельно, иначе оно оседает в чанке
+            // редактора и подсветка кода на странице статьи тянет весь BlockSuite (5+ МБ)
+            return /\/(langs|themes)\/|@shikijs\/(langs|themes)/.test(id) ? undefined : 'shiki'
+          }
           if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(@blocksuite|@toeverything|@lit|lit|lit-html|lit-element|@lit-labs|yjs|lib0|y-protocols)\//.test(id)) return 'blocksuite'
         },
       },
