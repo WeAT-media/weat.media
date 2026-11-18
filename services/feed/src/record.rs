@@ -36,8 +36,10 @@ pub fn ipld_to_json(v: Ipld) -> Value {
 pub struct Article {
     pub title: String,
     pub created_at: DateTime<Utc>,
-    /// когда опубликован оригинал (source.publishedAt у краулера и репоста), иначе created_at;
-    /// по нему ранжирование считает возраст — импорт старой новости не делает её свежей
+    /// когда опубликован оригинал (source.publishedAt у записи краулера — с source.crawledAt), иначе created_at;
+    /// по нему ранжирование считает возраст — импорт старой новости краулером не делает её свежей.
+    /// Перепечатка самим автором (source без crawledAt) — новая публикация на площадке: возраст от created_at,
+    /// иначе статья с датой оригинала двухлетней давности не попадала в «Горячее» вовсе
     pub published_at: DateTime<Utc>,
     pub tags: Vec<String>,
     pub langs: Vec<String>,
@@ -75,7 +77,8 @@ pub fn parse_article(rec: &Value, now: DateTime<Utc>) -> Option<Article> {
             .filter(|d| *d <= now)
     };
     let created_at = past(rec.get("createdAt")).unwrap_or(now);
-    let published_at = past(rec.get("source").and_then(|s| s.get("publishedAt")))
+    let crawled = rec.get("source").and_then(|s| s.get("crawledAt")).is_some();
+    let published_at = past(rec.get("source").filter(|_| crawled).and_then(|s| s.get("publishedAt")))
         .filter(|d| *d <= created_at)
         .unwrap_or(created_at);
     Some(Article {
@@ -184,13 +187,16 @@ mod tests {
                 .unwrap()
                 .video
         );
-        let crawled = parse_article(&json!({ "title": "t", "text": "x", "createdAt": "2026-01-10T00:00:00Z", "source": { "publishedAt": "2026-01-02T00:00:00Z" } }), now).unwrap();
+        let crawled = parse_article(&json!({ "title": "t", "text": "x", "createdAt": "2026-01-10T00:00:00Z", "source": { "publishedAt": "2026-01-02T00:00:00Z", "crawledAt": "2026-01-10T00:00:00Z" } }), now).unwrap();
         assert_eq!(
             crawled.published_at.to_rfc3339(),
             "2026-01-02T00:00:00+00:00"
         );
+        // перепечатка автором (без crawledAt) — свежая публикация на площадке
+        let repost = parse_article(&json!({ "title": "t", "text": "x", "createdAt": "2026-01-10T00:00:00Z", "source": { "url": "https://habr.com/x", "publishedAt": "2024-07-09T00:00:00Z" } }), now).unwrap();
+        assert_eq!(repost.published_at, repost.created_at);
         // оригинал «позже импорта» — подделка или чужие часы: не верим
-        let odd = parse_article(&json!({ "title": "t", "text": "x", "createdAt": "2026-01-10T00:00:00Z", "source": { "publishedAt": "2026-02-01T00:00:00Z" } }), now).unwrap();
+        let odd = parse_article(&json!({ "title": "t", "text": "x", "createdAt": "2026-01-10T00:00:00Z", "source": { "publishedAt": "2026-02-01T00:00:00Z", "crawledAt": "2026-01-10T00:00:00Z" } }), now).unwrap();
         assert_eq!(odd.published_at, odd.created_at);
         let future = parse_article(
             &json!({ "title": "t", "text": "x", "createdAt": "2999-01-01T00:00:00Z" }),
