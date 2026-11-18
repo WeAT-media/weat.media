@@ -20,7 +20,7 @@ import UpvoteButton from '@/components/UpvoteButton'
 import BookmarkButton from '@/components/BookmarkButton'
 import { buildCommentsFeed } from '@/lib/rss'
 import { useArticleTracking } from '@/lib/tracking'
-import { commentAnchor, fetchArticleBody, fetchComments, markdownToBlocks, remoteId } from '@/lib/remoteFeed'
+import { commentAnchor, fetchArticleBody, fetchComments, markdownToBlocks, remoteId, toArticle } from '@/lib/remoteFeed'
 import { hasSession, paidContent, pending as pendingApi } from '@/lib/api'
 import { safeHref } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
@@ -99,7 +99,7 @@ import Recommendations from '@/components/Recommendations'
 import { SITE_NAME } from '@/config/site'
 import Block from '@/components/ArticleBlock'
 import { useLiveLabels } from '@/lib/labels'
-import type { ArticleBlock, Comment, LabelAction } from '@/types/types'
+import type { Article, ArticleBlock, Comment, LabelAction } from '@/types/types'
 
 // локальный демо-ролик (H.264/AAC, 45 c): внешний GCS-бакет BigBuckBunny отдаёт 403
 const DEMO_VIDEO = '/demo-video.mp4'
@@ -141,7 +141,28 @@ export default function ArticlePage() {
   const navigate = useNavigate()
   const videoPlayerRef = useRef<VideoPlayerHandle>(null)
   // после публикации адрес — сетевой id (rkey-хвост DID), а копия в браузере могла сохраниться под локальным u-…
-  const card = articles.find((a) => a.id === id) ?? articles.find((a) => !!a.atUri?.startsWith('at://did:') && remoteId(a.atUri) === id)
+  const listed = articles.find((a) => a.id === id) ?? articles.find((a) => !!a.atUri?.startsWith('at://did:') && remoteId(a.atUri) === id)
+  // своя отложенная (ещё не вышла на сайте) — в ленте её нет: автору берём из /me/pending, как в профиле
+  const [mine, setMine] = useState<{ id: string; article: Article | null } | null>(null)
+  const ownHandle = user?.handle
+  useEffect(() => {
+    if (listed || !id || !ownHandle || !hasSession()) return
+    let alive = true
+    pendingApi.list().then(
+      (r) => {
+        const i = r.items.find((x) => x.uri.includes('/media.weat.article/') && remoteId(x.uri) === id)
+        const did = i?.uri.split('/')[2] ?? ''
+        const a = i ? toArticle({ ...i, cid: '', did, handle: ownHandle, createdAt: i.record.createdAt ?? '', indexedAt: '', likeCount: 0, commentCount: 0 } as never) : null
+        if (alive) setMine({ id, article: a ? { ...a, ...(i?.pendingUntil ? { pendingUntil: i.pendingUntil } : {}) } : null })
+      },
+      () => alive && setMine({ id, article: null }),
+    )
+    return () => {
+      alive = false
+    }
+  }, [listed, id, ownHandle])
+  const card = listed ?? (mine && mine.id === id ? (mine.article ?? undefined) : undefined)
+  const lookingUpOwn = !listed && !!ownHandle && hasSession() && mine?.id !== id
   // лента приходит без текстов: тело статьи подгружаем здесь
   const [full, setFull] = useState<{ id: string; article: typeof card } | null>(null)
   const pendingUri = card?.bodyPending ? card.atUri : undefined
@@ -237,6 +258,7 @@ export default function ArticlePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyId, historyReady])
 
+  if (!article && lookingUpOwn) return <div className="mx-auto max-w-[720px] px-5 py-24 text-center text-muted-foreground">Загрузка…</div>
   if (!article) {
     return (
       <div className="mx-auto max-w-[720px] px-5 py-24 text-center">

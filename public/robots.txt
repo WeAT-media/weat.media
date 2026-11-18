@@ -19,4 +19,4 @@ Allow: /
 
 Host: https://weat.media
 Sitemap: https://weat.media/sitemap.xml
-Agentmap: https://static.weat.media/global/.well-known/ai-catalog.json
+Agentmap: /.well-known/ai-catalog.json
