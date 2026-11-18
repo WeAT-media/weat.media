@@ -115,6 +115,11 @@
 		reverse_proxy appview:8787
 	}
 
+	# Публичные JSON-манифесты для agentic resource discovery не являются встраиваемыми документами.
+	@agent_manifest path /.well-known/ard.json /.well-known/ai-catalog.json
+	header @agent_manifest -X-Frame-Options
+	header @agent_manifest -Content-Security-Policy
+
 	# Карта публичных статей и авторов формируется из того же регионального индекса.
 	@sitemap path /sitemap.xml
 	handle @sitemap {
