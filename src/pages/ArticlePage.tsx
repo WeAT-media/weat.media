@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { lazyPage as lazy } from '@/lib/chunkReload'
-import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, Flag, Gavel, Hourglass, Landmark, LineChart, MessageSquare, PenLine, Rss, Share2, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, FileText, Flag, Gavel, Hourglass, Landmark, LineChart, MessageSquare, PenLine, Rss, Share2, Trash2 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { labelers } from '@/data/mock'
 import { languageName } from '@/data/languages'
@@ -245,6 +245,8 @@ export default function ArticlePage() {
   const [courtCollegium, setCourtCollegium] = useState('')
   const [courtLabel, setCourtLabel] = useState('')
   const [atMetaOpen, setAtMetaOpen] = useState(false)
+  const [movingToDraft, setMovingToDraft] = useState(false)
+  const [openedAt] = useState(Date.now)
   const [copied, setCopied] = useState<string | null>(null)
   // низ текста в зоне видимости = дочитывание
   const endRef = useRef<HTMLDivElement>(null)
@@ -530,7 +532,27 @@ export default function ArticlePage() {
                 <Link to="/docs#cooldown" className="text-accent underline-offset-4 hover:underline">Подробнее</Link>
               </p>
               {isOwnArticle && article.atUri && (
-                <span className="flex gap-2">
+                <span className="flex flex-wrap gap-2">
+                  {article.publishedAtFull && Date.parse(article.publishedAtFull) > openedAt && (
+                    <button
+                      type="button"
+                      disabled={movingToDraft}
+                      onClick={async () => {
+                        setMovingToDraft(true)
+                        try {
+                          await pendingApi.toDraft(article.atUri!)
+                          forgetArticle(article.atUri!)
+                          navigate('/settings/drafts')
+                        } catch (e) {
+                          window.alert(e instanceof Error ? e.message : 'Не удалось вернуть в черновики')
+                          setMovingToDraft(false)
+                        }
+                      }}
+                      className="btn-ghost !px-3 !py-1.5 !text-[11px]"
+                    >
+                      <FileText size={13} aria-hidden="true" /> {movingToDraft ? 'Перенос…' : 'В черновики'}
+                    </button>
+                  )}
                   <Link to={`/compose?${new URLSearchParams({ pending: article.atUri })}`} className="btn-ghost !px-3 !py-1.5 !text-[11px]">
                     <PenLine size={13} aria-hidden="true" /> Редактировать
                   </Link>

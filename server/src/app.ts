@@ -345,7 +345,7 @@ export function createApp(deps: Deps) {
   mountNotificationRoutes(app, { pds: d.pds, users: d.users, notifications }, { bearer })
   mountCommentRoutes(app, { pds: d.pds, feedUrl: d.feedUrl, cooldown: d.cooldown, pending, notifications }, { bearer })
   // маршруты есть всегда (без охлаждения очередь просто пуста)
-  mountCooldownRoutes(app, { pds: d.pds, cooldown: d.cooldown ?? createCooldown({ pds: d.pds, secrets: d.secrets, repo: memCooldown() }) }, { bearer, requireStaff })
+  mountCooldownRoutes(app, { pds: d.pds, cooldown: d.cooldown ?? createCooldown({ pds: d.pds, secrets: d.secrets, repo: memCooldown() }), drafts: d.drafts }, { bearer, requireStaff })
   const shared = d.shared ?? memShared()
   mountSharedRoutes(app, { pds: d.pds, drafts: d.drafts, shared, users: d.users }, { bearer })
   mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown, notifications }, { bearer })

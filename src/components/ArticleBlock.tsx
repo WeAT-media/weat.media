@@ -1,3 +1,4 @@
+import CodeView from '@/components/CodeView'
 import { renderInline } from '@/lib/inline'
 import { safeHref, safeImageSrc } from '@/lib/safeUrl'
 import ArticleCarousel from '@/components/ArticleCarousel'
@@ -27,18 +28,7 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
     // id — якорь для TOC; scroll-mt под sticky-шапку (~64px)
     return <h2 id={id} className="mt-10 scroll-mt-28 text-2xl font-extrabold tracking-tight">{renderInline(block.text)}</h2>
   }
-  if (block.type === 'code') {
-    return (
-      <figure className="my-8">
-        <figcaption className="meta mb-0 rounded-t-md border border-b-0 border-border bg-[hsl(var(--code-bg))] px-4 py-2 text-[hsl(var(--code-muted))]">
-          {block.lang ?? 'code'}
-        </figcaption>
-        <pre className="overflow-x-auto rounded-b-md border border-t-0 border-border bg-[hsl(var(--code-bg))] p-5 text-[13px] leading-relaxed text-[hsl(var(--code-fg))]">
-          <code>{block.text}</code>
-        </pre>
-      </figure>
-    )
-  }
+  if (block.type === 'code') return <CodeView code={block.text} lang={block.lang} />
   if (block.type === 'image') {
     const src = safeImageSrc(block.text)
     if (!src) return null

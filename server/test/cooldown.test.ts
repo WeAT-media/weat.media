@@ -25,7 +25,7 @@ test('pendingSource: own pending + peer contour pending; peer down — own only'
   assert.deepEqual((await own.list('media.weat.article')).map((i) => i.record.title), ['NL'])
 })
 
-test('scheduled post: AT at the scheduled time (≥24h), visible on the site 24h before', async () => {
+test('scheduled post: visible on the site at the scheduled time, AT 24h later', async () => {
   const repo = memCooldown()
   await repo.setCreds('did:plc:a', 'x', 'weat-cooldown')
   const cooldown = createCooldown({ pds: {} as never, secrets: createSecretBox('22'.repeat(32)), repo })
@@ -33,11 +33,12 @@ test('scheduled post: AT at the scheduled time (≥24h), visible on the site 24h
   const H = 3600_000
   const t0 = Date.now()
   const far = await cooldown.hold(s, 'media.weat.article', { title: 'far' }, new Date(t0 + 72 * H))
-  assert.ok(Math.abs(far!.publish_at.getTime() - (t0 + 72 * H)) < 2000, 'в AT — в назначенное время')
-  assert.ok(Math.abs(far!.visible_at.getTime() - (t0 + 48 * H)) < 2000, 'на сайте — за сутки до')
+  assert.ok(Math.abs(far!.visible_at.getTime() - (t0 + 72 * H)) < 2000, 'на сайте — в назначенное время')
+  assert.ok(Math.abs(far!.publish_at.getTime() - (t0 + 96 * H)) < 2000, 'в AT — через сутки после выхода на сайте')
   const soon = await cooldown.hold(s, 'media.weat.article', { title: 'soon' }, new Date(t0 + 2 * H))
-  assert.ok(soon!.visible_at.getTime() <= Date.now() + 1000, 'меньше суток — на сайте сразу')
-  assert.ok(Math.abs(soon!.publish_at.getTime() - (t0 + 2 * H)) < 2000, 'в AT — ровно в назначенное время')
+  assert.ok(Math.abs(soon!.visible_at.getTime() - (t0 + 2 * H)) < 2000, 'даже меньше чем через сутки — в назначенное время')
+  assert.ok(Math.abs(soon!.publish_at.getTime() - (t0 + 26 * H)) < 2000, 'полные сутки охлаждения после выхода')
   const plain = await cooldown.hold(s, 'media.weat.article', { title: 'plain' })
+  assert.ok(plain!.visible_at.getTime() <= Date.now() + 1000, 'обычная — на сайте сразу')
   assert.ok(plain!.publish_at.getTime() >= t0 + 24 * H - 2000, 'обычная — охлаждение сутки')
 })

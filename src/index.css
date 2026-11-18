@@ -656,3 +656,16 @@ main table {
 .meta {
   overflow-wrap: anywhere;
 }
+
+/* код статьи (Shiki, CodeView): светлая тема — цвета light-plus, тёмная — dark-plus из --shiki-dark */
+.code-view { background: #fff; }
+.code-view .shiki { margin: 0; }
+html.dark .code-view { background: #1e1e1e; }
+html.dark .code-view .shiki,
+html.dark .code-view .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+  font-style: var(--shiki-dark-font-style) !important;
+  font-weight: var(--shiki-dark-font-weight) !important;
+  text-decoration: var(--shiki-dark-text-decoration) !important;
+}

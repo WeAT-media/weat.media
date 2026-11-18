@@ -1,7 +1,8 @@
-import { randomInt } from 'node:crypto'
+import { randomBytes, randomInt } from 'node:crypto'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { Sql } from './db.js'
+import { MAX_DRAFTS, type DraftRepo } from './drafts.js'
 import { PdsError, type PdsClient } from './pds.js'
 import type { SecretBox } from './secretbox.js'
 
@@ -187,23 +188,19 @@ export function nextTid(): string {
 }
 
 /**
- * Сроки записи: отложенная — в AT ровно в назначенное время, на сайте за ms до него (или сразу, если осталось
- * меньше); обычная — на сайте сразу, в AT через ms (минимальное охлаждение).
+ * Отложенная запись выходит на сайте в назначенное время и уходит в AT через ms после этого;
+ * обычная видна на сайте сразу и уходит в AT через ms.
  */
 export function cooldownWindow(scheduledAt: Date | undefined | null, ms: number, now = Date.now()): { visible: Date; publish: Date } {
-  const scheduled = scheduledAt && scheduledAt.getTime() > now + 60_000 ? scheduledAt.getTime() : null
-  const publish = scheduled ?? now + ms
-  return { visible: new Date(Math.max(now, publish - ms)), publish: new Date(publish) }
+  const visible = scheduledAt && scheduledAt.getTime() > now + 60_000 ? scheduledAt.getTime() : now
+  return { visible: new Date(visible), publish: new Date(visible + ms) }
 }
 
 export interface Cooldown {
   repo: CooldownRepo
   ms: number
   /** отложить запись; null — отложить нельзя (вход без пароля PDS) — тогда публикуем сразу */
-  /**
-   * scheduledAt — отложенный пост: время ухода в AT (ровно в назначенное время). На сайте запись появляется за ms
-   * до него (охлаждение — последние сутки перед сетью; если осталось меньше — сразу); до этого видит только автор.
-   */
+  /** scheduledAt — время выхода на сайте; в AT запись уйдёт через ms после него. */
   hold(s: { token: string; did: string; handle: string }, collection: string, record: Record<string, unknown>, scheduledAt?: Date): Promise<PendingRow | null>
   /** один проход публикации созревших записей */
   publishDue(): Promise<number>
@@ -250,20 +247,31 @@ export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: Co
   }
 }
 
+const scheduledVisibleAt = (r: PendingRow) => {
+  if (r.collection !== 'media.weat.article' || !r.record.createdAt) return undefined
+  const created = new Date(String(r.record.createdAt)).getTime()
+  if (Math.abs(created - r.publish_at.getTime()) < 2000) return r.publish_at
+  if (r.visible_at.getTime() > r.created_at.getTime() + 60_000 && Math.abs(created - r.visible_at.getTime()) < 2000) return r.visible_at
+  return undefined
+}
+
 /** ждущая запись в форме ответа индекса ленты — сайт показывает её как обычную */
-export const pendingFeedItem = (r: PendingRow) => ({
-  uri: r.uri,
-  cid: '',
-  did: r.did,
-  handle: r.handle,
-  createdAt: String(r.record.createdAt ?? r.created_at.toISOString()),
-  indexedAt: r.created_at.toISOString(),
-  likeCount: 0,
-  commentCount: 0,
-  record: r.record,
-  ...(r.status !== 'published' ? { pendingUntil: r.publish_at.toISOString() } : {}),
-  ...(r.visible_at > new Date() ? { scheduledAt: r.visible_at.toISOString() } : {}),
-})
+export const pendingFeedItem = (r: PendingRow) => {
+  const scheduledAt = scheduledVisibleAt(r)
+  return {
+    uri: r.uri,
+    cid: '',
+    did: r.did,
+    handle: r.handle,
+    createdAt: String(r.record.createdAt ?? r.created_at.toISOString()),
+    indexedAt: r.created_at.toISOString(),
+    likeCount: 0,
+    commentCount: 0,
+    record: r.record,
+    ...(r.status !== 'published' ? { pendingUntil: r.publish_at.toISOString() } : {}),
+    ...(scheduledAt ? { scheduledAt: scheduledAt.toISOString() } : {}),
+  }
+}
 
 const ArticleEdit = z.object({
   title: z.string().trim().min(1).max(300),
@@ -271,14 +279,14 @@ const ArticleEdit = z.object({
   text: z.string().max(200_000),
   excerpt: z.string().trim().max(500).optional(),
   tags: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
-  /** перенести: отложенная дата (время ухода в AT) или null — снять отложенную публикацию */
+  /** перенести выход на сайте (в AT — через 24 ч) или null — снять отложенную публикацию */
   publishAt: z.string().datetime({ offset: true }).nullable().optional(),
 })
 const CommentEdit = z.object({ text: z.string().trim().min(1).max(10_000) })
 
 export function mountCooldownRoutes(
   app: Hono,
-  d: { pds: PdsClient; cooldown: Cooldown },
+  d: { pds: PdsClient; cooldown: Cooldown; drafts: DraftRepo },
   h: { bearer(c: Context): string | undefined; requireStaff(c: Context, role: 'moderator'): Promise<unknown> },
 ) {
   // модерация: всё, что ждёт ухода в AT (и отложенное до выхода), — чтобы успеть поставить метку коллегии.
@@ -328,14 +336,38 @@ export function mountCooldownRoutes(
     const { publishAt, ...fields } = parsed.data as typeof parsed.data & { publishAt?: string | null }
     let record: Record<string, unknown> = { ...row.record, ...fields }
     if (publishAt !== undefined) {
-      // перенос срока: отложить (на сайте — только за сутки до ухода в AT) или снять отложенность
       const w = publishAt ? cooldownWindow(new Date(publishAt), d.cooldown.ms) : cooldownWindow(null, d.cooldown.ms, Math.max(Date.now(), row.created_at.getTime()))
       if (!(await d.cooldown.repo.reschedule(row.uri, w.visible, w.publish))) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')
-      record = { ...record, createdAt: publishAt ? w.publish.toISOString() : record.createdAt }
+      record = { ...record, createdAt: w.visible.toISOString() }
     }
     const updated = await d.cooldown.repo.update(row.uri, record)
     if (!updated) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')
     return c.json(pendingFeedItem(updated))
+  })
+
+  app.post('/me/pending/to-draft', async (c) => {
+    const row = await own(c)
+    if (row.collection !== 'media.weat.article' || row.visible_at <= new Date()) {
+      throw new PdsError(409, 'NotScheduled', 'В черновики можно вернуть только ещё не вышедшую отложенную статью')
+    }
+    if ((await d.drafts.count(row.did)) >= MAX_DRAFTS) throw new PdsError(409, 'TooManyDrafts', `Черновиков больше ${MAX_DRAFTS} — удалите ненужные`)
+    const title = String(row.record.title ?? '')
+    const text = String(row.record.text ?? '')
+    const source = row.record.source as { url?: unknown; publishedAt?: unknown } | undefined
+    const meta: Record<string, unknown> = {
+      step: 1,
+      scheduleMode: 'now',
+      ...(row.record.subtitle ? { subtitle: row.record.subtitle } : {}),
+      ...(Array.isArray(row.record.tags) ? { tags: row.record.tags } : {}),
+      ...(Array.isArray(row.record.langs) && row.record.langs.length ? { language: row.record.langs[0] } : {}),
+      ...(row.record.kind === 'video' ? { kind: 'video', videoMode: 'link', videoDesc: text } : {}),
+      ...(Array.isArray(row.record.videos) ? { videos: row.record.videos } : {}),
+      ...(row.record.noindex === true ? { noindex: true } : {}),
+      ...(typeof source?.url === 'string' ? { republish: true, republishUrl: source.url, ...(typeof source.publishedAt === 'string' ? { republishDate: source.publishedAt } : {}) } : {}),
+    }
+    const draft = await d.drafts.save(row.did, `dr_${randomBytes(9).toString('base64url')}`, title, `# ${title}\n\n${text}`, meta)
+    if (!(await d.cooldown.repo.remove(row.uri))) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')
+    return c.json({ draft: { id: draft.id, title: draft.title, text: draft.text, meta: draft.meta, createdAt: draft.created_at.toISOString(), updatedAt: draft.updated_at.toISOString() } }, 201)
   })
 
   // удалить без следа: в сеть запись не уходила

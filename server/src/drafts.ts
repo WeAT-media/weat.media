@@ -65,7 +65,7 @@ export const DraftDto = z.object({ id: z.string(), title: z.string(), text: z.st
 export const DraftSummaryDto = z.object({ id: z.string(), title: z.string(), excerpt: z.string(), updatedAt: z.string() })
 
 /** больше черновиков у одного автора не держим */
-const MAX_DRAFTS = 200
+export const MAX_DRAFTS = 200
 
 const dto = (r: DraftRow) => ({ id: r.id, title: r.title, text: r.text, meta: r.meta ?? {}, createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString() })
 const fail = (code: string, message: string, status: 400 | 401 | 404 | 409 = 400) => new PdsError(status, code, message)

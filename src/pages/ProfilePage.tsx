@@ -403,7 +403,7 @@ export default function ProfilePage() {
                       const p = a.atUri ? pendingByUri.get(a.atUri) : undefined
                       if (!p?.pendingUntil) return null
                       const fmt = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-                      return p.scheduledAt ? (
+                      return p.scheduledAt && new Date(p.scheduledAt) > new Date() ? (
                         <span className="meta rounded-full border border-dashed border-accent px-2 py-0.5 text-accent" title="Видите только вы">
                           Отложено · на сайте с {fmt(p.scheduledAt)} · в AT {fmt(p.pendingUntil)}
                         </span>

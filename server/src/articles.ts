@@ -62,7 +62,7 @@ export const PublishArticleBody = z
           .optional(),
       })
       .optional(),
-    /** отложенный пост: время ухода в AT; на сайте — за 24 ч до него (период охлаждения), раньше — только автору */
+    /** отложенный пост: время выхода на сайте; в AT — через 24 ч после него */
     publishAt: z.string().datetime({ offset: true }).optional(),
   })
   .refine((b) => b.kind === 'text' || b.videos.length > 0, 'у видео-записи нужен хотя бы один ролик')
@@ -110,7 +110,7 @@ export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: Shar
       }
     }
     const scheduledAt = parsed.data.publishAt ? new Date(parsed.data.publishAt) : undefined
-    // createdAt — момент публикации в сети: назначенное время (не раньше конца минимального охлаждения)
+    // createdAt — момент выхода на сайте: назначенное время или текущее
     const record = articleRecord(parsed.data, scheduledAt && scheduledAt > new Date() ? scheduledAt : new Date(), reviewers)
     // период охлаждения: 24 ч запись только на сайте — автор правит или удаляет без следа в сети
     const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, record, scheduledAt) : null

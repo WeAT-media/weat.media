@@ -2616,7 +2616,7 @@ test('yandex: existing duplicate in this contour — the older account (peer) wi
   assert.equal(s.user.did, nlUser.user.did)
 })
 
-test('cooldown: rescheduling a visible post hides it until 24h before the new time', async () => {
+test('cooldown: rescheduling sets the site date and keeps a full 24h before AT', async () => {
   const app = makeApp({ cooldown: true, ipCountry: { '5.1.1.1': 'DE' } })
   const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'resched', email: 'rs@example.com' }, '5.1.1.1'))).json()
   const H = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
@@ -2629,7 +2629,33 @@ test('cooldown: rescheduling a visible post hides it until 24h before the new ti
   assert.notEqual((await page()).status, 200, 'отложена на 3 дня — гостю не видна')
   const mine = await (await app.request('/api/me/pending', { headers: H })).json()
   const item = mine.items.find((i: { uri: string }) => i.uri === res.uri)
-  assert.ok(item.scheduledAt, 'автор видит, когда выйдет на сайте')
-  assert.equal(item.pendingUntil, at, 'в AT — в новое время')
+  assert.equal(item.scheduledAt, at, 'на сайте — в назначенное время')
+  assert.equal(item.pendingUntil, new Date(new Date(at).getTime() + cooldownLast!.ms).toISOString(), 'в AT — после полного охлаждения на сайте')
   assert.equal(item.record.createdAt, at)
+})
+
+test('cooldown: an unpublished scheduled article returns to drafts without reaching AT', async () => {
+  const app = makeApp({ cooldown: true, ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'backtodraft', email: 'bd@example.com' }, '5.1.1.1'))).json()
+  const H = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
+  const at = new Date(Date.now() + 72 * 3600_000).toISOString()
+  const res = await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'Пока отложена', subtitle: 'Подзаголовок', text: 'Текст статьи', tags: ['тест'], publishAt: at }) })).json()
+  const q = `?uri=${encodeURIComponent(res.uri)}`
+  const before = published.length
+  const moved = await app.request(`/api/me/pending/to-draft${q}`, { method: 'POST', headers: H })
+  assert.equal(moved.status, 201)
+  const { draft } = await moved.json()
+  assert.equal(draft.title, 'Пока отложена')
+  assert.equal(draft.text, '# Пока отложена\n\nТекст статьи')
+  assert.equal(draft.meta.subtitle, 'Подзаголовок')
+  assert.equal(draft.meta.scheduleMode, 'now')
+  assert.equal((await app.request(`/api/feed/article${q}`)).status, 404, 'снята с отложенной публикации')
+  assert.equal((await app.request(`/api/me/pending${q}`, { method: 'DELETE', headers: H })).status, 404)
+  const drafts = await (await app.request('/api/me/drafts', { headers: H })).json()
+  assert.equal(drafts.drafts[0].id, draft.id)
+  assert.equal(published.length, before, 'в репозиторий ничего не ушло')
+
+  const visible = await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'Уже видна', text: 'текст' }) })).json()
+  const refuse = await app.request(`/api/me/pending/to-draft?uri=${encodeURIComponent(visible.uri)}`, { method: 'POST', headers: H })
+  assert.equal(refuse.status, 409, 'опубликованную на сайте запись нельзя скрыть в черновики')
 })

@@ -170,15 +170,14 @@ export default function ComposePage() {
         const r = a.record ?? {}
         setTitle(r.title ?? '')
         setBodyText(`# ${r.title ?? ''}\n\n${r.text ?? ''}`)
-        // отложенная — у неё createdAt = время ухода в AT; в поле — местное время
-        const until = a.pendingUntil ? new Date(a.pendingUntil) : null
-        const scheduled = !!until && !!r.createdAt && Math.abs(new Date(r.createdAt).getTime() - until.getTime()) < 120_000
+        const visibleAt = a.scheduledAt ? new Date(a.scheduledAt) : null
+        const scheduled = !!visibleAt && !Number.isNaN(visibleAt.getTime())
         wasScheduled.current = scheduled
         setLoadedMeta({
           subtitle: r.subtitle ?? '',
           tags: r.tags ?? [],
           step: 1,
-          ...(scheduled && until ? { scheduleMode: 'later', publishAtInput: new Date(until.getTime() - until.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) } : {}),
+          ...(scheduled && visibleAt ? { scheduleMode: 'later', publishAtInput: new Date(visibleAt.getTime() - visibleAt.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) } : {}),
         })
       })
       .catch(() => {})
@@ -1289,7 +1288,7 @@ export default function ComposePage() {
                   />
                   {errors.publishAt && <p className="mt-2 text-sm text-destructive">{errors.publishAt}</p>}
                   <p className="meta mt-2">
-                    в это время статья уйдёт в сеть AT; на сайте она появится за 24 часа до него (период охлаждения), до этого её видите только вы
+                    в это время статья выйдет на сайте; в сеть AT она уйдёт через 24 часа после выхода (период охлаждения), до этого её видите только вы
                   </p>
                 </div>
               )}

@@ -62,7 +62,7 @@ const TAGS = {
   },
   articles: {
     name: 'Статьи',
-    description: 'Публикация с сайта (сессия) и чтение статей. Текст — markdown, формат и свои блоки описаны в разделе «Формат текста статьи». Статьи с сайта первые 24 ч в периоде охлаждения: видны только на weat.media, правятся и удаляются через /me/pending, потом уходят в AT-репозиторий автора по тому же at:// адресу. publishAt — отложенный пост: время ухода в AT, на сайте — за 24 ч до него. Публикация токеном (/v1/articles) идёт в репозиторий сразу.',
+    description: 'Публикация с сайта (сессия) и чтение статей. Текст — markdown, формат и свои блоки описаны в разделе «Формат текста статьи». Статьи с сайта первые 24 ч в периоде охлаждения: видны только на weat.media, правятся и удаляются через /me/pending, потом уходят в AT-репозиторий автора по тому же at:// адресу. publishAt — отложенный пост: время выхода на сайте, в AT — через 24 ч после него. Публикация токеном (/v1/articles) идёт в репозиторий сразу.',
   },
   publicApi: {
     name: 'Публичный API (v1)',
@@ -429,7 +429,7 @@ const ops: Op[] = [
   },
   {
     method: 'post', path: '/me/articles', tag: 'articles', summary: 'Опубликовать статью или видео', auth: 'bearer',
-    description: 'Статья (media.weat.article) с сайта. Первые 24 ч — период охлаждения: ответ сразу даёт uri (он не изменится), cid пустой, pendingUntil — когда запись уйдёт в AT-репозиторий; до этого правка и удаление — /me/pending. publishAt — отложенный пост: время ухода в AT (ровно в это время); на сайте — за 24 ч до него (или сразу, если осталось меньше), раньше видит только автор. draftId — черновик: рецензенты из совместного редактирования попадут в запись. kind=video — с плейлистом videos (native — https-адрес файла, youtube/loom — videoId). Платные — через /me/articles/paid.',
+    description: 'Статья (media.weat.article) с сайта. Первые 24 ч — период охлаждения: ответ сразу даёт uri (он не изменится), cid пустой, pendingUntil — когда запись уйдёт в AT-репозиторий; до этого правка и удаление — /me/pending. publishAt — отложенный пост: время выхода на сайте, в AT — ровно через 24 ч после него; до выхода на сайте видит только автор. draftId — черновик: рецензенты из совместного редактирования попадут в запись. kind=video — с плейлистом videos (native — https-адрес файла, youtube/loom — videoId). Платные — через /me/articles/paid.',
     body: PublishArticleBody, ok: { status: 201, schema: z.object({ uri: z.string(), cid: z.string().describe('пусто, пока запись в охлаждении'), pendingUntil: z.string().optional().describe('когда уйдёт в AT'), visibleAt: z.string().optional().describe('когда выйдет на сайте') }), description: 'Опубликовано (на сайте; в AT — после охлаждения)' },
     errors: [[400, 'InvalidRequest'], [401, 'AuthenticationRequired']],
   },
@@ -577,6 +577,7 @@ const ops: Op[] = [
   // ── период охлаждения: 24 ч запись только на сайте, потом — в репозиторий автора по тому же адресу
   { method: 'get', path: '/me/pending', tag: 'articles', summary: 'Мои записи в периоде охлаждения', auth: 'bearer', description: 'Статьи и комментарии, которые ещё не ушли в AT (pendingUntil — когда уйдут; scheduledAt — отложенный пост ещё не вышел на сайте).', ok: { status: 200, schema: z.object({ items: z.array(z.record(z.string(), z.unknown())) }), description: 'Ждущие записи' } },
   { method: 'put', path: '/me/pending', tag: 'articles', summary: 'Исправить запись в охлаждении', auth: 'bearer', query: { uri: { description: 'at://… записи', required: true } }, description: 'Статья: title, subtitle, text, excerpt, tags. Комментарий: text. После ухода в AT — 409.', body: z.record(z.string(), z.unknown()), ok: { status: 200, schema: z.record(z.string(), z.unknown()), description: 'Обновлённая запись' }, errors: [[404, 'NotFound'], [409, 'AlreadyPublished']] },
+  { method: 'post', path: '/me/pending/to-draft', tag: 'articles', summary: 'Вернуть отложенную статью в черновики', auth: 'bearer', query: { uri: { description: 'at://… статьи', required: true } }, description: 'Только ещё не вышедшая на сайте статья. Создаёт личный черновик и снимает запись с публикации; в AT ничего не уходит.', ok: { status: 201, schema: z.object({ draft: z.record(z.string(), z.unknown()) }), description: 'Черновик создан' }, errors: [[404, 'NotFound'], [409, 'NotScheduled']] },
   { method: 'delete', path: '/me/pending', tag: 'articles', summary: 'Удалить запись в охлаждении без следа', auth: 'bearer', query: { uri: { description: 'at://… записи', required: true } }, ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалена — в сеть не уходила' }, errors: [[404, 'NotFound'], [409, 'AlreadyPublished']] },
   { method: 'get', path: '/admin/cooldown', tag: 'admin', summary: 'Очередь охлаждения (модерация)', auth: 'staff', description: 'Роль moderator. Все ждущие записи, включая отложенные до выхода. Только просмотр; метка — POST /admin/labels по тому же at:// адресу.', ok: { status: 200, schema: z.object({ items: z.array(z.record(z.string(), z.unknown())) }), description: 'Очередь' } },
   // ── совместное редактирование черновика по ссылке (24 ч, только для вошедших)
