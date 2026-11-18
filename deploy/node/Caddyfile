@@ -285,16 +285,28 @@ www.{$PDS_HANDLE_DOMAIN} {
 	import security_headers
 	encode zstd gzip
 	header Access-Control-Allow-Origin "https://{$PDS_HANDLE_DOMAIN}"
-	@cdn_assets path /global/assets/* /ru/assets/*
-	vars @cdn_assets cdn_cache_control "public, max-age=31536000, immutable"
-	@cdn_fonts path /global/fonts/* /ru/fonts/*
-	vars @cdn_fonts cdn_cache_control "public, max-age=86400"
-	header Cache-Control "{http.vars.cdn_cache_control}" defer
+	@cdn_global_assets path /global/assets/*
+	handle @cdn_global_assets {
+		uri replace /global/ /
+		reverse_proxy https://nl-1.weat.media {
+			header_up Host {upstream_hostport}
+			header_down Cache-Control "public, max-age=31536000, immutable"
+		}
+	}
+	@cdn_ru_assets path /ru/assets/*
+	handle @cdn_ru_assets {
+		uri replace /ru/ /
+		reverse_proxy https://ru.weat.media {
+			header_up Host {upstream_hostport}
+			header_down Cache-Control "public, max-age=31536000, immutable"
+		}
+	}
 	@cdn_global path /global/*
 	handle @cdn_global {
 		uri replace /global/ /
 		reverse_proxy https://nl-1.weat.media {
 			header_up Host {upstream_hostport}
+			header_down Cache-Control "public, max-age=86400"
 		}
 	}
 	@cdn_ru path /ru/*
@@ -302,6 +314,7 @@ www.{$PDS_HANDLE_DOMAIN} {
 		uri replace /ru/ /
 		reverse_proxy https://ru.weat.media {
 			header_up Host {upstream_hostport}
+			header_down Cache-Control "public, max-age=86400"
 		}
 	}
 	handle {
