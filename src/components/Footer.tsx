@@ -19,7 +19,7 @@ export default function Footer() {
       <div className="mx-auto flex max-w-[1200px] flex-col gap-6 px-5 py-12 md:flex-row md:items-start md:justify-between md:gap-10 md:px-8">
         <div>
           <WheatMark className="h-16 w-16" stemClass="text-primary-foreground" />
-          <p className="mt-3 text-2xl font-extrabold tracking-tight"><BrandName /></p>
+          <p className="mt-3 text-2xl font-extrabold tracking-tight"><BrandName accentClassName="text-primary-foreground" /></p>
           <p className="mt-3 max-w-[52ch] text-sm leading-relaxed text-primary-foreground/70">{t('footerMission')}</p>
         </div>
         <nav aria-label={t('platform')} className={`${col} whitespace-nowrap`}>
@@ -30,7 +30,7 @@ export default function Footer() {
           <Link to="/atmosphere" className={link}>{t('atmosphere')}</Link>
           <a href="https://atproto.com/" target="_blank" rel="noopener noreferrer" className={link}>AT Protocol ↗</a>
           <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer" className={link}>{t('sourceCode')}</a>
-          <span className="mt-2 text-primary-foreground/45">{t('openCases', open)}</span>
+          <span className="mt-2 text-primary-foreground/70">{t('openCases', open)}</span>
         </nav>
         <nav aria-label={t('partners')} className={`${col} whitespace-nowrap`}>
           <span className="text-primary-foreground">{t('partners')}</span>

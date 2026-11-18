@@ -1,12 +1,14 @@
 <!doctype html>
 <html lang="ru">
   <head>
-    <script src="/theme-init.js"></script>
+    <script>(function(){var pref="system";try{var s=JSON.parse(localStorage.getItem("indie-media:v1")||"null");if(s&&s.user&&s.prefs&&s.prefs.appearanceSet&&s.prefs.appearance)pref=s.prefs.appearance}catch(e){}var dark=pref==="dark"||pref==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches;var root=document.documentElement;root.classList.toggle("dark",dark);root.dataset.theme=dark?"dark":"light";root.style.colorScheme=dark?"dark":"light"})()</script>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preload" href="%VITE_STATIC_URL%fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="%VITE_STATIC_URL%fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
     <title>%VITE_SITE_NAME% — свободное медиа</title>
     <meta name="description" content="Независимое медиа на AT Protocol: публикуйте статьи и видео, получайте до 99% с продаж и сохраняйте свою аудиторию при переезде." />
     <meta name="robots" content="index, follow, max-image-preview:large" />
@@ -28,12 +30,6 @@
     <meta name="twitter:description" content="Медиа на открытом протоколе AT: ваш аккаунт и тексты принадлежат вам." />
     <meta name="twitter:image" content="%VITE_SITE_URL%/og-image.png" />
     <meta name="twitter:image:alt" content="weAT.media — свободное медиа" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:ital,wght@0,400;0,600;0,700;1,400&display=swap"
-      rel="stylesheet"
-    />
     <!--
       Speculation Rules: браузер заранее загружает страницы, на которые вот-вот перейдут (наведение, нажатие).
       Для SPA это полные переходы (ссылки извне, новая вкладка не в счёт); переходы внутри сайта

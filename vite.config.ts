@@ -10,12 +10,12 @@ if (process.env.VITE_SITE_NAME === 'ATProto media') delete process.env.VITE_SITE
 process.env.VITE_SITE_NAME ??= 'weAT.media'
 // абсолютный адрес нужен соцсетям для картинки превью (og:image)
 process.env.VITE_SITE_URL ??= 'https://weat.media'
+process.env.VITE_STATIC_URL ??= '/'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // SPA раздаётся с корня домена: относительный base ломал прямые заходы на
-  // вложенные роуты (/case/c114 → /case/assets/… 404 → пустая страница)
-  base: '/',
+  // В production JS/CSS и динамические чанки отдаёт CDN; локально — корень домена.
+  base: process.env.VITE_STATIC_URL,
   plugins: [process.env.NODE_ENV === 'development' ? inspectAttr() : null, react(), siteVerification()],
   server: {
     port: 3000,
@@ -46,10 +46,6 @@ export default defineConfig({
           // и вход сайта статически тянет весь BlockSuite
           if (id.includes('commonjsHelpers') || id.includes('preload-helper')) return 'runtime'
           if (!id.includes('node_modules')) return
-          // зависимости редактора, которые нужны и сайту (всплывающие окна Radix — floating-ui и др.): свой чанк,
-          // иначе Rollup забирает их в blocksuite и страницы без редактора тянут его целиком
-          const shared = /node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(@floating-ui|date-fns|dompurify|zod|nanoid)\//.exec(id)
-          if (shared) return `vendor-${shared[1]!.replace('@', '')}`
           if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(shiki|@shikijs)\//.test(id)) return
           if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(@blocksuite|@toeverything|@lit|lit|lit-html|lit-element|@lit-labs|yjs|lib0|y-protocols)\//.test(id)) return 'blocksuite'
         },

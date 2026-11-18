@@ -1,10 +1,13 @@
+import { Suspense } from 'react'
 import { Link, NavLink } from 'react-router'
 import { LogIn, LogOut, PenLine, Crown } from 'lucide-react'
 import { useStore } from '@/lib/store'
-import NotificationsMenu from '@/components/NotificationsMenu'
+import { lazyPage } from '@/lib/chunkReload'
 import BrandName from '@/components/BrandName'
 import WheatMark from '@/components/WheatMark'
 import { useI18n } from '@/lib/i18n'
+
+const NotificationsMenu = lazyPage(() => import('@/components/NotificationsMenu'))
 
 const navItems = [
   { to: '/feed', label: 'feed' },
@@ -34,7 +37,7 @@ export default function Header() {
           ))}
         </nav>
         <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-3">
-          {user && <NotificationsMenu />}
+          {user && <Suspense fallback={null}><NotificationsMenu /></Suspense>}
           {user ? (
             <>
               <Link to={`/profile/${user.handle}`} title={t('yourProfile')} className="hidden items-center gap-1.5 rounded-full border border-border px-3 py-1.5 font-mono text-[12px] font-semibold transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:inline-flex">
@@ -43,9 +46,9 @@ export default function Header() {
               <button onClick={logout} aria-label={t('logout')} title={t('logout')} className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border text-foreground transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><LogOut size={14} aria-hidden="true" /></button>
             </>
           ) : (
-            <Link to="/login" className="btn-ghost !px-4 !py-2"><LogIn size={14} aria-hidden="true" /><span className="hidden sm:inline">{t('login')}</span></Link>
+            <Link to="/login" aria-label={t('login')} className="btn-ghost !px-4 !py-2"><LogIn size={14} aria-hidden="true" /><span className="hidden sm:inline">{t('login')}</span></Link>
           )}
-          <Link to="/compose" className="btn-primary !px-4 !py-2"><PenLine size={14} aria-hidden="true" /><span className="hidden sm:inline">{t('write')}</span></Link>
+          <Link to="/compose" aria-label={t('write')} className="btn-primary !px-4 !py-2"><PenLine size={14} aria-hidden="true" /><span className="hidden sm:inline">{t('write')}</span></Link>
         </div>
       </div>
     </header>

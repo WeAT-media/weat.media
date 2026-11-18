@@ -43,7 +43,7 @@ function TickerList({ events, hidden }: { events: TickerEvent[]; hidden?: boolea
           >
             <ev.icon size={12} className="shrink-0 text-accent" aria-hidden="true" />
             {ev.text}
-            <span className="text-muted-foreground/70">· {ev.date}</span>
+            <span>· {ev.date}</span>
           </Link>
           <span className="h-1 w-1 shrink-0 rounded-full bg-border" aria-hidden="true" />
         </li>
@@ -108,14 +108,14 @@ export default function EventTicker() {
     return list.sort((x, y) => y.date.localeCompare(x.date)).slice(0, MAX_EVENTS)
   }, [articles, cases, extraComments, t])
 
-  if (events.length === 0 || prefs.hideTicker) return null
+  if (prefs.hideTicker) return null
 
   return (
-    <section aria-label={t.ariaLabel} className="ticker border-b border-border bg-secondary/60">
-      <div className="ticker-track">
+    <section aria-label={t.ariaLabel} className="ticker h-[37px] border-b border-border bg-secondary/60">
+      {events.length > 0 && <div className="ticker-track">
         <TickerList events={events} />
         <TickerList events={events} hidden />
-      </div>
+      </div>}
     </section>
   )
 }

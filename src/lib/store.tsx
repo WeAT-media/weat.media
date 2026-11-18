@@ -251,6 +251,7 @@ function loadPersisted(): Persisted {
     ai: { openrouterKey: '', model: 'openrouter/free' },
   }
   try {
+    if (typeof localStorage === 'undefined') return defaults
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaults
     const data = { ...defaults, ...JSON.parse(raw) }

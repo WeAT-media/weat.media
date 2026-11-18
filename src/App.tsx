@@ -10,13 +10,14 @@ import ScrollToTop from '@/components/ScrollToTop'
 import BuildWatcher from '@/components/BuildWatcher'
 import Footer from '@/components/Footer'
 import EventTicker from '@/components/EventTicker'
-import Feed from '@/pages/Feed'
 import { I18nProvider } from '@/lib/i18n'
 import SkipLink from '@/components/SkipLink'
 import SeoManager from '@/components/SeoManager'
+import LandingPage from '@/pages/LandingPage'
 
-// страницы — отдельными чанками: лента (главный вход) не ждёт код редактора, админки и т. п.
-const LandingPage = lazy(() => import('@/pages/LandingPage'))
+// Главная входит в исходный бандл: отдельный запрос за ней задерживал первую отрисовку.
+// Остальные страницы — отдельными чанками, код редактора и админки не загружается заранее.
+const Feed = lazy(() => import('@/pages/Feed'))
 const HotPage = lazy(() => import('@/pages/HotPage'))
 const CollectionsPage = lazy(() => import('@/pages/CollectionsPages').then((m) => ({ default: m.CollectionsPage })))
 const CollectionPage = lazy(() => import('@/pages/CollectionsPages').then((m) => ({ default: m.CollectionPage })))
