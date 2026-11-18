@@ -786,8 +786,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : [],
           })
         }
+        const publishedId = remote ? remoteId(remote.uri) : article.id
         setPersisted((prev) => ({
           ...prev,
+          extraCollections: article.collectionId
+            ? prev.extraCollections.map((collection) =>
+                collection.id === article.collectionId && !collection.articleIds.includes(publishedId)
+                  ? { ...collection, articleIds: [...collection.articleIds, publishedId] }
+                  : collection,
+              )
+            : prev.extraCollections,
           extraArticles: [
             {
               ...article,

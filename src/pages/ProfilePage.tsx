@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, AtSign, CircleHelp, BadgeCheck, Bell, BellRing, Bookmark, Check, Copy, Crown, Flag, Rss, UserPlus, UserCheck, X } from 'lucide-react'
+import { ArrowLeft, AtSign, CircleHelp, BadgeCheck, Bell, BellRing, Bookmark, Check, Copy, Crown, Flag, FolderPlus, Rss, UserPlus, UserCheck, X } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { profileMetaSeed } from '@/data/profiles'
 import { languageName } from '@/data/languages'
@@ -37,10 +37,13 @@ function CountryHelp({ what }: { what: string }) {
 export default function ProfilePage() {
   const { id = '' } = useParams()
   const {
-    articles, collections, cases, caseStats, user, following, toggleFollow, authorSubscriptions, toggleAuthorSubscription, bookmarks, toggleBookmark,
+    articles, collections, cases, caseStats, user, following, toggleFollow, authorSubscriptions, toggleAuthorSubscription, bookmarks, toggleBookmark, createCollection,
   } = useStore()
   const [tab, setTab] = useState<'posts' | 'comments' | 'collections' | 'cases' | 'bookmarks'>('posts')
   const [copied, setCopied] = useState(false)
+  const [collectionTitle, setCollectionTitle] = useState('')
+  const [collectionDescription, setCollectionDescription] = useState('')
+  const [collectionError, setCollectionError] = useState('')
   const [remoteProfile, setRemoteProfile] = useState<ApiUser | null>(null)
   /** для какого адреса сервер уже ответил — до ответа вместо 404 показываем загрузку */
   const [lookedUp, setLookedUp] = useState<string | null>(null)
@@ -151,6 +154,18 @@ export default function ProfilePage() {
   // дела, связанные со статьями автора; роль присяжного в данных не смоделирована
   const authorCases = cases.filter((c) => posts.some((p) => p.id === c.articleId))
   const bookmarkedArticles = articles.filter((a) => bookmarks.includes(a.id))
+
+  const onCreateCollection = (e: FormEvent) => {
+    e.preventDefault()
+    if (collectionTitle.trim().length < 3) {
+      setCollectionError('Название короткое — минимум 3 символа.')
+      return
+    }
+    createCollection(collectionTitle.trim(), collectionDescription.trim())
+    setCollectionTitle('')
+    setCollectionDescription('')
+    setCollectionError('')
+  }
 
   const copyDid = async () => {
     try {
@@ -466,8 +481,38 @@ export default function ProfilePage() {
         </section>
       ) : tab === 'collections' ? (
         <section aria-label="Подборки автора" className="mt-6">
+          {isSelf && (
+            <form onSubmit={onCreateCollection} className="mb-8 border border-border bg-secondary/40 p-5" noValidate>
+              <p className="meta inline-flex items-center gap-1.5">
+                <FolderPlus size={12} aria-hidden="true" /> Новая подборка
+              </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_2fr_auto]">
+                <input
+                  value={collectionTitle}
+                  onChange={(e) => {
+                    setCollectionTitle(e.target.value)
+                    if (collectionError) setCollectionError('')
+                  }}
+                  placeholder="Название"
+                  aria-label="Название подборки"
+                  aria-describedby={collectionError ? 'collection-error' : undefined}
+                  className="rounded-md border border-input bg-background px-4 py-2.5 text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <input
+                  value={collectionDescription}
+                  onChange={(e) => setCollectionDescription(e.target.value)}
+                  placeholder="Описание (необязательно)"
+                  aria-label="Описание подборки"
+                  className="rounded-md border border-input bg-background px-4 py-2.5 text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <button type="submit" className="btn-primary !py-2">Создать</button>
+              </div>
+              {collectionError && <p id="collection-error" role="alert" className="mt-2 text-sm text-destructive">{collectionError}</p>}
+              <p className="meta mt-3 !normal-case tracking-normal">Добавить статьи можно на втором шаге публикации.</p>
+            </form>
+          )}
           {cols.length === 0 ? (
-            <p className="rule py-10 text-muted-foreground">Подборок пока нет.</p>
+            <p className="rule py-10 text-muted-foreground">Подборок пока нет{isSelf ? ' — создайте первую выше' : ''}.</p>
           ) : (
             cols.map((c) => {
               const count = c.articleIds.filter((aid) => articles.some((a) => a.id === aid)).length
