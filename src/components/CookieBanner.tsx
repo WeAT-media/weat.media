@@ -22,7 +22,7 @@ export default function CookieBanner() {
       <p id="cookie-description" className="text-sm leading-relaxed">
         Мы используем только необходимое хранилище браузера: вход, настройки, история. Рекламных cookie нет. С вашего
         разрешения считаем анонимную статистику просмотров и запоминаем, по какой ссылке вы пришли (UTM).{' '}
-        <Link to="/legal/cookies" className="text-accent hover:underline">Подробнее</Link>
+        <Link to="/legal/cookies" className="text-accent underline underline-offset-2">Подробнее</Link>
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" onClick={() => setConsent('analytics')} className="btn-primary !px-4 !py-2">
