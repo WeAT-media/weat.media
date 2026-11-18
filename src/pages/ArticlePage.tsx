@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { Suspense, useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { lazyPage as lazy } from '@/lib/chunkReload'
 import { ArrowLeft, Bell, BellOff, CircleHelp, Clapperboard, Copy, Eye, EyeOff, Flag, Gavel, Hourglass, Landmark, LineChart, MessageSquare, PenLine, Rss, Share2, Trash2 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { labelers } from '@/data/mock'
@@ -23,7 +24,6 @@ import { commentAnchor, fetchArticleBody, fetchComments, markdownToBlocks, remot
 import { hasSession, paidContent, pending as pendingApi } from '@/lib/api'
 import { safeHref } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
-import BlocksEditor from '@/components/BlocksEditor'
 import CollegiumIcon from '@/components/CollegiumIcon'
 import ArticleToc from '@/components/ArticleToc'
 import { tocFromBlocks } from '@/lib/toc'
@@ -35,6 +35,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+
+const BlocksEditor = lazy(() => import('@/components/BlocksEditor'))
 
 /** Компактный BlockSuite-редактор для комментариев: markdown-сериализация, submit/cancel */
 function CommentComposer({
@@ -52,7 +54,9 @@ function CommentComposer({
   return (
     <div>
       <p className="meta mb-2">{label}</p>
-      <BlocksEditor compact value="" onChange={setMd} />
+      <Suspense fallback={<p className="meta" role="status">Загружаем редактор…</p>}>
+        <BlocksEditor compact value="" onChange={setMd} />
+      </Suspense>
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       <div className="mt-3 flex gap-2">
         <button

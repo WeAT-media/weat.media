@@ -1,0 +1,31 @@
+{
+  "specVersion": "1.0",
+  "entries": [
+    {
+      "identifier": "urn:air:weat.media:public-api",
+      "displayName": "weAT.media Public API",
+      "type": "application/agent-card+json",
+      "url": "https://weat.media/api",
+      "description": "Public read-only access to independent articles, authors, comments and feeds on the open AT Protocol.",
+      "capabilities": [
+        "ReadArticles",
+        "ReadComments",
+        "BrowseFeeds",
+        "ResolveAuthors"
+      ],
+      "representativeQueries": [
+        "find public independent articles on weAT.media",
+        "read an article and its comments on weAT.media",
+        "browse public author feeds on weAT.media"
+      ],
+      "tags": [
+        "independent-media",
+        "at-protocol",
+        "articles",
+        "public-feed"
+      ],
+      "version": "1.0.0",
+      "updatedAt": "2026-11-18T00:00:00Z"
+    }
+  ]
+}

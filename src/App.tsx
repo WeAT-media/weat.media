@@ -1,5 +1,5 @@
-import { Suspense, useEffect } from 'react'
-import { lazyPage as lazy, prefetchEditor } from '@/lib/chunkReload'
+import { Suspense } from 'react'
+import { lazyPage as lazy } from '@/lib/chunkReload'
 import { hasSession } from '@/lib/api'
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router'
 import { StoreProvider, useStore } from '@/lib/store'
@@ -104,9 +104,6 @@ function RequireSession({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  useEffect(() => {
-    if (hasSession()) prefetchEditor()
-  }, [])
   return (
     <StoreProvider>
       <I18nProvider>
