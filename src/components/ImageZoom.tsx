@@ -1,12 +1,12 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 /**
  * Увеличение картинок статьи по клику или тапу. Обработчик один на весь текст (делегирование): картинки
  * из блоков, из inline-разметки и внутри своих блоков. Картинка-ссылка открывает ссылку, а не просмотр.
- * В просмотре картинка вписана в окно; повторный клик — в натуральную величину с прокруткой (на телефоне
- * работает и жест «щипок»). Внизу, как в Telegram, — подпись и кнопки: повернуть, масштаб, скачать.
+ * В просмотре картинка вписана в окно; клик по ней — увеличение к точке клика с прокруткой, ещё клик —
+ * обратно (на телефоне работает и жест «щипок»). Внизу, как в Telegram, — подпись и кнопки: повернуть, масштаб, скачать.
  * Закрыть — Esc, крестик или клик по фону.
  */
 
@@ -52,7 +52,7 @@ const ctl =
 
 export default function ImageZoom({ children }: { children: ReactNode }) {
   const [img, setImg] = useState<{ src: string; alt: string } | null>(null)
-  const [full, setFull] = useState(false)
+  const [zoom, setZoom] = useState<{ w: number; fx: number; fy: number } | null>(null)
   const [turn, setTurn] = useState(0)
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export default function ImageZoom({ children }: { children: ReactNode }) {
     const t = e.target
     if (!(t instanceof HTMLImageElement) || t.closest('a, button, [data-no-zoom]')) return
     e.preventDefault()
-    setFull(false)
+    setZoom(null)
     setTurn(0)
     setImg({ src: t.currentSrc || t.src, alt: t.alt })
   }
@@ -80,6 +80,32 @@ export default function ImageZoom({ children }: { children: ReactNode }) {
   const sideways = turn % 2 !== 0
   const fit = sideways ? { maxWidth: 'calc(100dvh - 9rem)', maxHeight: 'calc(100vw - 2rem)' } : { maxWidth: '100%', maxHeight: '100%' }
 
+  /**
+   * Увеличение: натуральная величина, но не меньше 2× вписанной (картинка меньше окна иначе «не увеличивалась»)
+   * и не больше 4×; точка под курсором/пальцем остаётся под ним. Поворот возвращает к «вписать»:
+   * CSS-поворот не меняет размеры прокручиваемой области, увеличенная повёрнутая картинка уезжала за край.
+   */
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const zoomIn = (el: HTMLImageElement, at?: { x: number; y: number }) => {
+    const r = el.getBoundingClientRect()
+    const w = Math.round(Math.min(Math.max(el.naturalWidth, r.width * 2), r.width * 4))
+    const fx = at ? (at.x - r.left) / r.width : 0.5
+    const fy = at ? (at.y - r.top) / r.height : 0.5
+    setTurn(0)
+    setZoom({ w, fx, fy })
+  }
+  useLayoutEffect(() => {
+    const box = scrollRef.current
+    if (!zoom || !box) return
+    const h = (zoom.w / (box.querySelector('img')?.naturalWidth || zoom.w)) * (box.querySelector('img')?.naturalHeight || 0)
+    box.scrollLeft = zoom.w * zoom.fx - box.clientWidth / 2
+    box.scrollTop = h * zoom.fy - box.clientHeight / 2
+  }, [zoom])
+  const rotate = (d: number) => {
+    setZoom(null)
+    setTurn((t) => (t + d + 4) % 4)
+  }
+
   return (
     <>
       <div onClick={onClick} className="[&_img]:cursor-zoom-in [&_a_img]:cursor-pointer">
@@ -87,32 +113,55 @@ export default function ImageZoom({ children }: { children: ReactNode }) {
       </div>
       {img &&
         createPortal(
-          <div role="dialog" aria-modal="true" aria-label={img.alt || 'Картинка'} className="fixed inset-0 z-[1100] flex flex-col bg-black/90">
-            <div
-              onClick={(e) => e.target === e.currentTarget && setImg(null)}
-              className={`min-h-0 flex-1 [touch-action:pinch-zoom] ${full ? 'overflow-auto' : 'flex items-center justify-center p-4'}`}
-            >
-              <img
-                src={img.src}
-                alt={img.alt}
-                referrerPolicy="no-referrer"
-                onClick={() => setFull((f) => !f)}
-                style={{ transform: `rotate(${turn * 90}deg)`, ...(full ? {} : fit) }}
-                className={`transition-transform duration-200 ${full ? 'max-w-none cursor-zoom-out' : 'cursor-zoom-in object-contain'}`}
-              />
-            </div>
+          <div role="dialog" aria-modal="true" aria-label={img.alt || 'Картинка'} className="fixed inset-0 z-[1100] flex flex-col bg-neutral-950">
+            {zoom ? (
+              <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto [touch-action:pan-x_pan-y_pinch-zoom]">
+                {/* min-w/min-h-full + m-auto: картинка меньше области — по центру, больше — прокрутка с края */}
+                <div className="flex min-h-full min-w-full">
+                  <img
+                    src={img.src}
+                    alt={img.alt}
+                    referrerPolicy="no-referrer"
+                    onClick={() => setZoom(null)}
+                    style={{ width: zoom.w }}
+                    className="m-auto block max-w-none shrink-0 cursor-zoom-out"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div onClick={(e) => e.target === e.currentTarget && setImg(null)} className="flex min-h-0 flex-1 items-center justify-center p-4">
+                <img
+                  src={img.src}
+                  alt={img.alt}
+                  referrerPolicy="no-referrer"
+                  onClick={(e) => zoomIn(e.currentTarget, { x: e.clientX, y: e.clientY })}
+                  style={{ transform: `rotate(${turn * 90}deg)`, ...fit }}
+                  className="cursor-zoom-in object-contain transition-transform duration-200"
+                />
+              </div>
+            )}
             {/* нижняя панель: подпись слева, действия справа */}
             <div className="flex items-center gap-3 border-t border-white/10 bg-black/60 px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
               <p className="min-w-0 flex-1 truncate text-sm text-white/85" title={img.alt}>{img.alt}</p>
               <div className="flex shrink-0 items-center gap-1">
-                <button type="button" onClick={() => setTurn((t) => (t + 3) % 4)} aria-label="Повернуть влево" title="Повернуть влево" className={ctl}>
+                <button type="button" onClick={() => rotate(-1)} aria-label="Повернуть влево" title="Повернуть влево" className={ctl}>
                   <RotateCcw size={18} aria-hidden="true" />
                 </button>
-                <button type="button" onClick={() => setTurn((t) => (t + 1) % 4)} aria-label="Повернуть вправо" title="Повернуть вправо" className={ctl}>
+                <button type="button" onClick={() => rotate(1)} aria-label="Повернуть вправо" title="Повернуть вправо" className={ctl}>
                   <RotateCw size={18} aria-hidden="true" />
                 </button>
-                <button type="button" onClick={() => setFull((f) => !f)} aria-label={full ? 'Вписать в окно' : 'В натуральную величину'} title={full ? 'Вписать в окно' : 'В натуральную величину'} className={ctl}>
-                  {full ? <ZoomOut size={18} aria-hidden="true" /> : <ZoomIn size={18} aria-hidden="true" />}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    const el = e.currentTarget.closest('[role=dialog]')?.querySelector('img')
+                    if (zoom) setZoom(null)
+                    else if (el) zoomIn(el)
+                  }}
+                  aria-label={zoom ? 'Вписать в окно' : 'Увеличить'}
+                  title={zoom ? 'Вписать в окно' : 'Увеличить'}
+                  className={ctl}
+                >
+                  {zoom ? <ZoomOut size={18} aria-hidden="true" /> : <ZoomIn size={18} aria-hidden="true" />}
                 </button>
                 <button type="button" onClick={() => void download(img.src)} aria-label="Скачать" title="Скачать" className={ctl}>
                   <Download size={18} aria-hidden="true" />
