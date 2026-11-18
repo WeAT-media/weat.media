@@ -29,7 +29,7 @@ export default function CodeView({ code, lang }: { code: string; lang?: string }
   useEffect(() => {
     if (!l || l === 'plain' || l === 'text') return
     let alive = true
-    highlight(code, l).then((v) => alive && v && setHtml({ key, value: v }), () => {})
+    highlight(code, l).then((v) => alive && v && setHtml({ key, value: v }), (e) => console.warn("CodeView", e))
     return () => {
       alive = false
     }
