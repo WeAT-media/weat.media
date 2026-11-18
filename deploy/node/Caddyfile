@@ -286,9 +286,9 @@ www.{$PDS_HANDLE_DOMAIN} {
 	encode zstd gzip
 	header Access-Control-Allow-Origin "https://{$PDS_HANDLE_DOMAIN}"
 	@cdn_assets path /global/assets/* /ru/assets/*
-	header @cdn_assets Cache-Control "public, max-age=31536000, immutable"
+	header @cdn_assets Cache-Control "public, max-age=31536000, immutable" defer
 	@cdn_fonts path /global/fonts/* /ru/fonts/*
-	header @cdn_fonts Cache-Control "public, max-age=86400"
+	header @cdn_fonts Cache-Control "public, max-age=86400" defer
 	@cdn_global path /global/*
 	handle @cdn_global {
 		uri replace /global/ /
