@@ -98,6 +98,7 @@ jobs:
             VITE_HANDLE_DOMAIN=weat.media
             VITE_SITE_URL=${{ vars.SITE_URL }}
             VITE_PDS_URL=${{ vars.PDS_URL }}
+            VITE_STATIC_URL=https://static.weat.media/${{ vars.CONTOUR }}/
             VITE_SOURCE_URL=https://github.com/${{ github.repository }}
             VITE_ZITADEL_ISSUER=${{ vars.ZITADEL_ISSUER }}
             VITE_ZITADEL_CLIENT_ID=${{ vars.ZITADEL_CLIENT_ID }}

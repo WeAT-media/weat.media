@@ -88,7 +88,7 @@
 # CSP только для SPA. style 'unsafe-inline' — BlockSuite и recharts задают стили атрибутами;
 # скрипты — только свои. Видео-встраивания (YouTube и др.) — через frame-src https:.
 (csp) {
-	header Content-Security-Policy "default-src 'self'; script-src 'self' https://{$STATIC_HOST:static.weat.media} 'sha256-Nc3HIclqT9dneDiA5RiE70hDQ9VFwrFp9Fru491OCc4=' 'inline-speculation-rules' 'wasm-unsafe-eval'; style-src 'self' https://{$STATIC_HOST:static.weat.media} 'unsafe-inline'; font-src 'self' https://{$STATIC_HOST:static.weat.media} data:; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self' https://{$PDS_HOST} https://{$AUTH_HOST:auth.weat.media}; frame-src 'self' https: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+	header Content-Security-Policy "default-src 'self'; script-src 'self' https://{$STATIC_HOST:static.weat.media} 'sha256-Nc3HIclqT9dneDiA5RiE70hDQ9VFwrFp9Fru491OCc4=' 'sha256-b3cSo0tMO0ecZNy92YfAmU5pgb3VF87rS6coV1iX74I=' 'inline-speculation-rules' 'wasm-unsafe-eval'; style-src 'self' https://{$STATIC_HOST:static.weat.media} 'unsafe-inline'; font-src 'self' https://{$STATIC_HOST:static.weat.media} data:; img-src 'self' https: data: blob:; media-src 'self' https: blob:; connect-src 'self' https://{$PDS_HOST} https://{$AUTH_HOST:auth.weat.media}; frame-src 'self' https: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
 }
 
 {$SITE_DOMAINS} {
@@ -278,22 +278,30 @@ www.{$PDS_HANDLE_DOMAIN} {
 	redir https://{$PDS_HANDLE_DOMAIN}{uri} 301
 }
 
-# Только статика для Gcore CDN. Модули ES и шрифты требуют CORS с основного сайта.
+# Только статика для Gcore CDN. Сборки контуров различаются адресом PDS и имеют разные хеши.
+# Префикс выбирает origin; CDN кэширует ответ, поэтому проксирование нужно только при промахе.
 {$STATIC_HOST:static.weat.media} {
 	import tls_dns
 	import security_headers
 	encode zstd gzip
-	root * /srv
 	header Access-Control-Allow-Origin "https://{$PDS_HANDLE_DOMAIN}"
-	@static_assets path /assets/*
-	handle @static_assets {
-		header Cache-Control "public, max-age=31536000, immutable"
-		file_server
+	@cdn_assets path /global/assets/* /ru/assets/*
+	header @cdn_assets Cache-Control "public, max-age=31536000, immutable"
+	@cdn_fonts path /global/fonts/* /ru/fonts/*
+	header @cdn_fonts Cache-Control "public, max-age=86400"
+	@cdn_global path /global/*
+	handle @cdn_global {
+		uri replace /global/ /
+		reverse_proxy https://nl-1.weat.media {
+			header_up Host {upstream_hostport}
+		}
 	}
-	@static_fonts path /fonts/*
-	handle @static_fonts {
-		header Cache-Control "public, max-age=86400"
-		file_server
+	@cdn_ru path /ru/*
+	handle @cdn_ru {
+		uri replace /ru/ /
+		reverse_proxy https://ru.weat.media {
+			header_up Host {upstream_hostport}
+		}
 	}
 	handle {
 		respond 404

@@ -13,7 +13,7 @@ $TTL 300
 www             CNAME   weat.media.
 ru              A       <IP Yandex>          ; запасной вход в РФ-контур
 nl-1            A       <IP NL-1>            ; прямой адрес NL мимо GeoDNS
-static          CNAME   <имя ресурса>.gcorecdn.com. ; JS/CSS/шрифты через Gcore CDN
+static          CNAME   <имя ресурса>.gcorecdn.com. ; /global/ и /ru/ — JS/CSS/шрифты контуров
 
 ; ── вход сотрудников: Zitadel (deploy/auth) — отдельный узел инфраструктуры ─
 ; явная запись нужна: иначе auth попадёт под «*» ниже и уйдёт на узел сайта
