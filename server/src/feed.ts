@@ -123,12 +123,23 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
 
   app.get('/feed/article', async (c) => {
     let uri = c.req.query('uri') ?? ''
+    const short = c.req.query('short')
+    let direct: { uri?: string } | null = null
+    if (short && d.feedUrl) {
+      const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ short })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+      if (res?.ok) direct = await res.json() as { uri?: string }
+      uri = direct?.uri ?? ''
+      if (!uri && res?.status === 404) return c.json({ error: 'NotFound', message: 'Статья не найдена' }, 404)
+    }
     if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/.test(uri)) {
-      return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey' }, 400)
+      return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey или short: <rkey>-<did-tail>' }, 400)
     }
     // перенесённая автору статья краулера: по старому адресу — копия автора
     const movedTo = d.moved ? (await d.moved([uri]).catch(() => new Map<string, string>())).get(uri) : undefined
-    if (movedTo) uri = movedTo
+    if (movedTo) {
+      uri = movedTo
+      direct = null
+    }
     if (await closed(uri)) return c.json(unavailable, 451)
     // в охлаждении (своём или соседнего контура) — ещё не в индексе ленты
     const held = d.pending ? await d.pending.get(uri) : undefined
@@ -136,6 +147,10 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
       c.header('cache-control', 'no-store')
       const item = asFeedItem(held)
       return c.json({ ...item, textLength: String(item.record.text ?? '').length })
+    }
+    if (direct) {
+      c.header('cache-control', 'public, max-age=30')
+      return c.json(direct)
     }
     if (d.feedUrl) {
       const res = await fetch(`${d.feedUrl}/feed-api/article?${new URLSearchParams({ uri })}`, { signal: AbortSignal.timeout(3000) }).catch(() => null)
@@ -158,7 +173,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     if (d.feedUrl) {
       // фильтры и курсор — как есть; ответ той же формы { articles, cursor }
       const q = new URLSearchParams()
-      for (const k of ['cursor', 'tags', 'lang', 'source', 'author', 'view', 'sort', 'metric', 'period', 'kind']) {
+      for (const k of ['cursor', 'offset', 'tags', 'lang', 'source', 'author', 'view', 'sort', 'metric', 'period', 'kind']) {
         const v = c.req.query(k)
         if (v) q.set(k, v)
       }

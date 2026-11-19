@@ -38,7 +38,11 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  ssr: {
+    noExternal: process.argv.includes('--ssr') ? true : undefined,
+  },
   build: {
+    manifest: true,
     rollupOptions: {
       output: {
         // BlockSuite (редактор) и его зависимости — отдельный чанк: имя (хеш) меняется только при обновлении

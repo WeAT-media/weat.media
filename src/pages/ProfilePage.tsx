@@ -14,6 +14,7 @@ import { api, comments as commentsApi, countryLabel, pending as pendingApi, type
 import { commentAnchor, remoteId, toArticle } from '@/lib/remoteFeed'
 import type { Author } from '@/types/types'
 import { PDS_URL } from '@/config/site'
+import { ssrData } from '@/lib/ssr'
 
 function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, '-')
@@ -44,9 +45,7 @@ export default function ProfilePage() {
   const [collectionTitle, setCollectionTitle] = useState('')
   const [collectionDescription, setCollectionDescription] = useState('')
   const [collectionError, setCollectionError] = useState('')
-  const [remoteProfile, setRemoteProfile] = useState<ApiUser | null>(null)
-  /** для какого адреса сервер уже ответил — до ответа вместо 404 показываем загрузку */
-  const [lookedUp, setLookedUp] = useState<string | null>(null)
+  const [remoteProfile, setRemoteProfile] = useState<ApiUser | null>(() => ssrData()?.profile ?? null)
 
   const decoded = decodeURIComponent(id)
   // свои записи в охлаждении и отложенные (скрыты от читателей) — для меток в «Публикациях» у самого автора
@@ -77,8 +76,12 @@ export default function ProfilePage() {
 
   // профиль на сервере: у того, кто только комментирует, статей в ленте нет — ищем по адресу страницы
   const lookup = local?.handle ?? decoded
+  const initial = ssrData()
+  const hasHydratedProfile = initial?.path === `/profile/${id}` && initial.profile && (initial.profile.handle === lookup || initial.profile.did === lookup)
+  /** для какого адреса сервер уже ответил — до ответа вместо 404 показываем загрузку */
+  const [lookedUp, setLookedUp] = useState<string | null>(() => hasHydratedProfile ? lookup : null)
   useEffect(() => {
-    if (!lookup) return
+    if (!lookup || hasHydratedProfile) return
     let cancelled = false
     api.user(lookup).then(
       (p) => !cancelled && setRemoteProfile(p),
@@ -87,7 +90,7 @@ export default function ProfilePage() {
     return () => {
       cancelled = true
     }
-  }, [lookup])
+  }, [lookup, hasHydratedProfile])
   const author = useMemo<Author | undefined>(() => {
     const p = remoteProfile
     const own = p && (p.handle === decoded || p.did === decoded || p.did === local?.did) ? p : null

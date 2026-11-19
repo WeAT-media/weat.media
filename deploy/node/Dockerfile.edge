@@ -42,9 +42,13 @@ RUN xcaddy build --with github.com/caddy-dns/acmedns --with github.com/mholt/cad
 FROM caddy:2-alpine
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 # не root: порты 80/443 через capability, данные и конфиг — свои
-RUN apk add --no-cache libcap && setcap cap_net_bind_service=+ep /usr/bin/caddy \
+RUN apk add --no-cache libcap nodejs && setcap cap_net_bind_service=+ep /usr/bin/caddy \
   && addgroup -S -g 1000 caddy && adduser -S -u 1000 -G caddy caddy \
   && mkdir -p /data /config && chown -R caddy:caddy /data /config
 USER caddy
 COPY --from=web /app/dist /srv
+COPY --from=web /app/dist-ssr /srv-ssr
+COPY scripts/ssr-server.mjs /srv-ssr/server.mjs
 COPY deploy/node/Caddyfile /etc/caddy/Caddyfile
+COPY --chmod=755 deploy/node/edge-start.sh /usr/local/bin/edge-start
+CMD ["/usr/local/bin/edge-start"]

@@ -37,7 +37,9 @@ import { setEditorCaps } from '@/lib/editorCaps'
 import { setEditorPeople } from '@/lib/editorPeople'
 import { profileMetaSeed } from '@/data/profiles'
 import { PDS_URL } from '@/config/site'
-import { fetchRemoteFeed, remoteId, toComment } from '@/lib/remoteFeed'
+import { fetchArticleById, fetchFeedPage, fetchRemoteFeed, remoteId, toComment } from '@/lib/remoteFeed'
+import { ssrData } from '@/lib/ssr'
+import { useLocation } from 'react-router'
 
 const STORAGE_KEY = 'indie-media:v1'
 /** столько же принимает сервер (server/src/settings.ts) */
@@ -293,6 +295,7 @@ function initialSettings(persisted: Record<string, LabelerSettings>): Record<str
 let caseCounter = 200
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const location = useLocation()
   const [persisted, setPersisted] = useState<Persisted>(loadPersisted)
 
   useEffect(() => {
@@ -513,8 +516,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [persisted.user?.premium, persisted.editorPrefs, persisted.blockDefs, persisted.prefs.devPreview])
 
-  // статьи с PDS площадки (авторы и краулеры); обновляем раз в минуту
-  const [remoteArticles, setRemoteArticles] = useState<Article[]>([])
+  // На статье и в профиле не загружаем общую ленту: сервер отдаёт только нужные записи.
+  const [remoteArticles, setRemoteArticles] = useState<Article[]>(() => ssrData()?.articles ?? [])
   useEffect(() => {
     let alive = true
     // лайки читателя с сервера: кнопка и счётчик статей из индекса — по ним, а не по localStorage
@@ -539,17 +542,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       return out
     }
-    const load = () =>
-      fetchRemoteFeed()
-        .then(withMyLikes)
-        .then((a) => alive && setRemoteArticles(a), () => {})
+    const articleId = /^\/article\/([^/]+)$/.exec(location.pathname)?.[1]
+    const profileId = /^\/profile\/([^/]+)$/.exec(location.pathname)?.[1]
+    const standalone = articleId || profileId
+    const load = () => {
+      if (/^\/(feed|hot)$/.test(location.pathname)) return
+      const initial = ssrData()
+      const request = initial?.path === location.pathname && initial.articles
+        ? Promise.resolve(initial.articles)
+        : articleId
+          ? fetchArticleById(articleId).then((a) => a ? [a] : [])
+          : profileId
+            ? fetchFeedPage({ author: decodeURIComponent(profileId), limit: 100 }).then((r) => r.articles)
+            : fetchRemoteFeed()
+      request.then(withMyLikes).then((a) => alive && setRemoteArticles(a), () => {})
+    }
     load()
-    const t = setInterval(load, 60_000)
+    const t = standalone || ssrData()?.path === location.pathname ? undefined : setInterval(load, 60_000)
     return () => {
       alive = false
-      clearInterval(t)
+      if (t) clearInterval(t)
     }
-  }, [syncDid])
+  }, [syncDid, location.pathname])
 
   const articles = useMemo(() => {
     // запись уже пришла с сервера — показываем её (правки в охлаждении, соавторы), копия в браузере нужна

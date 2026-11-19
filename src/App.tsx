@@ -102,7 +102,20 @@ function RequireSession({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-export default function App({ Landing = LandingPage }: { Landing?: ComponentType }) {
+export interface AppPages {
+  Landing: ComponentType
+  Feed: ComponentType
+  Hot: ComponentType
+  Article: ComponentType
+  Profile: ComponentType
+}
+
+export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
+  const LandingView = pages.Landing ?? LandingPage
+  const FeedView = pages.Feed ?? Feed
+  const HotView = pages.Hot ?? HotPage
+  const ArticleView = pages.Article ?? ArticlePage
+  const ProfileView = pages.Profile ?? ProfilePage
   return (
     <StoreProvider>
       <I18nProvider>
@@ -118,14 +131,14 @@ export default function App({ Landing = LandingPage }: { Landing?: ComponentType
           <CookieBanner />
           <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center" role="status"><span className="meta animate-pulse">Загружаем страницу…</span></div>}>
           <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/feed" element={<Feed />} />
+            <Route path="/" element={<LandingView />} />
+            <Route path="/feed" element={<FeedView />} />
             <Route path="/atmosphere" element={<AtmospherePage />} />
             <Route path="/premium" element={<PremiumPage />} />
-            <Route path="/hot" element={<HotPage />} />
+            <Route path="/hot" element={<HotView />} />
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/collection/:id" element={<CollectionRoute />} />
-            <Route path="/article/:id" element={<ArticlePage />} />
+            <Route path="/article/:id" element={<ArticleView />} />
             <Route path="/article/:id/analytics" element={<ArticleAnalyticsPage />} />
             <Route path="/case/:id" element={<CasePage />} />
             <Route path="/case/:id/analytics" element={<CaseAnalyticsPage />} />
@@ -159,7 +172,7 @@ export default function App({ Landing = LandingPage }: { Landing?: ComponentType
             <Route path="/design" element={<DesignPage />} />
             <Route path="/ads" element={<AdsPage />} />
             <Route path="/ads/dashboard" element={<AdvertiserDashboardPage />} />
-            <Route path="/profile/:id" element={<ProfilePage />} />
+            <Route path="/profile/:id" element={<ProfileView />} />
             <Route path="/admin/crawler" element={<AdminCrawlerPage />} />
             <Route path="/admin/claims" element={<AdminClaimsPage />} />
             <Route path="/admin/tickets" element={<AdminTicketsPage />} />

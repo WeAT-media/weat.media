@@ -12,7 +12,8 @@ import BookmarkButton from '@/components/BookmarkButton'
 import FeedBest from '@/components/FeedBest'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { hotness } from '@/lib/analytics'
-import { fetchRanked } from '@/lib/remoteFeed'
+import { fetchFeedPage, fetchRanked } from '@/lib/remoteFeed'
+import { ssrData, type FeedPage } from '@/lib/ssr'
 import type { Article } from '@/types/types'
 import { LANGUAGES, languageName } from '@/data/languages'
 import { useI18n } from '@/lib/i18n'
@@ -177,6 +178,22 @@ export default function Feed() {
   const hotKey = `${feedTags.join(',')}|${lang}|${kind}`
   const [serverHot, setServerHot] = useState<{ key: string; list: { article: Article; score: number }[] } | null>(null)
   const wantHot = prefs.feedSort === 'hot'
+  const freshKey = `${hotKey}|${page}`
+  const [serverFresh, setServerFresh] = useState<FeedPage | null>(() => {
+    const initial = ssrData()?.feed
+    return initial?.key === freshKey ? initial : null
+  })
+  useEffect(() => {
+    if (wantHot || serverFresh?.key === freshKey) return
+    let alive = true
+    fetchFeedPage({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, tags: feedTags, lang, ...(kind === 'all' ? {} : { kind }) }).then(
+      (r) => alive && setServerFresh({ key: freshKey, articles: r.articles, total: r.total }),
+      () => {},
+    )
+    return () => {
+      alive = false
+    }
+  }, [wantHot, serverFresh, freshKey, feedTags, lang, kind, page])
   useEffect(() => {
     if (!wantHot) return
     let alive = true
@@ -201,7 +218,10 @@ export default function Feed() {
       (lang === 'all' || (a.language ?? 'ru') === lang) &&
       (kind === 'all' || (a.kind ?? 'text') === kind)
     const list = articles.filter(passes)
-    if (prefs.feedSort !== 'hot') return [...list].sort((x, y) => at(y) - at(x))
+    if (prefs.feedSort !== 'hot') {
+      if (serverFresh?.key === freshKey) return serverFresh.articles.filter(passes)
+      return [...list].sort((x, y) => at(y) - at(x)).slice(0, PAGE_SIZE)
+    }
     // свои записи без индекса и ответ сервера — в один список по одному score (формула общая, см. hotness)
     // карточка из стора знает о моём лайке; статьи вне загруженных — карточка сервера, с теми же фильтрами
     const byId = new Map(articles.map((a) => [a.id, a]))
@@ -213,10 +233,13 @@ export default function Feed() {
     const inServer = new Set(ranked.map((r) => r.a.id))
     const own = list.filter((a) => !a.fromIndex && !inServer.has(a.id)).map((a) => ({ a, score: hotness(a, upvotes.includes(a.id)) }))
     return [...ranked, ...own].sort((x, y) => y.score - x.score).map((x) => x.a)
-  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes, serverHot, hotKey])
-  const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes, serverHot, hotKey, serverFresh, freshKey])
+  const freshTotal = !wantHot && serverFresh?.key === freshKey ? serverFresh.total : visible.length
+  const pages = Math.max(1, Math.ceil(freshTotal / PAGE_SIZE))
   const current = Math.min(page, pages)
-  const pageItems = visible.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
+  const pageItems = !wantHot && serverFresh?.key === freshKey
+    ? visible
+    : visible.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
   const pageHref = (n: number) => {
     const next = new URLSearchParams(params)
     if (n === 1) next.delete('page')
@@ -245,7 +268,7 @@ export default function Feed() {
           <p className="meta">{t('readerPublications')}</p>
           <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <h1 className="text-4xl font-extrabold tracking-tight md:text-5xl">{t('feed')}</h1>
-            <span className="text-sm text-muted-foreground" aria-live="polite">{publicationsCount(visible.length)}</span>
+            <span className="text-sm text-muted-foreground" aria-live="polite">{publicationsCount(freshTotal)}</span>
           </div>
           <p className="mt-2 max-w-[52ch] text-sm text-muted-foreground">Новые тексты и видео от независимых авторов — без рекламного алгоритма.</p>
         </div>

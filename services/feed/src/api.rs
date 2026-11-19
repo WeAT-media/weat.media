@@ -72,6 +72,8 @@ pub fn router(state: AppState) -> Router {
 pub struct Params {
     limit: Option<i64>,
     cursor: Option<String>,
+    /// страницы с номером в адресе; keyset-курсор приоритетнее
+    offset: Option<i64>,
     /// tags=rust,linux
     tags: Option<String>,
     lang: Option<String>,
@@ -118,7 +120,7 @@ pub fn decode_offset(c: &str) -> Option<i64> {
 pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
     let sort = Sort::parse(p.sort.as_deref(), p.metric.as_deref(), p.period.as_deref())?;
     let (after, offset) = match (p.cursor.as_deref(), sort) {
-        (None, _) => (None, 0),
+        (None, _) => (None, p.offset.unwrap_or(0).clamp(0, 10_000)),
         (Some(c), Sort::New) => (Some(decode_cursor(c).ok_or("bad cursor")?), 0),
         (Some(c), _) => (None, decode_offset(c).ok_or("bad cursor")?),
     };
@@ -159,8 +161,23 @@ pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
     })
 }
 
-async fn articles(State(s): State<AppState>, Query(p): Query<Params>) -> Response {
+async fn articles(State(s): State<AppState>, Query(mut p): Query<Params>) -> Response {
     let pool = s.pool;
+    if let Some(author) = p.author.as_deref() {
+        if !author.starts_with("did:") {
+            p.author = match index::did_by_handle(&pool, author).await {
+                Ok(did) => did,
+                Err(err) => {
+                    tracing::error!(%err, "author lookup");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            };
+            if p.author.is_none() {
+                return Json(serde_json::json!({ "articles": [], "cursor": null, "total": 0 }))
+                    .into_response();
+            }
+        }
+    }
     let q = match to_query(p) {
         Ok(q) => q,
         Err(msg) => {
@@ -180,8 +197,8 @@ async fn articles(State(s): State<AppState>, Query(p): Query<Params>) -> Respons
     {
         return json_body(body, "public, max-age=5", true);
     }
-    match index::feed(&pool, &q).await {
-        Ok(rows) => {
+    match tokio::join!(index::feed(&pool, &q), index::count(&pool, &q)) {
+        (Ok(rows), Ok(total)) => {
             if let Some(key) = &cache_key {
                 log_timing("feed", key, now.elapsed(), rows.len());
             }
@@ -192,14 +209,15 @@ async fn articles(State(s): State<AppState>, Query(p): Query<Params>) -> Respons
                     .flatten(),
                 _ => full_page.then(|| encode_offset(q.offset + q.limit)),
             };
-            let body = serde_json::json!({ "articles": rows, "cursor": cursor }).to_string();
+            let body = serde_json::json!({ "articles": rows, "cursor": cursor, "total": total })
+                .to_string();
             if let Some(key) = cache_key {
                 s.cache
                     .put(key, body.clone(), crate::cache::RANKED_TTL, now);
             }
             json_body(body, "public, max-age=5", false)
         }
-        Err(err) => {
+        (Err(err), _) | (_, Err(err)) => {
             tracing::error!(%err, "feed query");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }

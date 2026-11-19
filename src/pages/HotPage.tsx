@@ -8,6 +8,7 @@ import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { commentCount, hotness } from '@/lib/analytics'
 import { fetchRanked } from '@/lib/remoteFeed'
 import { SOURCE_URL } from '@/config/site'
+import { ssrData } from '@/lib/ssr'
 import type { Article } from '@/types/types'
 
 type Period = 'day' | 'week' | 'month'
@@ -22,7 +23,7 @@ export default function HotPage() {
   const { articles, unlocked, upvotes } = useStore()
   const [period, setPeriod] = useState<Period>('week')
   // ранжирует сервер по всему индексу; пока не ответил или индекс пуст — локальная оценка загруженного
-  const [ranked, setRanked] = useState<{ period: Period; list: { a: Article; score: number }[] } | null>(null)
+  const [ranked, setRanked] = useState<{ period: Period; list: { a: Article; score: number }[] } | null>(() => ssrData()?.hot ?? null)
   useEffect(() => {
     let alive = true
     fetchRanked({ sort: 'hot', period, limit: 50 }).then(

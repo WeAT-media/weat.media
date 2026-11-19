@@ -6,7 +6,7 @@ import type { RecordVideo } from '@/lib/videoLink'
 
 /** Записи media.weat.article из /api/feed → статьи ленты */
 
-interface FeedItem {
+export interface FeedItem {
   uri: string
   cid: string
   did: string
@@ -285,6 +285,41 @@ export async function fetchRelated(uri: string, limit = 3, kind?: 'video' | 'tex
     return page.articles.map(toArticle).filter((a): a is Article => a !== null)
   } catch {
     return []
+  }
+}
+
+export function fetchArticleById(id: string): Promise<Article | null> {
+  const key = `short:${id}`
+  let p = bodies.get(key)
+  if (!p) {
+    p = fetch(`${BASE}/feed/article?${new URLSearchParams({ short: id })}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((j) => (j ? toArticle(j as FeedItem) : null))
+      .catch(() => null)
+    bodies.set(key, p)
+  }
+  return p
+}
+
+export interface FeedPageResult {
+  articles: Article[]
+  total: number
+  cursor: string | null
+}
+
+export async function fetchFeedPage(q: { limit: number; offset?: number; tags?: string[]; lang?: string; kind?: 'text' | 'video'; author?: string }): Promise<FeedPageResult> {
+  const params = new URLSearchParams({ limit: String(q.limit), offset: String(q.offset ?? 0) })
+  if (q.tags?.length) params.set('tags', q.tags.join(','))
+  if (q.lang && q.lang !== 'all') params.set('lang', q.lang)
+  if (q.kind) params.set('kind', q.kind)
+  if (q.author) params.set('author', q.author)
+  const res = await fetch(`${BASE}/feed?${params}`)
+  if (!res.ok) throw new Error('Feed unavailable')
+  const page = await res.json() as { articles: FeedItem[]; total?: number; cursor?: string | null }
+  return {
+    articles: page.articles.map(toArticle).filter((a): a is Article => a !== null),
+    total: page.total ?? page.articles.length,
+    cursor: page.cursor ?? null,
   }
 }
 

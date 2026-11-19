@@ -206,7 +206,11 @@ pub async fn related(
 }
 
 /// uri по короткому id из адреса страницы (/article/<rkey>-<6 последних символов DID>)
-pub async fn uri_by_short(pool: &PgPool, rkey: &str, did_tail: &str) -> sqlx::Result<Option<String>> {
+pub async fn uri_by_short(
+    pool: &PgPool,
+    rkey: &str,
+    did_tail: &str,
+) -> sqlx::Result<Option<String>> {
     sqlx::query_scalar("SELECT uri FROM articles WHERE rkey = $1 AND right(did, 6) = $2 ORDER BY created_at DESC LIMIT 1")
         .bind(rkey)
         .bind(did_tail)
@@ -381,4 +385,31 @@ pub async fn feed(pool: &PgPool, q: &Query) -> sqlx::Result<Vec<Row>> {
          ORDER BY {order}"
         ));
     b.build_query_as::<Row>().fetch_all(pool).await
+}
+
+pub async fn count(pool: &PgPool, q: &Query) -> sqlx::Result<i64> {
+    let (_, window, _) = q.sort.sql();
+    let mut b = sqlx::QueryBuilder::<sqlx::Postgres>::new(format!(
+        "SELECT count(*) FROM articles a WHERE true {window}"
+    ));
+    if !q.tags.is_empty() {
+        b.push(" AND a.tags && ").push_bind(q.tags.clone());
+    }
+    if let Some(lang) = &q.lang {
+        b.push(" AND (")
+            .push_bind(lang.clone())
+            .push(" = ANY(a.langs) OR (cardinality(a.langs) = 0 AND ");
+        b.push_bind(lang.clone()).push(" = 'ru'))");
+    }
+    if let Some(external) = q.external {
+        b.push(" AND (a.source_site IS NOT NULL) = ")
+            .push_bind(external);
+    }
+    if let Some(did) = &q.did {
+        b.push(" AND a.did = ").push_bind(did.clone());
+    }
+    if let Some(kind) = q.kind {
+        b.push(" AND a.kind = ").push_bind(kind);
+    }
+    b.build_query_scalar().fetch_one(pool).await
 }

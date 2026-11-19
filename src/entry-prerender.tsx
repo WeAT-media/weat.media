@@ -6,7 +6,7 @@ import LandingPage from './pages/LandingPage'
 export function renderLanding(): string {
   return renderToString(
     <StaticRouter location="/">
-      <App Landing={LandingPage} />
+      <App pages={{ Landing: LandingPage }} />
     </StaticRouter>,
   )
 }

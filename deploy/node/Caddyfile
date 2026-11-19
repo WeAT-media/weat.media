@@ -155,6 +155,12 @@
 		reverse_proxy analytics:8789
 	}
 
+	# Публичные страницы рендерятся с актуальными данными AppView. При ошибке Node вернёт обычный app.html.
+	@ssr_public path_regexp ssr ^(/feed|/hot|/article/[^/]+|/profile/[^/]+)$
+	handle @ssr_public {
+		reverse_proxy 127.0.0.1:3000
+	}
+
 	# Сборка SPA. Файлы /assets/* — с хешем в имени: кэш навсегда; нет файла — 404, а не index.html
 	# (иначе import() куска страницы получал HTML и экран оставался белым до перезагрузки).
 	# index.html и прочее — no-cache: браузер каждый раз сверяет ETag и после деплоя берёт новую сборку.
