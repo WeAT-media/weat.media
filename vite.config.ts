@@ -12,6 +12,15 @@ process.env.VITE_SITE_NAME ??= 'weAT.media'
 process.env.VITE_SITE_URL ??= 'https://weat.media'
 process.env.VITE_STATIC_URL ??= '/'
 
+const proxy = {
+  // только /api/*: сама страница /api — маршрут SPA (документация)
+  '^/api/.*': 'http://localhost:8787',
+  // админ-API краулера (services/crawler)
+  '^/crawler-api/.*': 'http://localhost:8788',
+  '^/analytics-api/.*': 'http://localhost:8789',
+  '^/rss/.*': 'http://localhost:8790',
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   // В production JS/CSS и динамические чанки отдаёт CDN; локально — корень домена.
@@ -21,15 +30,9 @@ export default defineConfig({
     port: 3000,
     // AT OAuth loopback-клиент возвращает пользователя на http://127.0.0.1:<port>
     host: '127.0.0.1',
-    proxy: {
-      // только /api/*: сама страница /api — маршрут SPA (документация)
-      '^/api/.*': 'http://localhost:8787',
-      // админ-API краулера (services/crawler)
-      '^/crawler-api/.*': 'http://localhost:8788',
-      '^/analytics-api/.*': 'http://localhost:8789',
-      '^/rss/.*': 'http://localhost:8790',
-    },
+    proxy,
   },
+  preview: { proxy },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

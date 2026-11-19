@@ -44,6 +44,10 @@ case "${1:-}" in
 
   subscribe)
     : "${STANDBY_DSN:?STANDBY_DSN}" "${PRIMARY_DSN:?PRIMARY_DSN}"
+    case "$PRIMARY_DSN" in
+      *sslmode=verify-full*sslrootcert=*|*sslmode=verify-ca*sslrootcert=*) ;;
+      *) echo "PRIMARY_DSN должен содержать sslmode=verify-ca (или verify-full) и sslrootcert с CA primary" >&2; exit 1 ;;
+    esac
     psql_q "$STANDBY_DSN" "CREATE SUBSCRIPTION $SUB CONNECTION '$PRIMARY_DSN' PUBLICATION $PUB WITH (copy_data = true)"
     echo "подписка создана, начальная копия идёт: $0 status"
     ;;

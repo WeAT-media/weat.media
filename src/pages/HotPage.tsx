@@ -56,7 +56,7 @@ export default function HotPage() {
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
           Лайки и комментарии делятся на возраст записи: (лайки + 2 × комментарии + 1) / (часы + 2)^1.5. Никакой
           ручной модерации —{' '}
-          <a href={`${SOURCE_URL}/blob/main/services/feed/src/rank.rs`} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+          <a href={`${SOURCE_URL}/blob/main/services/feed/src/rank.rs`} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-4">
             алгоритм открыт
           </a>
           , его можно форкнуть и запустить свой дайджест.
@@ -80,10 +80,10 @@ export default function HotPage() {
 
       <ol>
         {hot.map(({ a, score }, i) => (
-          <Reveal key={a.id}>
-            <li className="rule py-6 first:border-t-0">
+          <li key={a.id} className="rule py-6 first:border-t-0">
+            <Reveal>
               <div className="flex items-baseline gap-4">
-                <span className={`font-mono text-2xl font-bold ${i < 3 ? 'text-accent' : 'text-border'}`}>
+                <span className={`font-mono text-2xl font-bold ${i < 3 ? 'text-accent' : 'text-muted-foreground'}`}>
                   {i + 1}
                 </span>
                 <div className="min-w-0">
@@ -105,8 +105,8 @@ export default function HotPage() {
                   </p>
                 </div>
               </div>
-            </li>
-          </Reveal>
+            </Reveal>
+          </li>
         ))}
       </ol>
     </div>

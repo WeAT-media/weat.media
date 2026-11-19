@@ -206,9 +206,10 @@ const ops: Op[] = [
   },
   {
     method: 'post', path: '/me/2fa/totp/enable', tag: 'security', summary: 'Подтвердить TOTP', auth: 'bearer',
-    body: S.CodeBody,
+    description: 'Требует код нового приложения и текущий пароль AT Protocol; authFactorToken — код письма при включённой email-2FA.',
+    body: z.object({ code: S.CodeBody.shape.code, password: z.string().min(1).max(256), authFactorToken: z.string().max(256).optional(), refreshJwt: z.string().max(4096).optional() }),
     ok: { status: 200, schema: z.object({ backupCodes: z.array(z.string()).describe('10 одноразовых кодов, показываются один раз'), security: S.SecuritySchema }), description: 'Подключено' },
-    errors: [[400, 'InvalidCode · NoPendingSetup']],
+    errors: [[400, 'InvalidCode · NoPendingSetup'], [401, 'InvalidPassword · EmailCodeRequired']],
   },
   {
     method: 'post', path: '/me/2fa/totp/disable', tag: 'security', summary: 'Отключить TOTP', auth: 'bearer',

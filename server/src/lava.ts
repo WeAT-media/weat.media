@@ -102,8 +102,13 @@ export function orderRepo(sql: Sql): OrderRepo {
       return rows.length > 0
     },
     async refund(id) {
-      const rows = await sql`UPDATE orders SET status = 'refunded' WHERE id = ${id} AND status = 'paid' RETURNING 1`
-      return rows.length > 0
+      return sql.begin(async (tx) => {
+        const [order] = await tx<{ author_did: string }[]>`SELECT author_did FROM orders WHERE id = ${id} AND status = 'paid' FOR UPDATE`
+        if (!order) return false
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${'payout:' + order.author_did}))`
+        const rows = await tx`UPDATE orders SET status = 'refunded' WHERE id = ${id} AND status = 'paid' RETURNING 1`
+        return rows.length > 0
+      })
     },
   }
 }

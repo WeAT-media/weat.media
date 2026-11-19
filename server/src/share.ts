@@ -123,11 +123,11 @@ async function authorProfile(did: string, plcUrl: string, fetcher: SafeFetch): P
   return { name: v?.displayName?.trim() || null, avatar }
 }
 
-export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; allowPrivate?: boolean; pending?: PendingSource; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> }; moved?: (uris: string[]) => Promise<Map<string, string>> }) {
+export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: string; siteName?: string; plcUrl?: string; allowPrivate?: boolean; fetcher?: SafeFetch; pending?: PendingSource; restricted?: { enabled: boolean; blocked(uris: string[]): Promise<Set<string>> }; moved?: (uris: string[]) => Promise<Map<string, string>> }) {
   const siteName = d.siteName ?? 'weAT.media'
   const image = `${d.siteUrl}/og-image.png`
   const plcUrl = d.plcUrl ?? 'https://plc.directory'
-  const fetcher = createSafeFetch({ allowPrivate: d.allowPrivate })
+  const fetcher = d.fetcher ?? createSafeFetch({ allowPrivate: d.allowPrivate })
 
   /** публичная статья из индекса ленты; null — нет, недоступна или закрыта в этом контуре */
   const article = async (id: string): Promise<FeedArticle | null> => {
@@ -168,10 +168,14 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
   app.get('/profile-record/:did', async (c) => {
     const did = c.req.param('did')
     if (!/^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.%-]{1,253})$/.test(did)) return c.json({ error: 'InvalidRequest', message: 'Неверный DID' }, 400)
-    const pds = await resolvePds(did, plcUrl).catch(() => null)
+    const pds = await resolvePds(did, plcUrl, fetcher).catch(() => null)
     if (!pds) return c.json({ displayName: null, description: null })
-    const res = await fetch(`${pds}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`, { signal: AbortSignal.timeout(4000) }).catch(() => null)
-    const v = res?.ok ? ((await res.json()) as { value?: { displayName?: string; description?: string } }).value : undefined
+    const res = await fetcher(`${pds}/xrpc/com.atproto.repo.getRecord?${new URLSearchParams({ repo: did, collection: 'app.bsky.actor.profile', rkey: 'self' })}`, { signal: AbortSignal.timeout(4000) }).catch(() => null)
+    const v = res?.ok
+      ? await readBodyLimited(res, 1024 * 1024)
+          .then((buf) => (JSON.parse(buf.toString('utf8')) as { value?: { displayName?: string; description?: string } }).value)
+          .catch(() => undefined)
+      : undefined
     c.header('cache-control', 'no-store')
     return c.json({ displayName: v?.displayName ?? null, description: v?.description ?? null })
   })

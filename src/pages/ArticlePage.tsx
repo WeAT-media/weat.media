@@ -11,7 +11,7 @@ import { getSessionVideo } from '@/lib/videoUploads'
 import { normalizeVideos } from '@/lib/videos'
 import Stamp from '@/components/Stamp'
 import Reveal from '@/components/Reveal'
-import VideoPlayer, { type VideoPlayerHandle } from '@/components/VideoPlayer'
+import type { VideoPlayerHandle } from '@/components/VideoPlayer'
 import VideoDescription from '@/components/VideoDescription'
 import ReportDialog from '@/components/ReportDialog'
 import PaywallBadge from '@/components/PaywallBadge'
@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 
 const BlocksEditor = lazy(() => import('@/components/BlocksEditor'))
+const VideoPlayer = lazy(() => import('@/components/VideoPlayer'))
 
 /** Компактный BlockSuite-редактор для комментариев: markdown-сериализация, submit/cancel */
 function CommentComposer({
@@ -49,14 +50,25 @@ function CommentComposer({
   onCancel?: () => void
 }) {
   const [md, setMd] = useState('')
+  const [active, setActive] = useState(false)
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
   return (
     <div>
       <p className="meta mb-2">{label}</p>
-      <Suspense fallback={<p className="meta" role="status">Загружаем редактор…</p>}>
-        <BlocksEditor compact value="" onChange={setMd} />
-      </Suspense>
+      {active ? (
+        <Suspense fallback={<div className="flex min-h-[120px] items-center justify-center rounded-md border border-input bg-background p-4 meta" role="status">Загружаем редактор…</div>}>
+          <BlocksEditor compact value="" onChange={setMd} />
+        </Suspense>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setActive(true)}
+          className="min-h-[120px] w-full cursor-text rounded-md border border-input bg-background px-4 py-3 text-left align-top text-[15px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Написать комментарий…
+        </button>
+      )}
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       <div className="mt-3 flex gap-2">
         <button

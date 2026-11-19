@@ -268,13 +268,23 @@ jobs:
           git fetch --quiet origin
           git checkout --quiet --force "$SHA"
           cd deploy/node
-          # TLS Postgres: самоподписанный, один раз на узел (подписчик проверяет sslmode=require)
-          if [ ! -s pg-tls/server.key ]; then
+          # TLS Postgres: CA контура подписывает серверные сертификаты; подписчики получают только ca.crt.
+          # При переходе со старого самоподписанного server.crt создаём CA и перевыпускаем сертификат один раз.
+          if [ ! -s pg-tls/ca.crt ] || [ ! -s pg-tls/server.key ]; then
             install -d -m 700 pg-tls
-            openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=$(hostname)" \
-              -keyout pg-tls/server.key -out pg-tls/server.crt 2>/dev/null
+            if [ ! -s pg-tls/ca.key ]; then
+              openssl genrsa -out pg-tls/ca.key 4096 2>/dev/null
+              openssl req -x509 -new -sha256 -days 3650 -key pg-tls/ca.key \
+                -subj "/CN=weat-postgres-replication-ca" -out pg-tls/ca.crt 2>/dev/null
+            fi
+            openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$(hostname)" \
+              -keyout pg-tls/server.key -out pg-tls/server.csr 2>/dev/null
+            printf 'subjectAltName=DNS:%s\n' "$(hostname)" > pg-tls/server.ext
+            openssl x509 -req -sha256 -days 3650 -in pg-tls/server.csr -CA pg-tls/ca.crt -CAkey pg-tls/ca.key \
+              -CAcreateserial -extfile pg-tls/server.ext -out pg-tls/server.crt 2>/dev/null
+            rm -f pg-tls/server.csr pg-tls/server.ext
           fi
-          chown -R 70:70 pg-tls && chmod 600 pg-tls/server.key && chmod 644 pg-tls/server.crt
+          chown -R 70:70 pg-tls && chmod 600 pg-tls/ca.key pg-tls/server.key && chmod 644 pg-tls/ca.crt pg-tls/server.crt
           printf 'EDGE_IMAGE=%s\nAPPVIEW_IMAGE=%s\nFEED_IMAGE=%s\nANALYTICS_IMAGE=%s\nLABELER_IMAGE=%s\n' "$EDGE" "$APPVIEW" "$FEED" "$ANALYTICS" "$LABELER" > .env.images
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null

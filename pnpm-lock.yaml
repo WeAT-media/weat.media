@@ -34,9 +34,6 @@ importers:
       '@blocksuite/store':
         specifier: 0.19.5
         version: 0.19.5(lit@3.3.3)(yjs@13.6.33)
-      '@foresightjs/react':
-        specifier: ^1.0.0
-        version: 1.0.0(js.foresight@4.2.1)(react@19.3.1)
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.9.2(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)
@@ -139,9 +136,6 @@ importers:
       input-otp:
         specifier: ^1.4.2
         version: 1.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      js.foresight:
-        specifier: ^4.2.1
-        version: 4.2.1
       lit:
         specifier: ^3.2.0
         version: 3.3.3
@@ -1131,12 +1125,6 @@ packages:
 
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
-
-  '@foresightjs/react@1.0.0':
-    resolution: {integrity: sha512-soIq9dSYA9bf5NSkl+NiIMcidTZqW6sEHPcy2WkY2Mllj9BtbTRFL6eVFHvmD4vd2FZLUYMGCRcKRhdB2GxpRg==}
-    peerDependencies:
-      js.foresight: ^4.2.0
-      react: ^18.0.0 || ^19.0.0
 
   '@hookform/resolvers@5.9.2':
     resolution: {integrity: sha512-RtjTnZqsC38s4NKp2XO3fD8IA5uyN4tB7McQ5C6uiMPcV+WWO8F+wVa3e+BXUpH2ScgxghAlwFRMVqjT9WChAQ==}
@@ -2894,9 +2882,6 @@ packages:
     resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
     hasBin: true
 
-  js.foresight@4.2.1:
-    resolution: {integrity: sha512-0IMLIEhYmUobu3I6YNFeSpuK2OYOep3kRhue0DX7qqbUFzuX+Cb0ujkDK3RE97ahysnza7Q63ROWqP1dxAXVuw==}
-
   jsesc@3.1.0:
     resolution: {integrity: sha512-/sM3dO2FOzXjKQhJuo0Q173wf2KOo8t4I8vHy6lF9poUp7bKT0/NHE8fPX23PwfhnykfqnC2xRxOnVw5XuGIaA==}
     engines: {node: '>=6'}
@@ -3291,9 +3276,6 @@ packages:
     resolution: {integrity: sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==}
     engines: {node: '>=10.13.0'}
 
-  position-observer@1.0.3:
-    resolution: {integrity: sha512-iqzsYcYB7wo9kd3Juw4XaVPhlLCfKhZLv6TrH096reU6tIcXuftPkA41+nqQgnPGzVo5zTC4tJ7GnIRTxrnZbQ==}
-
   postcss-import@15.1.0:
     resolution: {integrity: sha512-hpr+J05B2FVYUAXHeK1YyI267J/dDDhMU6B6civm8hSY1jYJnBXxzKDKDswzJmtLHryrjhnDjqqp/49t8FALew==}
     engines: {node: '>=14.0.0'}
@@ -3633,9 +3615,6 @@ packages:
   supports-preserve-symlinks-flag@1.0.0:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
-
-  tabbable@6.5.2:
-    resolution: {integrity: sha512-XgdnB1nGU6KU4VgMnZPaZCx7M1hBrLyEiZYau2G2gq9UT0d7d4FUBlNX7vvPlm/B1vk1PjrzJBx9Lbv4fsqS9g==}
 
   tailwind-merge@3.7.0:
     resolution: {integrity: sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA==}
@@ -5192,11 +5171,6 @@ snapshots:
       react-dom: 19.3.1(react@19.3.1)
 
   '@floating-ui/utils@0.2.12': {}
-
-  '@foresightjs/react@1.0.0(js.foresight@4.2.1)(react@19.3.1)':
-    dependencies:
-      js.foresight: 4.2.1
-      react: 19.3.1
 
   '@hookform/resolvers@5.9.2(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)':
     dependencies:
@@ -6943,11 +6917,6 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
-  js.foresight@4.2.1:
-    dependencies:
-      position-observer: 1.0.3
-      tabbable: 6.5.2
-
   jsesc@3.1.0: {}
 
   json-buffer@3.0.1: {}
@@ -7492,10 +7461,6 @@ snapshots:
 
   pngjs@5.0.0: {}
 
-  position-observer@1.0.3:
-    optionalDependencies:
-      '@rollup/rollup-linux-x64-gnu': 4.68.2
-
   postcss-import@15.1.0(postcss@8.5.32):
     dependencies:
       postcss: 8.5.32
@@ -7858,8 +7823,6 @@ snapshots:
       has-flag: 4.0.0
 
   supports-preserve-symlinks-flag@1.0.0: {}
-
-  tabbable@6.5.2: {}
 
   tailwind-merge@3.7.0: {}
 

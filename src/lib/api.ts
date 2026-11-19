@@ -331,8 +331,8 @@ export const security = {
     authed<SecurityView | { codeSent: true }>('/me/2fa/email', post({ enabled, code })),
   totpSetup: () => authed<{ secret: string; otpauthUrl: string }>('/me/2fa/totp/setup', post({})),
   // refreshJwt — чтобы текущая сессия пережила включение TOTP (сервер отмечает её как прошедшую 2FA)
-  totpEnable: (code: string) =>
-    authed<{ backupCodes: string[]; security: SecurityView }>('/me/2fa/totp/enable', post({ code, refreshJwt: loadSession()?.refreshJwt })),
+  totpEnable: (code: string, password: string, authFactorToken?: string) =>
+    authed<{ backupCodes: string[]; security: SecurityView }>('/me/2fa/totp/enable', post({ code, password, authFactorToken, refreshJwt: loadSession()?.refreshJwt })),
   totpDisable: (code: string) => authed<SecurityView>('/me/2fa/totp/disable', post({ code })),
   regenerateBackupCodes: (code: string) => authed<{ backupCodes: string[] }>('/me/2fa/backup-codes', post({ code })),
   /** журнал устройств: свои сессии, завершить одну или все, кроме этой */

@@ -8,3 +8,4 @@ services:
     command: ["postgres", "-c", "hot_standby=on", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
     volumes:
       - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ../node/pg-tls:/tls:ro

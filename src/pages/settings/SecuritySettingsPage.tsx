@@ -38,6 +38,8 @@ export default function SecuritySettingsPage() {
 
   const [setup, setSetup] = useState<{ secret: string; qr: string } | null>(null)
   const [totpCode, setTotpCode] = useState('')
+  const [totpPassword, setTotpPassword] = useState('')
+  const [totpEmailCode, setTotpEmailCode] = useState('')
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null)
   const [totpOffCode, setTotpOffCode] = useState('')
   const [passwordMethod, setPasswordMethod] = useState<'email' | 'totp'>('email')
@@ -216,12 +218,15 @@ export default function SecuritySettingsPage() {
               </p>
 
               {!view.totpEnabled && !setup && (
-                <button type="button" disabled={busy} onClick={() => act(async () => {
-                  const s = await security.totpSetup()
-                  setSetup({ secret: s.secret, qr: await QRCode.toDataURL(s.otpauthUrl, { margin: 1, width: 192 }) })
-                })} className="btn-primary mt-3 !px-3.5 !py-2 !text-[11px]">
-                  Подключить
-                </button>
+                <>
+                  <button type="button" disabled={busy || !view.passwordLogin} onClick={() => act(async () => {
+                    const s = await security.totpSetup()
+                    setSetup({ secret: s.secret, qr: await QRCode.toDataURL(s.otpauthUrl, { margin: 1, width: 192 }) })
+                  })} className="btn-primary mt-3 !px-3.5 !py-2 !text-[11px]">
+                    Подключить
+                  </button>
+                  {!view.passwordLogin && <p className="mt-2 text-sm text-muted-foreground">Сначала задайте пароль AT Protocol выше — он нужен для подтверждения включения.</p>}
+                </>
               )}
 
               {setup && (
@@ -236,16 +241,27 @@ export default function SecuritySettingsPage() {
                       </button>
                     </p>
                     <form onSubmit={(e) => act(async () => {
-                      const r = await security.totpEnable(totpCode.trim())
+                      const r = await security.totpEnable(totpCode.trim(), totpPassword, totpEmailCode.trim() || undefined)
                       setView(r.security)
                       setBackupCodes(r.backupCodes)
                       setSetup(null)
                       setTotpCode('')
+                      setTotpPassword('')
+                      setTotpEmailCode('')
                       setNotice('Приложение подключено.')
-                    }, e)} className="flex flex-wrap gap-2">
-                      <span className="w-full text-sm">2. Введите 6 цифр из приложения:</span>
-                      <input value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" placeholder="123456" aria-label="Код из приложения" autoComplete="one-time-code" className={inputCls} />
-                      <button type="submit" disabled={busy || totpCode.trim().length < 6} className="btn-primary !px-3.5 !py-2 !text-[11px]">Готово</button>
+                    }, e)} className="space-y-3">
+                      <label className="block text-sm">2. Введите 6 цифр из приложения:
+                        <input value={totpCode} onChange={(e) => setTotpCode(e.target.value)} inputMode="numeric" placeholder="123456" aria-label="Код из приложения" autoComplete="one-time-code" className={`${inputCls} mt-1 w-full`} />
+                      </label>
+                      <label className="block text-sm">3. Подтвердите текущим паролем AT Protocol:
+                        <input type="password" required value={totpPassword} onChange={(e) => setTotpPassword(e.target.value)} autoComplete="current-password" className={`${inputCls} mt-1 w-full`} />
+                      </label>
+                      {view.emailAuthFactor && (
+                        <label className="block text-sm">Код из письма (запросится после проверки пароля, если потребуется):
+                          <input value={totpEmailCode} onChange={(e) => setTotpEmailCode(e.target.value)} autoComplete="one-time-code" className={`${inputCls} mt-1 w-full`} />
+                        </label>
+                      )}
+                      <button type="submit" disabled={busy || totpCode.trim().length < 6 || !totpPassword} className="btn-primary !px-3.5 !py-2 !text-[11px]">Готово</button>
                     </form>
                   </div>
                 </div>

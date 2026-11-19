@@ -20,5 +20,5 @@ try {
   firstVisit = false
 }
 
-if (firstVisit && container.hasChildNodes()) hydrateRoot(container, app)
+if (firstVisit && window.location.pathname === '/' && container.hasChildNodes()) hydrateRoot(container, app)
 else createRoot(container).render(app)

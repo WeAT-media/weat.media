@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { MfaRepo, UserRepo, UserRow } from './db.js'
-import { PdsError, type PdsClient } from './pds.js'
+import { PdsError, type PdsClient, type PdsSession } from './pds.js'
 import { CodeBody, ConfirmEmailBody, Email2faBody, ForgotPasswordBody, MfaBody, PasswordChangeBody, ResetPasswordBody } from './schemas.js'
 import type { SecretBox } from './secretbox.js'
 import { hashBackupCode, newBackupCodes, newTotpSecret, otpauthUrl, totpStep } from './totp.js'
@@ -219,9 +219,24 @@ export function mountSecurityRoutes(
 
   app.post('/me/2fa/totp/enable', async (c) => {
     const { user, token } = await requireUser(c)
-    const { code } = await body(c, CodeBody)
+    const { code, password, authFactorToken, refreshJwt } = await body(c, z.object({
+      code: CodeBody.shape.code,
+      password: z.string().min(1).max(256),
+      authFactorToken: z.string().max(256).optional(),
+      refreshJwt: z.string().max(4096).optional(),
+    }))
     const mfa = await d.mfa.get(user.did)
     if (!mfa.totpPendingEnc) throw fail('NoPendingSetup', 'Начните подключение заново')
+    let verification: PdsSession
+    try {
+      verification = await d.pds.createSession(user.handle, password, authFactorToken)
+    } catch (err) {
+      if (err instanceof PdsError && err.code === 'AuthFactorTokenRequired') throw fail('EmailCodeRequired', 'Введите код из письма для подтверждения пароля', 401)
+      if (err instanceof PdsError && err.status < 500) throw fail('InvalidPassword', 'Неверный пароль', 401)
+      throw err
+    }
+    await d.pds.deleteSession(verification.refreshJwt).catch(() => {})
+    if (verification.did !== user.did) throw fail('InvalidPassword', 'Неверный пароль', 401)
     const secret = d.secrets.open(mfa.totpPendingEnc)
     const step = totpStep(secret, code)
     if (step === null) throw fail('InvalidCode', 'Неверный код из приложения')
@@ -229,7 +244,6 @@ export function mountSecurityRoutes(
     await d.mfa.enable(user.did, d.secrets.seal(secret), backupCodes.map(hashBackupCode))
     await d.mfa.useTotpStep(user.did, step)
     // текущая сессия уже доказала владение: отмечаем её, чтобы не выкинуло сразу после включения
-    const { refreshJwt } = z.object({ refreshJwt: z.string().max(4096).optional() }).parse(await c.req.json().catch(() => ({})))
     await d.mfa.markSessions(user.did, [tokenHash(token), ...(refreshJwt ? [tokenHash(refreshJwt)] : [])], MFA_SESSION_TTL)
     return c.json({ backupCodes, security: await view(user, token) })
   })

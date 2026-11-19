@@ -1,6 +1,5 @@
 import type { ComponentProps } from 'react'
 import { Link } from 'react-router'
-import { useForesight } from '@foresightjs/react'
 import { prefetchArticle } from '@/lib/prefetch'
 import type { Article } from '@/types/types'
 
@@ -8,13 +7,21 @@ type ArticleForesightLinkProps = Omit<ComponentProps<typeof Link>, 'to'> & {
   article: Pick<Article, 'id' | 'atUri' | 'bodyPending'>
 }
 
-export default function ArticleForesightLink({ article, ...props }: ArticleForesightLinkProps) {
-  const { elementRef } = useForesight<HTMLAnchorElement>({
-    callback: () => prefetchArticle(article.id, article.atUri, article.bodyPending),
-    hitSlop: 24,
-    name: `article:${article.id}`,
-    reactivateAfter: 5 * 60 * 1000,
-  })
+export default function ArticleForesightLink({ article, onPointerEnter, onFocus, ...props }: ArticleForesightLinkProps) {
+  const prefetch = () => prefetchArticle(article.id, article.atUri, article.bodyPending)
 
-  return <Link {...props} ref={elementRef} to={`/article/${article.id}`} />
+  return (
+    <Link
+      {...props}
+      to={`/article/${article.id}`}
+      onPointerEnter={(event) => {
+        prefetch()
+        onPointerEnter?.(event)
+      }}
+      onFocus={(event) => {
+        prefetch()
+        onFocus?.(event)
+      }}
+    />
+  )
 }

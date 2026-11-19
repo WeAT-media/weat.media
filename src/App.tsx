@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, type ComponentType } from 'react'
 import { lazyPage as lazy } from '@/lib/chunkReload'
 import { hasSession } from '@/lib/api'
 import { Routes, Route, Navigate, useLocation, useParams } from 'react-router'
@@ -13,10 +13,9 @@ import EventTicker from '@/components/EventTicker'
 import { I18nProvider } from '@/lib/i18n'
 import SkipLink from '@/components/SkipLink'
 import SeoManager from '@/components/SeoManager'
-import LandingPage from '@/pages/LandingPage'
 
-// Главная входит в исходный бандл: отдельный запрос за ней задерживал первую отрисовку.
-// Остальные страницы — отдельными чанками, код редактора и админки не загружается заранее.
+// Страницы и редактор с админкой загружаются отдельными чанками.
+const LandingPage = lazy(() => import('@/pages/LandingPage'))
 const Feed = lazy(() => import('@/pages/Feed'))
 const HotPage = lazy(() => import('@/pages/HotPage'))
 const CollectionsPage = lazy(() => import('@/pages/CollectionsPages').then((m) => ({ default: m.CollectionsPage })))
@@ -103,7 +102,7 @@ function RequireSession({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-export default function App() {
+export default function App({ Landing = LandingPage }: { Landing?: ComponentType }) {
   return (
     <StoreProvider>
       <I18nProvider>
@@ -119,7 +118,7 @@ export default function App() {
           <CookieBanner />
           <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center" role="status"><span className="meta animate-pulse">Загружаем страницу…</span></div>}>
           <Routes>
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={<Landing />} />
             <Route path="/feed" element={<Feed />} />
             <Route path="/atmosphere" element={<AtmospherePage />} />
             <Route path="/premium" element={<PremiumPage />} />

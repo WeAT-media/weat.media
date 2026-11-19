@@ -18,7 +18,7 @@ import type { MessageRow, TicketRepo, TicketRow } from '../src/tickets.ts'
 import type { AtprotoAuth } from '../src/atprotoOAuth.ts'
 import type { ImportDraftRow, ImportRepo, PostSource } from '../src/imports.ts'
 import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
-import type { AdjustmentRow, PayoutRepo, PayoutRow } from '../src/payouts.ts'
+import { payoutHasDeficit, type AdjustmentRow, type PayoutRepo, type PayoutRow } from '../src/payouts.ts'
 import type { SystemAccountRepo } from '../src/systemAccounts.ts'
 import type { DraftRepo, DraftRow } from '../src/drafts.ts'
 import { createCooldown, memCooldown, type Cooldown } from '../src/cooldown.ts'
@@ -179,6 +179,10 @@ function memPayouts(): PayoutRepo {
     async get(id) { return rows.find((x) => x.id === id) },
     async decide(id, status, by, note) {
       const r = rows.find((x) => x.id === id && x.status === 'requested')
+      if (r && status === 'paid') {
+        const b = (await balances(r.author_did, 14)).find((x) => x.currency === r.currency)
+        if (!b || payoutHasDeficit(b)) throw new PdsError(409, 'InsufficientBalance', 'После возврата доступного баланса недостаточно')
+      }
       if (r) Object.assign(r, { status, decided_by: by, staff_note: note, decided_at: new Date() })
       return r
     },
@@ -1130,6 +1134,19 @@ test('payouts: balance from paid sales with hold, request reserves all available
   assert.equal(back.payouts[0].staffNote, 'Неверная карта')
 })
 
+test('payouts: refund after reservation cannot be approved as paid', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'refundwriter', email: 'refundwriter@example.com' }, '5.1.1.1'))).json()
+  paidSales = [{ author: u.user.did, share: 110_000, currency: 'RUB', paidAt: new Date(Date.now() - 30 * 86_400_000), title: 'Возврат' }]
+  const po = await (await app.request('/api/me/payouts', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }, body: JSON.stringify({ currency: 'RUB', method: 'fiat', destination: '4242 4242 4242 4242' }) })).json()
+  paidSales = []
+  const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }
+  const paid = await app.request(`/api/admin/payouts/${po.id}`, { method: 'PATCH', headers: admin, body: JSON.stringify({ status: 'paid' }) })
+  assert.equal(paid.status, 409, 'после refund заявка не проходит без пересчёта')
+  const rejected = await app.request(`/api/admin/payouts/${po.id}`, { method: 'PATCH', headers: admin, body: JSON.stringify({ status: 'rejected', note: 'Заказ возвращён покупателю' }) })
+  assert.equal(rejected.status, 200, 'заявку можно отклонить с причиной')
+})
+
 test('admin: 5 bad staff tokens in a row ban the IP; other IPs and anonymous page views are unaffected', async () => {
   const app = makeApp()
   const hit = (ip: string, token?: string) =>
@@ -1565,8 +1582,9 @@ test('TOTP: setup, enable, every login path gated, backup code single-use, brute
   const { secret, otpauthUrl } = await (await post('/api/me/2fa/totp/setup', {})).json()
   assert.match(otpauthUrl, /^otpauth:\/\/totp\/Indie\.media/)
   const now = () => totpCode(secret, Math.floor(Date.now() / 30_000))
-  assert.equal((await post('/api/me/2fa/totp/enable', { code: '000000' === now() ? '111111' : '000000' })).status, 400)
-  const en = await (await post('/api/me/2fa/totp/enable', { code: now() })).json()
+  assert.equal((await post('/api/me/2fa/totp/enable', { password: 'wrong-password', code: now() })).status, 401, 'одной украденной сессии недостаточно: нужен пароль')
+  assert.equal((await post('/api/me/2fa/totp/enable', { password: 'correct-horse', code: '000000' === now() ? '111111' : '000000' })).status, 400)
+  const en = await (await post('/api/me/2fa/totp/enable', { password: 'correct-horse', code: now() })).json()
   assert.equal(en.backupCodes.length, 10)
   assert.equal(en.security.totpEnabled, true)
 
@@ -1664,7 +1682,7 @@ test('authenticated password change with TOTP uses one-time second factor', asyn
   const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers: auth, body: JSON.stringify(body) })
   const { secret } = await (await post('/api/me/2fa/totp/setup', {})).json()
   const current = totpCode(secret, Math.floor(Date.now() / 30_000))
-  assert.equal((await post('/api/me/2fa/totp/enable', { code: current })).status, 200)
+  assert.equal((await post('/api/me/2fa/totp/enable', { password: 'correct-horse', code: current })).status, 200)
   const next = totpCode(secret, Math.floor(Date.now() / 30_000) + 1)
   const bad = await post('/api/me/password/change', { method: 'totp', code: current, password: 'new-password-3' })
   assert.equal(bad.status, 401, 'шаг TOTP нельзя переиспользовать')
@@ -2337,6 +2355,9 @@ test('staff: Zitadel JWT with project roles; wrong issuer/audience/expired refus
   assert.equal((await tier(await staffToken(['admin'], { iss: 'https://evil.test' }))).status, 401)
   assert.equal((await tier(await staffToken(['admin'], { aud: 'other-project' }))).status, 401)
   assert.equal((await tier(await staffToken(['admin'], { exp: '-1m' }))).status, 401)
+  const otherProjectAdmin = await new SignJWT({ 'urn:zitadel:iam:org:project:roles': { admin: { other: 'other-project' } } })
+    .setProtectedHeader({ alg: 'RS256', kid: 'k1' }).setIssuer(ZITADEL).setAudience(PROJECT_ID).setSubject('u-other').setIssuedAt().setExpirationTime('5m').sign(zKeys.privateKey)
+  assert.equal((await tier(otherProjectAdmin)).status, 403, 'generic claim с ролью другого проекта не даёт прав')
 
   const admin = await staffToken(['admin'], { sub: 'u-admin' })
   assert.equal((await tier(admin)).status, 200)

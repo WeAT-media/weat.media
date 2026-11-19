@@ -43,9 +43,7 @@ export function createStaffVerifier(o: { issuer: string; projectId: string; jwks
 
 /** Zitadel кладёт роли в urn:zitadel:iam:org:project:<id>:roles = { role: { orgId: domain } } */
 export function rolesOf(payload: JWTPayload, projectId: string): Set<StaffRole> {
-  const claim = (payload[`urn:zitadel:iam:org:project:${projectId}:roles`] ?? payload['urn:zitadel:iam:org:project:roles']) as
-    | Record<string, unknown>
-    | undefined
+  const claim = payload[`urn:zitadel:iam:org:project:${projectId}:roles`] as Record<string, unknown> | undefined
   const out = new Set<StaffRole>()
   for (const r of Object.keys(claim ?? {})) if ((STAFF_ROLES as readonly string[]).includes(r)) out.add(r as StaffRole)
   return out

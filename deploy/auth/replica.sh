@@ -27,13 +27,16 @@ SQL
 
   standby)
     host="${2:?адрес primary (NL-1)}"
+    install -d -m 700 ../node/pg-tls
+    scp -o BatchMode=yes "root@$host:/opt/weat/deploy/node/pg-tls/ca.crt" ../node/pg-tls/ca.crt
+    chmod 644 ../node/pg-tls/ca.crt
     docker compose $base -f docker-compose.standby.yml stop zitadel-api zitadel-login zitadel-db 2>/dev/null || true
     # каталог данных — копия primary; слот держит WAL, пока резерв не догонит
     docker compose $base -f docker-compose.standby.yml run --rm --no-deps -e PGPASSWORD="$REPLICATION_PASSWORD" --entrypoint sh zitadel-db -c "
       set -e
       rm -rf /var/lib/postgresql/data/* /var/lib/postgresql/data/.[!.]* 2>/dev/null || true
       pg_basebackup -h $host -p 5433 -U replicator -D /var/lib/postgresql/data -X stream -S zitadel_ru1 -R -P \
-        -d 'sslmode=require'
+        -d 'sslmode=verify-ca sslrootcert=/tls/ca.crt'
       chown -R postgres:postgres /var/lib/postgresql/data && chmod 700 /var/lib/postgresql/data"
     docker compose $base -f docker-compose.standby.yml up -d zitadel-db
     echo "standby запущен: ./replica.sh status"

@@ -45,6 +45,8 @@ export interface Balance {
   available: number
 }
 
+export const payoutHasDeficit = (b: Balance) => b.earned - b.pending - b.reserved - b.paidOut < 0
+
 export interface Sale {
   orderId: string
   title: string
@@ -166,10 +168,19 @@ export function payoutRepo(sql: Sql): PayoutRepo {
       return r
     },
     async decide(id, status, by, note) {
-      const [r] = await sql<PayoutRow[]>`
-        UPDATE payouts SET status = ${status}, decided_by = ${by}, staff_note = ${note}, decided_at = now()
-        WHERE id = ${id} AND status = 'requested' RETURNING *`
-      return r
+      return sql.begin(async (tx) => {
+        const [current] = await tx<PayoutRow[]>`SELECT * FROM payouts WHERE id = ${id} AND status = 'requested' FOR UPDATE`
+        if (!current) return undefined
+        await tx`SELECT pg_advisory_xact_lock(hashtext(${'payout:' + current.author_did}))`
+        if (status === 'paid') {
+          const b = (await balances(tx as unknown as Sql, current.author_did, HOLD_DAYS)).find((x) => x.currency === current.currency.trim())
+          if (!b || payoutHasDeficit(b)) throw new PdsError(409, 'InsufficientBalance', 'После возврата или корректировки доступного баланса недостаточно. Отклоните заявку.')
+        }
+        const [r] = await tx<PayoutRow[]>`
+          UPDATE payouts SET status = ${status}, decided_by = ${by}, staff_note = ${note}, decided_at = now()
+          WHERE id = ${id} AND status = 'requested' RETURNING *`
+        return r
+      })
     },
     async adjust(a) {
       const [r] = await sql<AdjustmentRow[]>`

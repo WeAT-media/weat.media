@@ -1,13 +1,16 @@
+import { Suspense } from 'react'
+import { lazyPage as lazy } from '@/lib/chunkReload'
 import CodeView from '@/components/CodeView'
 import { renderInline } from '@/lib/inline'
 import { safeHref, safeImageSrc } from '@/lib/safeUrl'
 import ArticleCarousel from '@/components/ArticleCarousel'
 import CalloutView from '@/components/CalloutView'
 import UserBlockView from '@/components/UserBlockView'
-import InteractiveVideo from '@/components/InteractiveVideo'
 import FaqView from '@/components/FaqView'
 import ActionButtonView from '@/components/ActionButtonView'
 import type { ArticleBlock } from '@/types/types'
+
+const InteractiveVideo = lazy(() => import('@/components/InteractiveVideo'))
 
 /**
  * Один блок статьи. Общий для страницы статьи и предпросмотра в редакторе — чтобы автор видел ровно то,
@@ -18,7 +21,13 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
   if (block.type === 'carousel') return <ArticleCarousel raw={block.text} />
   if (block.type === 'callout') return <CalloutView raw={block.text} />
   if (block.type === 'userblock') return <UserBlockView raw={block.text} />
-  if (block.type === 'ivideo') return <InteractiveVideo raw={block.text} />
+  if (block.type === 'ivideo') {
+    return (
+      <Suspense fallback={<div className="my-8 aspect-video animate-pulse rounded-md bg-secondary" role="status" aria-label="Загружаем видео" />}>
+        <InteractiveVideo raw={block.text} />
+      </Suspense>
+    )
+  }
   if (block.type === 'faq') return <FaqView raw={block.text} />
   if (block.type === 'button') return <ActionButtonView raw={block.text} />
   if (block.type === 'bookmark') return <BookmarkCard raw={block.text} />

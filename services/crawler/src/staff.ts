@@ -11,8 +11,8 @@ export function createStaffCheck(o: { issuer: string; projectId: string; jwksUrl
   return async (token: string): Promise<boolean> => {
     if (token.split('.').length !== 3) return false
     try {
-      const { payload } = await jwtVerify(token, jwks, { issuer, audience: o.projectId })
-      const roles = (payload[claim] ?? payload['urn:zitadel:iam:org:project:roles']) as Record<string, unknown> | undefined
+      const { payload } = await jwtVerify(token, jwks, { issuer, audience: o.projectId, algorithms: ['RS256', 'ES256', 'EdDSA'] })
+      const roles = payload[claim] as Record<string, unknown> | undefined
       return !!roles && 'admin' in roles
     } catch {
       return false
