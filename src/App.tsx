@@ -111,7 +111,7 @@ export default function App({ Landing = LandingPage }: { Landing?: ComponentType
         <SeoManager />
         <Header />
         <EventTicker />
-        <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none">
+        <main id="main-content" tabIndex={-1} className="min-h-dvh flex-1 focus:outline-none">
           <ScrollToTop />
         <BuildWatcher />
           <UtmCapture />
