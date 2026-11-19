@@ -62,7 +62,7 @@ const blank = (advertiser: string): AdCreative => ({
 export default function AdCreativeEditor({ onChange, initialId }: { onChange?: (ads: AdCreative[]) => void; initialId?: string }) {
   const { articles, user } = useStore()
   const [ads, setAds] = useState<AdCreative[]>(loadAds)
-  const [draft, setDraft] = useState<AdCreative>(() => ads.find((a) => a.id === initialId) ?? ads[0]!)
+  const [draft, setDraft] = useState<AdCreative>(() => ads.find((a) => a.id === initialId) ?? ads[0] ?? blank(user?.name ?? ''))
   // уже показывался — содержимое закрыто: маркировка и отчёты привязаны к нему; меняются статус и расписание
   const locked = launched(draft)
   const [imageUrl, setImageUrl] = useState('')

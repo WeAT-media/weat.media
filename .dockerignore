@@ -4,5 +4,6 @@ server
 services
 deploy
 !deploy/node/Caddyfile
+!deploy/node/edge-start.sh
 .env
 *.log
