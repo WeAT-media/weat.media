@@ -85,7 +85,7 @@ export function AdView({ ad }: { ad: AdCreative }) {
         )}
       </div>
       {/* служебное: маркировка (если показ в РФ) не должна спорить с объявлением */}
-      <p className="mt-4 text-[10px] leading-snug text-muted-foreground/70">
+      <p className="mt-4 text-[11px] leading-snug text-muted-foreground">
         {ad.advertiser}
         {ad.erid && <> · erid: {ad.erid} · маркировка по 38-ФЗ «О рекламе»</>}
         {' · '}Реклама помогает поддерживать инфраструктуру; в Premium её нет.

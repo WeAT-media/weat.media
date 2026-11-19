@@ -3,6 +3,7 @@ import { MessageSquare, Trophy, ArrowBigUp } from 'lucide-react'
 import { commentCount, upvoteCount } from '@/lib/analytics'
 import { fetchRanked } from '@/lib/remoteFeed'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
+import { ssrNow } from '@/lib/ssr'
 import type { Article } from '@/types/types'
 
 type Period = 'day' | 'week' | 'month'
@@ -20,7 +21,7 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
   const [metric, setMetric] = useState<Metric>('upvotes')
   const [origin, setOrigin] = useState<Origin>('all')
   // момент открытия ленты: окно «день/неделя» считается от него
-  const [now] = useState(() => Date.now())
+  const [now] = useState(ssrNow)
 
   // топ по всему индексу с сервера; null — ещё грузится, пусто — считаем по загруженным
   const [server, setServer] = useState<{ key: string; list: Article[] } | null>(null)

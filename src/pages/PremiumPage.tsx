@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link } from 'react-router'
 import { ArrowRight, BadgePercent, Ban, Blocks, Check, Clapperboard, Crown, FlaskConical, Gavel, LineChart, Minus, Rocket } from 'lucide-react'
 import { Counter, PerkCard, Press, Reveal, SplitBar, WordReveal } from '@/components/motion/Motion'
@@ -8,7 +8,6 @@ import { SITE_NAME } from '@/config/site'
 import { PREMIUM_PRICE_RUB, PREMIUM_SALE_FEE_PCT, PREMIUM_VOTE_WEIGHT, SALE_FEE_PCT } from '@/config/premium'
 import { formatMoney } from '@/lib/money'
 import FeeNote from '@/components/FeeNote'
-import InteractiveVideo from '@/components/InteractiveVideo'
 import type { InteractiveVideo as IV } from '@/lib/interactiveVideo'
 
 /** Живой пример на странице: два свободных ролика MDN (CC0) — глава, метка на кадре, викторина и развилка */
@@ -34,6 +33,19 @@ const DEMO: IV = {
   ],
 }
 const DEMO_RAW = JSON.stringify(DEMO)
+// плеер (video.js) и видео грузятся только по нажатию — иначе они тормозят первый показ страницы
+const InteractiveVideo = lazy(() => import('@/components/InteractiveVideo'))
+
+function DemoVideo() {
+  const [started, setStarted] = useState(false)
+  const placeholder = (
+    <button type="button" onClick={() => setStarted(true)} className="mt-3 flex aspect-video w-full items-center justify-center border border-border bg-muted text-sm font-semibold">
+      ▶ Запустить пример
+    </button>
+  )
+  if (!started) return placeholder
+  return <Suspense fallback={placeholder}><InteractiveVideo raw={DEMO_RAW} /></Suspense>
+}
 
 const perks = [
   {
@@ -200,7 +212,7 @@ export default function PremiumPage() {
         {/* живой пример: нажмите play — появятся метки, вопрос и развилка */}
         <div className="md:col-span-2">
           <p className="meta">Пример — нажмите play</p>
-          <InteractiveVideo raw={DEMO_RAW} />
+          <DemoVideo />
         </div>
       </Reveal>
 
@@ -209,7 +221,7 @@ export default function PremiumPage() {
         <table className="mt-6 w-full text-left text-[15px]">
           <thead>
             <tr className="rule">
-              <th className="py-3 pr-4 font-normal" />
+              <th className="py-3 pr-4 font-normal"><span className="sr-only">Возможность</span></th>
               <th className="w-32 py-3 text-center font-mono text-[12px] font-semibold uppercase tracking-[0.08em]">Бесплатно</th>
               <th className="w-32 py-3 text-center font-mono text-[12px] font-semibold uppercase tracking-[0.08em] text-accent">Premium</th>
             </tr>

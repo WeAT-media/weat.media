@@ -39,6 +39,7 @@ import { profileMetaSeed } from '@/data/profiles'
 import { PDS_URL } from '@/config/site'
 import { fetchArticleById, fetchFeedPage, fetchRemoteFeed, remoteId, toComment } from '@/lib/remoteFeed'
 import { ssrData } from '@/lib/ssr'
+import { decodePathParam } from '@/lib/safeUrl'
 import { useLocation } from 'react-router'
 
 const STORAGE_KEY = 'indie-media:v1'
@@ -553,7 +554,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         : articleId
           ? fetchArticleById(articleId).then((a) => a ? [a] : [])
           : profileId
-            ? fetchFeedPage({ author: decodeURIComponent(profileId), limit: 100 }).then((r) => r.articles)
+            ? fetchFeedPage({ author: decodePathParam(profileId), limit: 100 }).then((r) => r.articles)
             : fetchRemoteFeed()
       request.then(withMyLikes).then((a) => alive && setRemoteArticles(a), () => {})
     }

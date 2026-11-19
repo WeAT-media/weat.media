@@ -127,7 +127,7 @@
 		reverse_proxy appview:8787
 	}
 
-	# /api/* — AppView; сама страница /api — SPA (документация)
+	# /api/* — AppView; сама страница /api — SSR (документация), матчер ниже
 	@api path /api/*
 	handle @api {
 		reverse_proxy appview:8787
@@ -156,7 +156,7 @@
 	}
 
 	# Публичные страницы рендерятся с актуальными данными AppView. При ошибке Node вернёт обычный app.html.
-	@ssr_public path_regexp ssr ^(/feed|/hot|/article/[^/]+|/profile/[^/]+)$
+	@ssr_public path_regexp ssr ^(/feed|/hot|/article/[^/]+|/profile/[^/]+|/atmosphere|/premium|/collections|/cases|/api|/docs|/ads|/crawler|/support|/support/contact|/support/legal|/legal|/legal/[^/]+|/login)$
 	handle @ssr_public {
 		reverse_proxy 127.0.0.1:3000
 	}

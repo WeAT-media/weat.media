@@ -317,6 +317,7 @@ export default function AdCreativeEditor({ onChange, initialId }: { onChange?: (
             </legend>
             <select
               className={inputCls}
+              aria-label="Пост для закрепления"
               value={draft.pinnedTo?.uri ?? ''}
               onChange={(e) => {
                 const a = pinnable.find((x) => x.atUri === e.target.value)

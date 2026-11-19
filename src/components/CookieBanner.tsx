@@ -7,11 +7,20 @@ export default function CookieBanner() {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     let alive = true
-    if (!getConsent()) isEuVisitor().then((eu) => alive && eu && setOpen(true))
+    // Баннер — после первого действия посетителя: иначе он, появляясь после загрузки JS, становится LCP страницы.
+    // До выбора статистика всё равно не считается, так что ожидание ничего не нарушает.
+    const interactions = ['pointerdown', 'keydown', 'scroll', 'touchstart'] as const
+    const onInteract = () => {
+      stopWaiting()
+      isEuVisitor().then((eu) => alive && eu && setOpen(true))
+    }
+    const stopWaiting = () => interactions.forEach((type) => window.removeEventListener(type, onInteract))
+    if (!getConsent()) interactions.forEach((type) => window.addEventListener(type, onInteract, { passive: true }))
     const onEvent = (e: Event) => setOpen((e as CustomEvent).detail === 'reopen')
     window.addEventListener(CONSENT_EVENT, onEvent)
     return () => {
       alive = false
+      stopWaiting()
       window.removeEventListener(CONSENT_EVENT, onEvent)
     }
   }, [])

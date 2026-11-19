@@ -39,18 +39,19 @@ export default function CountrySelect({
     onChange(value.includes(code) ? value.filter((c) => c !== code) : [...value, code])
   }
 
+  const shown = value.length === 0 ? placeholder : multiple ? `Выбрано: ${value.length}` : countryLabel(value[0]!)
   return (
     <div className="grid gap-1.5">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
-            aria-label={label}
+            aria-label={`${label}: ${shown}`}
             aria-expanded={open}
             className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className={value.length ? '' : 'text-muted-foreground'}>
-              {value.length === 0 ? placeholder : multiple ? `Выбрано: ${value.length}` : countryLabel(value[0]!)}
+              {shown}
             </span>
             <ChevronDown size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
           </button>

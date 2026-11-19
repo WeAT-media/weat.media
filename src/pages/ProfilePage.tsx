@@ -15,6 +15,7 @@ import { commentAnchor, remoteId, toArticle } from '@/lib/remoteFeed'
 import type { Author } from '@/types/types'
 import { PDS_URL } from '@/config/site'
 import { ssrData } from '@/lib/ssr'
+import { decodePathParam } from '@/lib/safeUrl'
 
 function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, '-')
@@ -47,7 +48,7 @@ export default function ProfilePage() {
   const [collectionError, setCollectionError] = useState('')
   const [remoteProfile, setRemoteProfile] = useState<ApiUser | null>(() => ssrData()?.profile ?? null)
 
-  const decoded = decodeURIComponent(id)
+  const decoded = decodePathParam(id)
   // свои записи в охлаждении и отложенные (скрыты от читателей) — для меток в «Публикациях» у самого автора
   const viewingSelf = !!user && (decoded === user.handle || decoded === user.did)
   const [myPending, setMyPending] = useState<PendingItem[]>([])

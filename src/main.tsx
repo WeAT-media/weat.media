@@ -15,12 +15,15 @@ const app = (
   </StrictMode>
 )
 
-let guest = true
+// Сервер рендерит гостевую страницу на русском. Вошедшим и гостям с другим языком интерфейса
+// разметка не совпадёт — для них обычный рендер вместо гидрации (иначе React #418).
+let matchesSsr = true
 try {
-  guest = !JSON.parse(localStorage.getItem('indie-media:v1') || 'null')?.user
+  const saved = JSON.parse(localStorage.getItem('indie-media:v1') || 'null')
+  matchesSsr = !saved?.user && (saved?.prefs?.uiLang ?? 'ru') === 'ru'
 } catch {
-  guest = true
+  matchesSsr = true
 }
 
-if (guest && container.hasChildNodes()) hydrateRoot(container, app)
+if (matchesSsr && container.hasChildNodes()) hydrateRoot(container, app)
 else createRoot(container).render(app)

@@ -2,6 +2,14 @@
  * Ссылки из чужого контента (статьи, импорт с внешних сайтов, профили приложений).
  * Пропускаем только http(s), mailto и локальные пути; javascript:, data:, vbscript: и //host — нет.
  */
+export function decodePathParam(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 export function safeHref(raw: string | undefined | null): string | undefined {
   if (!raw) return undefined
   const v = raw.trim()

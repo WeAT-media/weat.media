@@ -58,6 +58,9 @@ export default defineConfig({
             // редактора и подсветка кода на странице статьи тянет весь BlockSuite (5+ МБ)
             return /\/(langs|themes)\/|@shikijs\/(langs|themes)/.test(id) ? undefined : 'shiki'
           }
+          // общие с сайтом зависимости BlockSuite: без отдельного чанка Rollup кладёт их в чанк редактора,
+          // и обычные страницы (поповер выбора страны, формы) статически тянут весь BlockSuite
+          if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(@floating-ui|zod|date-fns|dompurify|lz-string|fflate)\//.test(id)) return 'vendor'
           if (/node_modules\/(\.pnpm\/[^/]+\/node_modules\/)?(@blocksuite|@toeverything|@lit|lit|lit-html|lit-element|@lit-labs|yjs|lib0|y-protocols)\//.test(id)) return 'blocksuite'
         },
       },

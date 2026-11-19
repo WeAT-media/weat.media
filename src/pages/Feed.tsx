@@ -13,7 +13,7 @@ import FeedBest from '@/components/FeedBest'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { hotness } from '@/lib/analytics'
 import { fetchFeedPage, fetchRanked } from '@/lib/remoteFeed'
-import { ssrData, type FeedPage } from '@/lib/ssr'
+import { ssrData, ssrNow, type FeedPage } from '@/lib/ssr'
 import type { Article } from '@/types/types'
 import { LANGUAGES, languageName } from '@/data/languages'
 import { useI18n } from '@/lib/i18n'
@@ -205,8 +205,9 @@ export default function Feed() {
     }
   }, [wantHot, hotKey, feedTags, lang, kind])
 
+  const [openedAt] = useState(ssrNow)
   const visible = useMemo(() => {
-    const now = new Date().toISOString()
+    const now = new Date(openedAt).toISOString()
     const at = (a: (typeof articles)[number]) => Date.parse(a.publishedAtFull ?? a.publishedAt) || 0
     const passes = (a: Article) =>
       // отложенные публикации появляются в ленте только после publishAt
@@ -233,7 +234,7 @@ export default function Feed() {
     const inServer = new Set(ranked.map((r) => r.a.id))
     const own = list.filter((a) => !a.fromIndex && !inServer.has(a.id)).map((a) => ({ a, score: hotness(a, upvotes.includes(a.id)) }))
     return [...ranked, ...own].sort((x, y) => y.score - x.score).map((x) => x.a)
-  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes, serverHot, hotKey, serverFresh, freshKey])
+  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes, serverHot, hotKey, serverFresh, freshKey, openedAt])
   const freshTotal = !wantHot && serverFresh?.key === freshKey ? serverFresh.total : visible.length
   const pages = Math.max(1, Math.ceil(freshTotal / PAGE_SIZE))
   const current = Math.min(page, pages)

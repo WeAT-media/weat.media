@@ -13,11 +13,29 @@ const cache = new Map()
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c')
 
+// Чанки статических страниц (src/lib/staticPages.ts) — чтобы гидрация не ждала цепочку import().
+const staticSources = [
+  [/^\/atmosphere$/, 'src/pages/AtmospherePage.tsx'],
+  [/^\/premium$/, 'src/pages/PremiumPage.tsx'],
+  [/^\/collections$/, 'src/pages/CollectionsPages.tsx'],
+  [/^\/cases$/, 'src/pages/CasesPage.tsx'],
+  [/^\/api$/, 'src/pages/ApiDocsPage.tsx'],
+  [/^\/docs$/, 'src/pages/DocsPage.tsx'],
+  [/^\/ads$/, 'src/pages/AdsPage.tsx'],
+  [/^\/crawler$/, 'src/pages/CrawlerInfoPage.tsx'],
+  [/^\/support$/, 'src/pages/SupportPage.tsx'],
+  [/^\/support\/contact$/, 'src/pages/SupportContactPage.tsx'],
+  [/^\/support\/legal$/, 'src/pages/SupportLegalPage.tsx'],
+  [/^\/legal(\/[^/]+)?$/, 'src/pages/legal/LegalPages.tsx'],
+  [/^\/login$/, 'src/pages/LoginPage.tsx'],
+]
+
 function preload(path) {
   const key = path === '/feed' ? 'src/pages/Feed.tsx'
     : path === '/hot' ? 'src/pages/HotPage.tsx'
       : path.startsWith('/article/') ? 'src/pages/ArticlePage.tsx'
-        : path.startsWith('/profile/') ? 'src/pages/ProfilePage.tsx' : null
+        : path.startsWith('/profile/') ? 'src/pages/ProfilePage.tsx'
+          : staticSources.find(([re]) => re.test(path))?.[1] ?? null
   if (!key || !manifest[key]) return ''
   const seen = new Set()
   const files = []

@@ -9,6 +9,8 @@ export interface FeedPage {
 
 export interface SsrData {
   path: string
+  /** момент серверного рендера: окна «день/неделя» на клиенте считаются от него же, иначе гидрация расходится */
+  renderedAt?: number
   articles?: Article[]
   feed?: FeedPage
   hot?: { period: 'day' | 'week' | 'month'; list: { a: Article; score: number }[] }
@@ -30,4 +32,11 @@ export function ssrData(): SsrData | undefined {
     return undefined
   }
   return cached
+}
+
+/** «Сейчас» для расчётов при рендере: на странице, пришедшей с сервера, — время серверного рендера */
+export function ssrNow(): number {
+  const data = ssrData()
+  if (data?.renderedAt && (typeof location === 'undefined' || data.path === location.pathname)) return data.renderedAt
+  return Date.now()
 }

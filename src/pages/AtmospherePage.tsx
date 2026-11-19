@@ -81,7 +81,7 @@ function Node({
       type="button"
       onClick={() => onClick(id)}
       className={`flex w-full items-center gap-3 border p-3 text-left transition-all duration-300 ${
-        on ? 'border-accent bg-accent/10 shadow-sm' : 'border-border bg-background opacity-60 hover:opacity-100'
+        on ? 'border-accent bg-accent/10 shadow-sm' : 'border-border bg-background text-muted-foreground hover:text-foreground'
       }`}
     >
       <Icon size={18} className={on ? 'text-accent' : 'text-muted-foreground'} aria-hidden="true" />

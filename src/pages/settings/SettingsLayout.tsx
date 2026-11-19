@@ -2,6 +2,7 @@ import { Link, Navigate, NavLink, Outlet, useLocation, useParams } from 'react-r
 import { Bell, Code2, Download, FileText, Languages, UserRound, Gavel, History, LayoutList, Link2, Lock, Palette, PenLine, Pin, ShieldAlert, SlidersHorizontal, Wallet } from 'lucide-react'
 import { useStore, type SettingsSyncState } from '@/lib/store'
 import { useI18n, type TranslationKey } from '@/lib/i18n'
+import { decodePathParam } from '@/lib/safeUrl'
 
 const navItems: { to: string; label: TranslationKey; icon: typeof UserRound }[] = [
   { to: 'profile', label: 'profile', icon: UserRound },
@@ -30,7 +31,7 @@ export default function SettingsLayout() {
   if (!user) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname)}`} replace />
 
   const syncLabel: Record<SettingsSyncState, string> = { local: t('localSettings'), syncing: t('saving'), saved: '', error: t('settingsError') }
-  const decoded = decodeURIComponent(id)
+  const decoded = decodePathParam(id)
   if (decoded !== user.handle && decoded !== user.did) {
     return (
       <div className="mx-auto max-w-[720px] px-5 py-24 text-center">

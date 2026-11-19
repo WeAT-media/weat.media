@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Gavel, MessageSquare, Newspaper, type LucideIcon } from 'lucide-react'
 import { useStore } from '@/lib/store'
+import { ssrNow } from '@/lib/ssr'
 
 interface TickerEvent {
   key: string
@@ -60,8 +61,9 @@ export default function EventTicker() {
   // старые сохранённые настройки без tickerLang/uiLang -> русский
   const t = t9n[lang] ?? t9n.ru
 
+  const [openedAt] = useState(ssrNow)
   const events = useMemo<TickerEvent[]>(() => {
-    const now = new Date().toISOString()
+    const now = new Date(openedAt).toISOString()
     const list: TickerEvent[] = []
     for (const a of articles) {
       if (a.publishAt && a.publishAt > now) continue
@@ -106,7 +108,7 @@ export default function EventTicker() {
       }
     }
     return list.sort((x, y) => y.date.localeCompare(x.date)).slice(0, MAX_EVENTS)
-  }, [articles, cases, extraComments, t])
+  }, [articles, cases, extraComments, t, openedAt])
 
   if (prefs.hideTicker) return null
 

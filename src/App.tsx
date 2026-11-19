@@ -108,6 +108,20 @@ export interface AppPages {
   Hot: ComponentType
   Article: ComponentType
   Profile: ComponentType
+  Atmosphere: ComponentType
+  Premium: ComponentType
+  Collections: ComponentType
+  Cases: ComponentType
+  ApiDocs: ComponentType
+  Docs: ComponentType
+  Ads: ComponentType
+  Crawler: ComponentType
+  Support: ComponentType
+  SupportContact: ComponentType
+  SupportLegal: ComponentType
+  LegalIndex: ComponentType
+  LegalDoc: ComponentType
+  Login: ComponentType
 }
 
 export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
@@ -116,6 +130,20 @@ export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
   const HotView = pages.Hot ?? HotPage
   const ArticleView = pages.Article ?? ArticlePage
   const ProfileView = pages.Profile ?? ProfilePage
+  const AtmosphereView = pages.Atmosphere ?? AtmospherePage
+  const PremiumView = pages.Premium ?? PremiumPage
+  const CollectionsView = pages.Collections ?? CollectionsPage
+  const CasesView = pages.Cases ?? CasesPage
+  const ApiDocsView = pages.ApiDocs ?? ApiDocsPage
+  const DocsView = pages.Docs ?? DocsPage
+  const AdsView = pages.Ads ?? AdsPage
+  const CrawlerView = pages.Crawler ?? CrawlerInfoPage
+  const SupportView = pages.Support ?? SupportPage
+  const SupportContactView = pages.SupportContact ?? SupportContactPage
+  const SupportLegalView = pages.SupportLegal ?? SupportLegalPage
+  const LegalIndexView = pages.LegalIndex ?? LegalIndexPage
+  const LegalDocView = pages.LegalDoc ?? LegalDocPage
+  const LoginView = pages.Login ?? LoginPage
   return (
     <StoreProvider>
       <I18nProvider>
@@ -133,16 +161,16 @@ export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
           <Routes>
             <Route path="/" element={<LandingView />} />
             <Route path="/feed" element={<FeedView />} />
-            <Route path="/atmosphere" element={<AtmospherePage />} />
-            <Route path="/premium" element={<PremiumPage />} />
+            <Route path="/atmosphere" element={<AtmosphereView />} />
+            <Route path="/premium" element={<PremiumView />} />
             <Route path="/hot" element={<HotView />} />
-            <Route path="/collections" element={<CollectionsPage />} />
+            <Route path="/collections" element={<CollectionsView />} />
             <Route path="/collection/:id" element={<CollectionRoute />} />
             <Route path="/article/:id" element={<ArticleView />} />
             <Route path="/article/:id/analytics" element={<ArticleAnalyticsPage />} />
             <Route path="/case/:id" element={<CasePage />} />
             <Route path="/case/:id/analytics" element={<CaseAnalyticsPage />} />
-            <Route path="/cases" element={<CasesPage />} />
+            <Route path="/cases" element={<CasesView />} />
             <Route path="/settings" element={<LegacySettingsRedirect />} />
             <Route path="/settings/*" element={<LegacySettingsRedirect />} />
             <Route path="/profile/:id/settings" element={<SettingsLayout />}>
@@ -165,12 +193,12 @@ export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
               <Route path="developer" element={<DeveloperSettingsPage />} />
             </Route>
             <Route path="/compose" element={<RequireSession><ComposePage /></RequireSession>} />
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/login" element={<LoginView />} />
             <Route path="/login/reset" element={<PasswordResetPage />} />
-            <Route path="/api" element={<ApiDocsPage />} />
-            <Route path="/docs" element={<DocsPage />} />
+            <Route path="/api" element={<ApiDocsView />} />
+            <Route path="/docs" element={<DocsView />} />
             <Route path="/design" element={<DesignPage />} />
-            <Route path="/ads" element={<AdsPage />} />
+            <Route path="/ads" element={<AdsView />} />
             <Route path="/ads/dashboard" element={<AdvertiserDashboardPage />} />
             <Route path="/profile/:id" element={<ProfileView />} />
             <Route path="/admin/crawler" element={<AdminCrawlerPage />} />
@@ -182,18 +210,18 @@ export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
             <Route path="/admin/labels" element={<AdminLabelsPage />} />
             <Route path="/admin/cooldown" element={<AdminCooldownPage />} />
             <Route path="/admin/system" element={<AdminSystemPage />} />
-            <Route path="/crawler" element={<CrawlerInfoPage />} />
+            <Route path="/crawler" element={<CrawlerView />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/support" element={<SupportPage />} />
-            <Route path="/support/contact" element={<SupportContactPage />} />
+            <Route path="/support" element={<SupportView />} />
+            <Route path="/support/contact" element={<SupportContactView />} />
             <Route path="/support/tickets" element={<MyTicketsPage />} />
-            <Route path="/support/legal" element={<SupportLegalPage />} />
-            <Route path="/legal" element={<LegalIndexPage />} />
+            <Route path="/support/legal" element={<SupportLegalView />} />
+            <Route path="/legal" element={<LegalIndexView />} />
             <Route path="/purchase/:orderId" element={<PurchaseReturnPage />} />
             <Route path="/after-payments" element={<AfterPaymentsPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route path="/admin" element={<Navigate to="/admin/tickets" replace />} />
-            <Route path="/legal/:slug" element={<LegalDocPage />} />
+            <Route path="/legal/:slug" element={<LegalDocView />} />
             <Route path="/shared-draft/:token" element={<SharedDraftPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

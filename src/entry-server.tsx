@@ -9,8 +9,10 @@ import ProfilePage from './pages/ProfilePage'
 import { toArticle, type FeedItem } from './lib/remoteFeed'
 import type { SsrData } from './lib/ssr'
 import type { ApiUser } from './lib/api'
+import { staticPage } from './lib/staticPages'
+import { decodePathParam } from './lib/safeUrl'
 
-const pages: AppPages = { Landing: LandingPage, Feed, Hot: HotPage, Article: ArticlePage, Profile: ProfilePage }
+const pages: Partial<AppPages> = { Landing: LandingPage, Feed, Hot: HotPage, Article: ArticlePage, Profile: ProfilePage }
 
 async function json<T>(url: string): Promise<T | null> {
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) }).catch(() => null)
@@ -23,7 +25,7 @@ function articlesOf(page: { articles?: FeedItem[] } | null) {
 
 export async function render(url: string, apiBase: string): Promise<{ html: string; data: SsrData }> {
   const u = new URL(url, 'https://weat.media')
-  const data: SsrData = { path: u.pathname }
+  const data: SsrData = { path: u.pathname, renderedAt: Date.now() }
   const articleId = /^\/article\/([^/]+)$/.exec(u.pathname)?.[1]
   const profileId = /^\/profile\/([^/]+)$/.exec(u.pathname)?.[1]
 
@@ -55,7 +57,7 @@ export async function render(url: string, apiBase: string): Promise<{ html: stri
     const article = item ? toArticle(item) : null
     data.articles = article ? [article] : []
   } else if (profileId) {
-    const id = decodeURIComponent(profileId)
+    const id = decodePathParam(profileId)
     const [profile, result] = await Promise.all([
       json<ApiUser>(`${apiBase}/users/${encodeURIComponent(id)}`),
       json<{ articles?: FeedItem[] }>(`${apiBase}/feed?${new URLSearchParams({ author: id, limit: '100' })}`),
@@ -64,10 +66,12 @@ export async function render(url: string, apiBase: string): Promise<{ html: stri
     data.articles = articlesOf(result)
   }
 
+  const extra = await staticPage(u.pathname)
+
   ;(globalThis as typeof globalThis & { __WEAT_SSR__?: SsrData }).__WEAT_SSR__ = data
   const html = renderToString(
     <StaticRouter location={url}>
-      <App pages={pages} />
+      <App pages={{ ...pages, ...extra }} />
     </StaticRouter>,
   )
   delete (globalThis as typeof globalThis & { __WEAT_SSR__?: SsrData }).__WEAT_SSR__
