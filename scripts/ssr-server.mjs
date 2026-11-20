@@ -69,7 +69,7 @@ async function page(url) {
   let output = template.replace('<div id="root"></div>', `<div id="root">${html}</div>`)
   if (title) output = output.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(title)}</title>`)
   const pageUrl = `https://weat.media${data.path}`
-  const canonical = article?.republished?.url || pageUrl
+  const canonical = data.path.startsWith('/article/') ? article?.republished?.url || pageUrl : pageUrl
   if (article && data.path.startsWith('/article/')) {
     if (inlineCss) output = output.replace(/<link rel="stylesheet"[^>]*>/, `<style>${inlineCss}</style>`)
     const description = (article.subtitle || article.excerpt || '').slice(0, 300)
