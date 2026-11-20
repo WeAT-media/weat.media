@@ -9,7 +9,7 @@ overrides:
   file-type: ^21.3.1
   katex: ^0.18.2
   minimatch@>=7.0.0: ^11.0.1
-  zod@<4.6.6: ^4.6.6
+  zod@>=4.0.0 <4.6.6: ^4.6.6
 
 patchedDependencies:
   '@blocksuite/affine-components@0.19.5':
@@ -3904,6 +3904,9 @@ packages:
     peerDependencies:
       zod: ^4.6.6
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
@@ -4691,7 +4694,7 @@ snapshots:
       '@toeverything/theme': 1.1.23
       lit: 3.3.3
       minimatch: 11.0.8
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4714,7 +4717,7 @@ snapshots:
       '@types/mdast': 4.0.4
       lit: 3.3.3
       minimatch: 11.0.8
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4737,7 +4740,7 @@ snapshots:
       '@types/mdast': 4.0.4
       lit: 3.3.3
       minimatch: 11.0.8
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4760,7 +4763,7 @@ snapshots:
       lit: 3.3.3
       lodash.chunk: 4.2.0
       nanoid: 5.1.16
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4787,7 +4790,7 @@ snapshots:
       lit-html: 3.3.3
       lodash.clonedeep: 4.5.0
       shiki: 1.29.2
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4801,7 +4804,7 @@ snapshots:
       '@blocksuite/inline': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       '@blocksuite/store': 0.19.5(lit@3.3.3)(yjs@13.6.33)
       fractional-indexing: 3.4.0
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - lit
       - supports-color
@@ -4825,7 +4828,7 @@ snapshots:
       lodash.clonedeep: 4.5.0
       lodash.mergewith: 4.6.2
       minimatch: 11.0.8
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4862,7 +4865,7 @@ snapshots:
       rehype-parse: 9.0.1
       unified: 11.0.5
       w3c-keyname: 2.2.8
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
       - yjs
@@ -4919,7 +4922,7 @@ snapshots:
       shiki: 1.29.2
       simple-xml-to-json: 1.2.7
       unified: 11.0.5
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4941,7 +4944,7 @@ snapshots:
       '@toeverything/theme': 1.1.23
       date-fns: 4.4.0
       lit: 3.3.3
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -4953,7 +4956,7 @@ snapshots:
       '@preact/signals-core': 1.14.5
       lib0: 0.2.120
       lit: 3.3.3
-      zod: 4.6.7
+      zod: 3.25.76
 
   '@blocksuite/icons@2.1.75(@types/react@19.3.0)(lit@3.3.3)(react@19.3.1)':
     dependencies:
@@ -4968,7 +4971,7 @@ snapshots:
       '@preact/signals-core': 1.14.5
       lit: 3.3.3
       yjs: 13.6.33
-      zod: 4.6.7
+      zod: 3.25.76
 
   '@blocksuite/presets@0.19.5(@types/react@19.3.0)(react@19.3.1)(yjs@13.6.33)':
     dependencies:
@@ -4985,7 +4988,7 @@ snapshots:
       '@preact/signals-core': 1.14.5
       '@toeverything/theme': 1.1.23
       lit: 3.3.3
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - '@types/react'
       - react
@@ -5010,7 +5013,7 @@ snapshots:
       nanoid: 5.1.16
       y-protocols: 1.0.7(yjs@13.6.33)
       yjs: 13.6.33
-      zod: 4.6.7
+      zod: 3.25.76
     transitivePeerDependencies:
       - lit
       - supports-color
@@ -8137,6 +8140,8 @@ snapshots:
   zod-validation-error@4.0.2(zod@4.6.7):
     dependencies:
       zod: 4.6.7
+
+  zod@3.25.76: {}
 
   zod@4.6.7: {}
 
