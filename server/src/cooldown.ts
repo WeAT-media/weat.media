@@ -2,6 +2,7 @@ import { randomBytes, randomInt } from 'node:crypto'
 import type { FeedStream } from './feedStream.js'
 import { mirrorStandardDoc, STANDARD_OPT_OUT_FIELD } from './standardDoc.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
+import { PublishArticleBody, sourceOf } from './articles.js'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { Sql } from './db.js'
@@ -287,6 +288,8 @@ const ArticleEdit = z.object({
   text: z.string().max(200_000),
   excerpt: z.string().trim().max(500).optional(),
   tags: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+  noindex: z.boolean().optional(),
+  republished: PublishArticleBody.shape.republished.nullable().optional(),
   /** перенести выход на сайте (в AT — через 24 ч) или null — снять отложенную публикацию */
   publishAt: z.string().datetime({ offset: true }).nullable().optional(),
 })
@@ -343,6 +346,16 @@ export function mountCooldownRoutes(
     if (!parsed.success) throw new PdsError(400, 'InvalidRequest', z.prettifyError(parsed.error))
     const { publishAt, ...fields } = parsed.data as typeof parsed.data & { publishAt?: string | null }
     let record: Record<string, unknown> = { ...row.record, ...fields }
+    delete record.republished
+    if ('noindex' in parsed.data && parsed.data.noindex !== undefined) {
+      if (parsed.data.noindex) record.noindex = true
+      else delete record.noindex
+    }
+    if ('republished' in parsed.data && parsed.data.republished !== undefined) {
+      const republished = parsed.data.republished as { url: string; publishedAt?: string } | null
+      if (republished) record.source = sourceOf(republished.url, republished.publishedAt)
+      else delete record.source
+    }
     if (publishAt !== undefined) {
       const w = publishAt ? cooldownWindow(new Date(publishAt), d.cooldown.ms) : cooldownWindow(null, d.cooldown.ms, Math.max(Date.now(), row.created_at.getTime()))
       if (!(await d.cooldown.repo.reschedule(row.uri, w.visible, w.publish))) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')

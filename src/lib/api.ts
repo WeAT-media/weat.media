@@ -471,12 +471,12 @@ export const profile = {
 }
 
 /** Период охлаждения: 24 ч запись только на сайте; автор правит или удаляет без следа в сети */
-export interface PendingItem { uri: string; record: { title?: string; subtitle?: string; text?: string; tags?: string[]; createdAt?: string }; pendingUntil?: string; scheduledAt?: string }
+export interface PendingItem { uri: string; record: { title?: string; subtitle?: string; text?: string; tags?: string[]; noindex?: boolean; source?: { url?: string; site?: string; publishedAt?: string; crawledAt?: string }; createdAt?: string }; pendingUntil?: string; scheduledAt?: string }
 export const pending = {
   /** мои записи в охлаждении (включая отложенные, ещё не вышедшие на сайте) */
   list: () => authed<{ items: PendingItem[] }>('/me/pending'),
-  /** publishAt — перенести выход на сайте (в AT — через 24 ч) или null — снять отложенность */
-  update: (uri: string, b: { title?: string; subtitle?: string; text: string; excerpt?: string; tags?: string[]; publishAt?: string | null }) =>
+  /** publishAt — перенести выход на сайте (в AT — через 24 ч) или null — снять отложенность; republished=null — убрать перепечатку */
+  update: (uri: string, b: { title?: string; subtitle?: string; text: string; excerpt?: string; tags?: string[]; noindex?: boolean; republished?: { url: string; publishedAt?: string } | null; publishAt?: string | null }) =>
     authed<{ uri: string }>(`/me/pending?${new URLSearchParams({ uri })}`, { method: 'PUT', body: JSON.stringify(b) }),
   toDraft: (uri: string) => authed<{ draft: Draft }>(`/me/pending/to-draft?${new URLSearchParams({ uri })}`, post({})),
   remove: (uri: string) => authed<{ ok: true }>(`/me/pending?${new URLSearchParams({ uri })}`, { method: 'DELETE' }),

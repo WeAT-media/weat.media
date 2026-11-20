@@ -2858,6 +2858,25 @@ test('republished article: source {url, site, publishedAt} without crawledAt', a
   assert.equal(future.status, 400, 'перепечатка из будущего')
 })
 
+test('pending article edit keeps and updates republishing metadata', async () => {
+  const app = makeApp({ cooldown: true, ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'reprint-edit', email: 're@example.com' }, '5.1.1.1'))).json()
+  const H = { authorization: `Bearer ${a.accessJwt}`, 'content-type': 'application/json' }
+  const created = await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify({ title: 'Перепечатка', text: 'текст', republished: { url: 'https://habr.com/ru/articles/1/', publishedAt: '2024-01-26' } }) })).json()
+  const path = `/api/me/pending?uri=${encodeURIComponent(created.uri)}`
+  const updated = await app.request(path, { method: 'PUT', headers: H, body: JSON.stringify({ title: 'Перепечатка', text: 'новый текст', noindex: true, republished: { url: 'https://habr.com/ru/articles/2/', publishedAt: '2024-02-27T12:30:00.000Z' } }) })
+  assert.equal(updated.status, 200)
+  const edited = await updated.json()
+  assert.equal(edited.record.noindex, true)
+  assert.deepEqual(edited.record.source, { url: 'https://habr.com/ru/articles/2/', site: 'habr.com', publishedAt: '2024-02-27T12:30:00.000Z' })
+  assert.equal(edited.record.republished, undefined)
+  const removed = await app.request(path, { method: 'PUT', headers: H, body: JSON.stringify({ title: 'Перепечатка', text: 'новый текст', noindex: false, republished: null }) })
+  assert.equal(removed.status, 200)
+  const original = await removed.json()
+  assert.equal(original.record.noindex, undefined)
+  assert.equal(original.record.source, undefined)
+})
+
 test('yandex: existing duplicate in this contour — the older account (peer) wins', async () => {
   const SECRET = 'peer-secret-0123456789-0123456789-abcd'
   const nl = makeApp({ contour: 'global', peerSecret: SECRET, ipCountry: { '5.1.1.1': 'NL', '95.1.1.1': 'RU' } })

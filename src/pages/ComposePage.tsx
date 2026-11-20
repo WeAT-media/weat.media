@@ -19,7 +19,6 @@ import { profileMetaSeed } from '@/data/profiles'
 import { MAX_VIDEO_SIZE, formatFileSize, keepSessionVideo, releaseObjectUrl } from '@/lib/videoUploads'
 import { LANGUAGES } from '@/data/languages'
 import Reveal from '@/components/Reveal'
-import StandardSiteNotice from '@/components/StandardSiteNotice'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
 import { plainExcerpt } from '@/lib/plainText'
@@ -173,11 +172,19 @@ export default function ComposePage() {
         setBodyText(`# ${r.title ?? ''}\n\n${r.text ?? ''}`)
         const visibleAt = a.scheduledAt ? new Date(a.scheduledAt) : null
         const scheduled = !!visibleAt && !Number.isNaN(visibleAt.getTime())
+        const originalAt = r.source?.publishedAt ? new Date(r.source.publishedAt) : null
+        const validOriginalAt = originalAt && !Number.isNaN(originalAt.getTime()) ? originalAt : null
         wasScheduled.current = scheduled
         setLoadedMeta({
           subtitle: r.subtitle ?? '',
           tags: r.tags ?? [],
+          noindex: r.noindex === true,
           step: 1,
+          ...(r.source?.url && !r.source.crawledAt ? {
+            republish: true,
+            republishUrl: r.source.url,
+            ...(validOriginalAt ? { republishDate: new Date(validOriginalAt.getTime() - validOriginalAt.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) } : {}),
+          } : {}),
           ...(scheduled && visibleAt ? { scheduleMode: 'later', publishAtInput: new Date(visibleAt.getTime() - visibleAt.getTimezoneOffset() * 60_000).toISOString().slice(0, 16) } : {}),
         })
       })
@@ -565,7 +572,16 @@ export default function ComposePage() {
       try {
         // отложить / перенести / снять отложенность — сервер пересчитает, когда статья видна на сайте и уходит в AT
         const publishAt = scheduleMode === 'later' && publishAtInput ? new Date(publishAtInput).toISOString() : wasScheduled.current ? null : undefined
-        await pendingApi.update(pendingUri, { title: title.trim(), text, tags, ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}), excerpt: draft.excerpt, ...(publishAt !== undefined ? { publishAt } : {}) })
+        await pendingApi.update(pendingUri, {
+          title: title.trim(),
+          text,
+          tags,
+          noindex,
+          republished: draft.republished ? { url: draft.republished.url, ...(draft.republished.publishedAt ? { publishedAt: draft.republished.publishedAt } : {}) } : null,
+          ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}),
+          excerpt: draft.excerpt,
+          ...(publishAt !== undefined ? { publishAt } : {}),
+        })
         forgetArticle(pendingUri)
         navigate(`/article/${remoteId(pendingUri)}`)
       } catch (err) {
@@ -1298,49 +1314,56 @@ export default function ComposePage() {
               )}
             </div>
 
-            <div className="space-y-2">
-              <label className="flex items-start gap-2.5 text-sm">
-                <input type="checkbox" checked={republish} onChange={(e) => setRepublish(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  Перепечатка — статья уже публиковалась
-                  <span className="meta mt-0.5 block !normal-case tracking-normal">
-                    оригинал получит canonical в поиске; ссылка и дата сохранятся в записи, а копия будет доступна через Wayback Machine
+            <section className="overflow-hidden rounded-md border border-border bg-secondary/30 text-left">
+              <p className="meta border-b border-border px-4 py-3">Поиск и распространение</p>
+              <div className="p-4">
+                <label className="flex w-full cursor-pointer items-start gap-3 text-sm">
+                  <input type="checkbox" checked={republish} onChange={(e) => setRepublish(e.target.checked)} className="mt-0.5 !h-4 !w-4 flex-none cursor-pointer accent-accent" />
+                  <span className="min-w-0 flex-1 font-medium">
+                    Перепечатка — статья уже публиковалась
+                    <span className="meta mt-1 block !normal-case leading-relaxed tracking-normal">
+                      Укажем поисковикам canonical на оригинал. Ссылка и дата сохранятся в записи, копия будет доступна через Wayback Machine.
+                    </span>
+                  </span>
+                </label>
+                {republish && (
+                  <div className="mt-4 grid gap-3 rounded-md border border-border bg-background p-3 sm:ml-7 sm:grid-cols-[minmax(0,1fr)_240px]">
+                    <div>
+                      <label htmlFor="republishUrl" className="meta">Ссылка на оригинал</label>
+                      <input id="republishUrl" type="url" value={republishUrl} onChange={(e) => setRepublishUrl(e.target.value)} placeholder="https://habr.com/ru/articles/…" className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                    </div>
+                    <div>
+                      <label htmlFor="republishDate" className="meta">Первая публикация</label>
+                      <input id="republishDate" type="datetime-local" value={republishDate} max={nowLocal} onChange={(e) => setRepublishDate(e.target.value)} className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                    </div>
+                    {republishUrl.trim() && !/^https?:\/\/\S+$/.test(republishUrl.trim()) && <p className="text-sm text-destructive sm:col-span-2">Ссылка должна начинаться с https://</p>}
+                    {republishDate && republishDate > nowLocal && <p className="text-sm text-destructive sm:col-span-2">Дата первой публикации не может быть в будущем</p>}
+                  </div>
+                )}
+              </div>
+
+              <label className="flex w-full cursor-pointer items-start gap-3 border-t border-border p-4 text-sm">
+                <input type="checkbox" checked={noindex} onChange={(e) => setNoindex(e.target.checked)} className="mt-0.5 !h-4 !w-4 flex-none cursor-pointer accent-accent" />
+                <span className="min-w-0 flex-1 font-medium">
+                  Не индексировать поисковиками
+                  <span className="meta mt-1 block !normal-case leading-relaxed tracking-normal">
+                    Статья останется в ленте и по ссылке, но Google и Яндекс не покажут её в поиске (robots: noindex).
                   </span>
                 </span>
               </label>
-              {republish && (
-                <div className="grid gap-2 pl-6 sm:grid-cols-[minmax(0,1fr)_220px]">
-                  <input type="url" value={republishUrl} onChange={(e) => setRepublishUrl(e.target.value)} placeholder="https://habr.com/ru/articles/…" aria-label="Ссылка на оригинал" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                  <input type="datetime-local" value={republishDate} max={nowLocal} onChange={(e) => setRepublishDate(e.target.value)} aria-label="Дата и время первой публикации" className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                  {republishUrl.trim() && !/^https?:\/\/\S+$/.test(republishUrl.trim()) && <p className="text-sm text-destructive sm:col-span-2">Ссылка должна начинаться с https://</p>}
-                  {republishDate && republishDate > nowLocal && <p className="text-sm text-destructive sm:col-span-2">Перепечатка — статья уже выходила: дата не может быть в будущем</p>}
-                </div>
-              )}
-            </div>
 
-            <label className="flex items-start gap-2.5 text-sm">
-              <input type="checkbox" checked={noindex} onChange={(e) => setNoindex(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                Не индексировать поисковиками
-                <span className="meta mt-0.5 block !normal-case tracking-normal">
-                  статья останется в ленте и по ссылке, но Google и Яндекс не покажут её в поиске (robots: noindex)
+              <label className={`flex w-full items-start gap-3 border-t border-border p-4 text-sm ${isPaid || noindex ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                <input type="checkbox" checked={standardSite && !isPaid && !noindex} disabled={isPaid || noindex} onChange={(e) => setStandardSite(e.target.checked)} className="mt-0.5 !h-4 !w-4 flex-none cursor-pointer accent-accent disabled:cursor-not-allowed" />
+                <span className="min-w-0 flex-1 font-medium">
+                  Опубликовать также в standard.site
+                  <span className="meta mt-1 block !normal-case leading-relaxed tracking-normal">
+                    {isPaid || noindex
+                      ? 'Недоступно для платных статей и статей с настройкой «Не индексировать».'
+                      : <>Бесплатная копия для приложений Leaflet и pckt появится после охлаждения вместе с публикацией в AT. <a href="https://standard.site/" target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-accent underline underline-offset-2">Подробнее о standard.site</a></>}
+                  </span>
                 </span>
-              </span>
-            </label>
-
-            <label className="flex items-start gap-2.5 text-sm">
-              <input type="checkbox" checked={standardSite && !isPaid && !noindex} disabled={isPaid || noindex} onChange={(e) => setStandardSite(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                Опубликовать также в standard.site
-                <span className="meta mt-0.5 block !normal-case tracking-normal">
-                  {isPaid || noindex
-                    ? 'недоступно для платных статей и статей с «Не индексировать»'
-                    : 'копия для приложений standard.site (Leaflet, pckt…) со ссылкой на эту статью; после охлаждения — вместе с публикацией в AT'}
-                </span>
-              </span>
-            </label>
-
-            <StandardSiteNotice />
+              </label>
+            </section>
 
             <div className="rule pt-6">
               <p className="meta mb-3">Предпросмотр всей статьи</p>
