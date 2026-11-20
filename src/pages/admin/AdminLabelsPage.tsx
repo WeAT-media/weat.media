@@ -24,7 +24,7 @@ export default function AdminLabelsPage() {
   const [notice, setNotice] = useState('')
 
   useEffect(() => {
-    fetch('/api/labelers')
+    fetch('/api/admin/labelers', { headers: token ? { authorization: `Bearer ${token}` } : {} })
       .then((r) => r.json())
       .then((d: { labelers?: LabelerInfo[]; message?: string }) => {
         if (!d.labelers) throw new Error(d.message ?? 'Сервис коллегий недоступен')
@@ -33,7 +33,7 @@ export default function AdminLabelsPage() {
         if (first) setForm((f) => ({ ...f, labeler: first.id, val: first.labels[0]?.value ?? '' }))
       })
       .catch((e: Error) => setError(e.message))
-  }, [])
+  }, [token])
 
   const lookup = useCallback(async (uri: string) => {
     if (!uri.startsWith('at://') && !uri.startsWith('did:')) return setCurrent([])

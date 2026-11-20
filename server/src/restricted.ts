@@ -3,9 +3,14 @@
  * ни в RSS и превью (распространение такого контента в РФ — уголовный риск). Это не настройка читателя:
  * фильтр на сервере, до ответа. В глобальном контуре выключен — там решает читатель.
  *
- * Метки берём у сервиса коллегий (queryLabels). Он недоступен — пропускаем, но уже известные закрытые записи
- * остаются закрытыми (память узла), а в лог — предупреждение.
+ * Метки берём у сервиса коллегий (queryLabels). Он недоступен — закрываем всё, что узел ещё не проверял:
+ * запись, вышедшую или помеченную во время сбоя, нельзя показать «на всякий случай». Проверенные чистыми
+ * остаются видны (лента не пустеет), известные закрытые — закрыты; в лог — предупреждение.
+ *
+ * Документы внешних площадок standard.site (Leaflet, pckt, Offprint…) в РФ-контуре закрыты всегда: их не
+ * проверяли наши коллегии, меток на них нет — фильтр по меткам их бы пропустил. Без обращения к лейблеру.
  */
+const EXTERNAL_DOC = '/site.standard.document/'
 
 export const RESTRICTED_COLLEGIA = ['nsfw', 'politics'] as const
 
@@ -36,9 +41,11 @@ export function createRestrictedFilter(opts: { enabled: boolean; labelerUrl?: st
     enabled: opts.enabled,
     async blocked(uris) {
       const out = new Set<string>()
-      if (!opts.enabled || !base || !uris.length) return out
+      if (!opts.enabled || !uris.length) return out
+      for (const u of uris) if (u.includes(EXTERNAL_DOC)) out.add(u)
+      if (!base) return out
       const now = Date.now()
-      const ask = [...new Set(uris)].filter((u) => {
+      const ask = [...new Set(uris)].filter((u) => !out.has(u)).filter((u) => {
         const s = seen.get(u)
         if (s && now - s.at < ttl) {
           if (s.blocked) out.add(u)
@@ -64,8 +71,8 @@ export function createRestrictedFilter(opts: { enabled: boolean; labelerUrl?: st
           }
         }
       } catch (err) {
-        console.warn('restricted filter: labeler unavailable, using known blocks', err instanceof Error ? err.message : err)
-        for (const u of ask) if (sticky.has(u)) out.add(u)
+        console.warn('restricted filter: labeler unavailable, closing unchecked records', err instanceof Error ? err.message : err)
+        for (const u of ask) if (sticky.has(u) || seen.get(u)?.blocked !== false) out.add(u)
       }
       if (seen.size > 50_000) seen.clear()
       return out

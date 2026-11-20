@@ -48,6 +48,17 @@ export function mountLabelRoutes(
     return c.json(body, res.ok ? 200 : 502)
   })
 
+  /**
+   * Сотрудникам — все коллегии, и в РФ-контуре тоже: метки общие, и именно метка nsfw/politics закрывает запись
+   * в РФ. Скрывать эти коллегии от модератора РФ-контура значило бы, что поставить такую метку оттуда нельзя.
+   */
+  app.get('/admin/labelers', async (c) => {
+    await h.requireStaff(c, 'moderator')
+    const res = await relay(c, '/xrpc/app.weat.labeler.describe')
+    c.header('cache-control', 'private, no-store')
+    return c.json(await res.json(), res.ok ? 200 : 502)
+  })
+
   /** действующие метки на записи: ?uris=at://…,at://… (до 100) */
   app.get('/labels', async (c) => {
     const uris = [...new Set((c.req.query('uris') ?? '').split(',').map((u) => u.trim()).filter((u) => /^(at:\/\/did:|did:)\S{3,390}$/.test(u)))].slice(0, 100)

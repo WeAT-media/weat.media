@@ -388,6 +388,19 @@ pub fn leaflet_text(content: Option<&Value>) -> Option<String> {
 
 /// документ с площадки (без белого списка) короче — заглушка или «скоро тут будет»; в ленту не берём
 const PLATFORM_MIN_TEXT: usize = 280;
+/// фермы публикуют сериями: автору с площадки (не из белого списка) — не больше стольких документов за сутки
+const PLATFORM_MAX_PER_DAY: i64 = 3;
+
+/// Заголовок SEO-фермы: «exam dumps», шпаргалки к сертификациям, продажа ссылок. Только для документов
+/// с площадок — автору из белого списка фильтр не мешает.
+pub fn spam_title(title: &str) -> bool {
+    let t = title.to_lowercase();
+    const WORDS: [&str; 14] = [
+        "dumps", "braindump", "exam questions", "exam prep", "exam guide", "practice questions", "practice test",
+        "study guide", "study materials", "certification exam", "certification guide", "dofollow", "backlinks", "pdf questions",
+    ];
+    WORDS.iter().any(|w| t.contains(w)) || (t.contains("exam") && (t.contains("pdf") || t.contains("2026") || t.contains("updated")))
+}
 
 async fn index_doc(
     pool: &PgPool,
@@ -400,11 +413,27 @@ async fn index_doc(
 ) -> sqlx::Result<()> {
     let uri = format!("at://{did}/{STANDARD_DOC}/{rkey}");
     let now = Utc::now();
-    let Some(record) = to_article_record(rec, None, now)
-        .filter(|r| trusted || r.get("text").and_then(Value::as_str).is_some_and(|t| t.chars().count() >= PLATFORM_MIN_TEXT))
-    else {
+    let Some(record) = to_article_record(rec, None, now).filter(|r| {
+        trusted
+            || (r.get("text").and_then(Value::as_str).is_some_and(|t| t.chars().count() >= PLATFORM_MIN_TEXT)
+                && !r.get("title").and_then(Value::as_str).is_some_and(spam_title))
+    }) else {
         return index::delete(pool, &uri).await;
     };
+    if !trusted {
+        // серия с одного аккаунта — ферма: правку уже принятого документа пропускаем, новые сверх лимита — нет
+        let (known, recent): (bool, i64) = sqlx::query_as(
+            "SELECT EXISTS (SELECT 1 FROM articles WHERE uri = $1),
+                    (SELECT count(*) FROM articles WHERE did = $2 AND uri LIKE 'at://%/site.standard.document/%' AND indexed_at > now() - interval '24 hours')",
+        )
+        .bind(&uri)
+        .bind(did)
+        .fetch_one(pool)
+        .await?;
+        if !known && recent >= PLATFORM_MAX_PER_DAY {
+            return Ok(());
+        }
+    }
     // канонический адрес — только для того, что прошло фильтр: это сетевые запросы к чужим PDS
     let canonical = res.canonical(rec).await;
     let record = to_article_record(rec, canonical.as_deref(), now).unwrap_or(record);
@@ -937,5 +966,21 @@ mod tests {
         assert_eq!(to_article_record(&rec, None, now()).unwrap()["langs"], json!(["en"]));
         let rec = json!({ "site": "https://a.b", "title": "Hello", "textContent": "text", "langs": ["it"] });
         assert_eq!(to_article_record(&rec, None, now()).unwrap()["langs"], json!(["it"]), "указанный автором — главнее");
+    }
+
+    #[test]
+    fn seo_farm_titles_detected() {
+        for t in [
+            "CIMAPRA19-P03-1 Exam Dumps | Easy PDF Questions with Free Demo",
+            "Netapp NS0-701 Study Guide – Essential Resources for 2026",
+            "Prepare for the Cisco 350-201 Exam with Updated Practice Questions",
+            "AACE-CST Exam Preparation Tips and Study Resources 2026",
+            "Unlimited DR55 dofollow links from Whitewind",
+        ] {
+            assert!(spam_title(t), "{t}");
+        }
+        for t in ["Venue Announcement: De Rijtuigenloods, Amersfoort", "Verifying the CVE-2026-123633 fix across packages", "Give the Song, Keep the Note if It Matters", "My first exam at university"] {
+            assert!(!spam_title(t), "{t}");
+        }
     }
 }
