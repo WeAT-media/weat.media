@@ -1426,6 +1426,31 @@ test('feed stream (SSE): index events relayed through one upstream, restricted d
   }
 })
 
+test('RU contour: feed asks the index for own articles only (origin=weat); other platforms are empty', async () => {
+  const asked: string[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+    const u = String(url)
+    if (u.startsWith('http://feed.test/')) {
+      asked.push(u)
+      return new Response(JSON.stringify({ articles: [] }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return realFetch(url, init)
+  }) as typeof fetch
+  try {
+    const ru = makeApp({ feedUrl: 'http://feed.test', restricted: { enabled: true, async blocked() { return new Set<string>() } } as Deps['restricted'] })
+    await ru.request('/api/feed?origin=all&limit=10')
+    assert.equal(new URL(asked.at(-1)!).searchParams.get('origin'), 'weat')
+    const ext = await (await ru.request('/api/feed?origin=standard')).json()
+    assert.deepEqual(ext.articles, [])
+    const global = makeApp({ feedUrl: 'http://feed.test' })
+    await global.request('/api/feed?origin=all&limit=10')
+    assert.equal(new URL(asked.at(-1)!).searchParams.get('origin'), 'all', 'глобальный контур — как просили')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
 test('system accounts: admin creates news (reserved handle via admin API), logs in via handoff; people cannot be impersonated', async () => {
   const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
   const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }

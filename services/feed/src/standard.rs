@@ -390,6 +390,18 @@ pub fn leaflet_text(content: Option<&Value>) -> Option<String> {
 const PLATFORM_MIN_TEXT: usize = 280;
 /// фермы публикуют сериями: автору с площадки (не из белого списка) — не больше стольких документов за сутки
 const PLATFORM_MAX_PER_DAY: i64 = 3;
+/// Общие домены площадок: издание на них заводится за минуту — так делают фермы. С площадки берём только
+/// авторов со своим доменом (издание site.standard.publication на собственном адресе); белый список — без условий.
+const SHARED_HOSTS: [&str; 1] = ["leaflet.pub"];
+
+/// адрес оригинала — на собственном домене автора, а не на общем домене площадки
+pub fn own_domain(canonical: Option<&str>) -> bool {
+    let Some(host) = canonical.and_then(|u| u.strip_prefix("https://")).and_then(|u| u.split(['/', '?', '#']).next()) else {
+        return false;
+    };
+    let host = host.to_ascii_lowercase();
+    !SHARED_HOSTS.iter().any(|d| host == *d || host.ends_with(&format!(".{d}")))
+}
 
 /// Заголовок SEO-фермы: «exam dumps», шпаргалки к сертификациям, продажа ссылок. Только для документов
 /// с площадок — автору из белого списка фильтр не мешает.
@@ -399,7 +411,13 @@ pub fn spam_title(title: &str) -> bool {
         "dumps", "braindump", "exam questions", "exam prep", "exam guide", "practice questions", "practice test",
         "study guide", "study materials", "certification exam", "certification guide", "dofollow", "backlinks", "pdf questions",
     ];
-    WORDS.iter().any(|w| t.contains(w)) || (t.contains("exam") && (t.contains("pdf") || t.contains("2026") || t.contains("updated")))
+    // «exam» + признак подготовки к сертификации или код экзамена вида AIP-C01, 350-201
+    const EXAM_HINTS: [&str; 12] = ["pdf", "2026", "updated", "practice", "prep", "get ready", "pass ", "questions", "materials", "guide", "certif", "resources"];
+    let exam_code = title.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')).any(|w| {
+        let parts: Vec<&str> = w.split(['-', '_']).filter(|p| !p.is_empty()).collect();
+        parts.len() >= 2 && w.chars().any(|c| c.is_ascii_digit()) && w.chars().filter(char::is_ascii_alphabetic).all(|c| c.is_ascii_uppercase())
+    });
+    WORDS.iter().any(|w| t.contains(w)) || (t.contains("exam") && (exam_code || EXAM_HINTS.iter().any(|h| t.contains(h))))
 }
 
 async fn index_doc(
@@ -436,6 +454,9 @@ async fn index_doc(
     }
     // канонический адрес — только для того, что прошло фильтр: это сетевые запросы к чужим PDS
     let canonical = res.canonical(rec).await;
+    if !trusted && !own_domain(canonical.as_deref()) {
+        return index::delete(pool, &uri).await;
+    }
     let record = to_article_record(rec, canonical.as_deref(), now).unwrap_or(record);
     let Some(article) = parse_article(&record, now) else {
         return index::delete(pool, &uri).await;
@@ -976,11 +997,25 @@ mod tests {
             "Prepare for the Cisco 350-201 Exam with Updated Practice Questions",
             "AACE-CST Exam Preparation Tips and Study Resources 2026",
             "Unlimited DR55 dofollow links from Whitewind",
+            "Get Ready for the CSPAI Exam with Effective Practice",
+            "Get Ready for the AIP-C01 Exam with Effective Prac",
+            "Crack the 1Z0-1127-25 exam on the first try",
         ] {
             assert!(spam_title(t), "{t}");
         }
         for t in ["Venue Announcement: De Rijtuigenloods, Amersfoort", "Verifying the CVE-2026-123633 fix across packages", "Give the Song, Keep the Note if It Matters", "My first exam at university"] {
             assert!(!spam_title(t), "{t}");
         }
+    }
+
+    #[test]
+    fn platform_authors_need_own_domain() {
+        assert!(own_domain(Some("https://blog.example.com/post")));
+        assert!(own_domain(Some("https://pckt.blog/about-x")), "pckt и Offprint — как раньше");
+        assert!(!own_domain(Some("https://leaflet.pub/abc")));
+        assert!(!own_domain(Some("https://itand1991.leaflet.pub/3n2")));
+        assert!(!own_domain(Some("https://X.Leaflet.Pub/a")));
+        assert!(!own_domain(None), "адрес не разрешился — не берём");
+        assert!(!own_domain(Some("http://blog.example.com")));
     }
 }

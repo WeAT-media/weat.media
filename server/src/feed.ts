@@ -177,6 +177,12 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
         const v = c.req.query(k)
         if (v) q.set(k, v)
       }
+      // РФ-контур: внешние площадки закрыты всегда (restricted.ts) — просим у ленты только свои статьи,
+      // иначе страница из 100 записей после фильтра пустела бы
+      if (d.restricted?.enabled) {
+        if (c.req.query('origin') === 'standard') return c.json({ articles: [], total: 0 })
+        q.set('origin', 'weat')
+      }
       q.set('limit', String(Math.min(limit, 100)))
       try {
         const res = await fetch(`${d.feedUrl}/feed-api/articles?${q}`, { signal: AbortSignal.timeout(3000) })
