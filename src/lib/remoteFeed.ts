@@ -148,7 +148,9 @@ export const commentAnchor = (id: string) => {
   return `c-${rkey}-${did.slice(-6)}`
 }
 
-export function toArticle(i: FeedItem): Article | null {
+export function toArticle(raw: FeedItem): Article | null {
+  // автор с другой площадки (standard.site) может прийти без handle — тогда показываем DID
+  const i = raw.handle ? raw : { ...raw, handle: raw.did }
   const r = i.record
   if (!r.title) return null
   const blocks = r.text ? markdownToBlocks(r.text) : []

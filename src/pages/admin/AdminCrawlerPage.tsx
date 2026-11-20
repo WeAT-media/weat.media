@@ -6,6 +6,7 @@ import { HANDLE_DOMAIN, SITE_NAME } from '@/config/site'
 import { staffAuthConfigured, staffLogin, staffLogout, staffToken } from '@/lib/staffAuth'
 import SiteRulesEditor from '@/components/SiteRulesEditor'
 import StandardAllowPanel from '@/components/StandardAllowPanel'
+import StandardPlatformsPanel from '@/components/StandardPlatformsPanel'
 
 /** Админка краулера (services/crawler). Вход сотрудника через Zitadel (роль admin); ADMIN_TOKEN — только аварийно */
 
@@ -397,6 +398,7 @@ export default function AdminCrawlerPage() {
             <input value={newSource.linkPattern} onChange={(e) => setNewSource({ ...newSource, linkPattern: e.target.value })} placeholder="без RSS: ^/blog/articles/.+" title="страница-список без RSS: регулярка пути статей" aria-label="Шаблон ссылок" className={`${inputCls} sm:col-span-2`} />
           </form>
         </section>
+        {staffToken() && <StandardPlatformsPanel token={staffToken()!} />}
         {staffToken() && <StandardAllowPanel token={staffToken()!} />}
       </div>
     </div>

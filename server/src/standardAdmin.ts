@@ -17,6 +17,8 @@ const AllowBody = z.object({
   note: z.string().trim().max(200).optional(),
 })
 
+const PlatformBody = z.object({ contentType: z.string().trim().min(3).max(200), enabled: z.boolean() })
+
 const DID = /^did:(plc:[a-z2-7]{24}|web:[a-z0-9.-]+)$/
 const HANDLE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
 
@@ -28,9 +30,10 @@ export function mountStandardAdminRoutes(
     audit(who: Staff | 'break-glass', action: string, target: string | null, details?: Record<string, unknown>): Promise<void>
   },
 ) {
-  const feed = async (method: string, query = '', body?: unknown) => {
+  /** suffix — подпуть и query: '', '/platforms', '/block?did=…' */
+  const feed = async (method: string, suffix = '', body?: unknown) => {
     if (!d.feedUrl || !d.feedAdminToken) throw fail('NotConfigured', 'Лента standard.site не подключена (FEED_URL, FEED_ADMIN_TOKEN)', 503)
-    const res = await fetch(`${d.feedUrl.replace(/\/$/, '')}/feed-api/admin/standard${query}`, {
+    const res = await fetch(`${d.feedUrl.replace(/\/$/, '')}/feed-api/admin/standard${suffix}`, {
       method,
       headers: { authorization: `Bearer ${d.feedAdminToken}`, ...(body ? { 'content-type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -74,6 +77,46 @@ export function mountStandardAdminRoutes(
     if (!DID.test(did)) throw fail('InvalidRequest', 'Нужен DID', 400)
     await feed('DELETE', `?${new URLSearchParams({ did })}`)
     await h.audit(staff, 'standard.disallow', did)
+    return c.json({ ok: true })
+  })
+
+  // ── площадки целиком (Leaflet, pckt, Offprint): документы идут в ленту без белого списка авторов
+  app.get('/admin/standard/platforms', async (c) => {
+    await h.requireStaff(c, 'admin')
+    return c.json(await (await feed('GET', '/platforms')).json())
+  })
+
+  app.put('/admin/standard/platforms', async (c) => {
+    const staff = await h.requireStaff(c, 'admin')
+    const b = PlatformBody.safeParse(await c.req.json().catch(() => null))
+    if (!b.success) throw fail('InvalidRequest', z.prettifyError(b.error), 400)
+    await feed('PUT', '/platforms', b.data)
+    await h.audit(staff, 'standard.platform', b.data.contentType, { enabled: b.data.enabled })
+    return c.json({ ok: true })
+  })
+
+  // ── блок-лист: автор со спамом на площадке пропадает из ленты целиком
+  app.get('/admin/standard/block', async (c) => {
+    await h.requireStaff(c, 'admin')
+    return c.json(await (await feed('GET', '/block')).json())
+  })
+
+  app.post('/admin/standard/block', async (c) => {
+    const staff = await h.requireStaff(c, 'admin')
+    const b = AllowBody.safeParse(await c.req.json().catch(() => null))
+    if (!b.success) throw fail('InvalidRequest', z.prettifyError(b.error), 400)
+    const did = await toDid(b.data.id)
+    await feed('POST', '/block', { did, ...(b.data.note ? { note: b.data.note } : {}) })
+    await h.audit(staff, 'standard.block', did, { id: b.data.id, ...(b.data.note ? { note: b.data.note } : {}) })
+    return c.json({ did }, 201)
+  })
+
+  app.delete('/admin/standard/block/:did', async (c) => {
+    const staff = await h.requireStaff(c, 'admin')
+    const did = c.req.param('did')
+    if (!DID.test(did)) throw fail('InvalidRequest', 'Нужен DID', 400)
+    await feed('DELETE', `/block?${new URLSearchParams({ did })}`)
+    await h.audit(staff, 'standard.unblock', did)
     return c.json({ ok: true })
   })
 }

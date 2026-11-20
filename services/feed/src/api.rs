@@ -75,6 +75,8 @@ pub fn router(state: AppState) -> Router {
                 .post(standard_allow)
                 .delete(standard_disallow),
         )
+        .route("/feed-api/admin/standard/platforms", get(platforms_list).put(platform_set))
+        .route("/feed-api/admin/standard/block", get(block_list).post(block_add).delete(block_remove))
         .with_state(state)
 }
 
@@ -605,4 +607,74 @@ async fn stream() -> axum::response::sse::Sse<impl futures_util::Stream<Item = R
         Some((Ok(ev), rx))
     });
     Sse::new(events).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(20)))
+}
+
+fn internal(err: sqlx::Error, what: &str) -> Response {
+    tracing::error!(%err, what);
+    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+}
+
+async fn platforms_list(State(s): State<AppState>, headers: HeaderMap) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match crate::standard::list_platforms(&s.pool).await {
+        Ok(rows) => ([(header::CACHE_CONTROL, "no-store")], Json(rows)).into_response(),
+        Err(err) => internal(err, "platforms list"),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlatformBody {
+    content_type: String,
+    enabled: bool,
+}
+
+async fn platform_set(State(s): State<AppState>, headers: HeaderMap, Json(b): Json<PlatformBody>) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match crate::standard::set_platform(&s.pool, &b.content_type, b.enabled).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(err) => internal(err, "platform set"),
+    }
+}
+
+async fn block_list(State(s): State<AppState>, headers: HeaderMap) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match crate::standard::list_blocked(&s.pool).await {
+        Ok(rows) => ([(header::CACHE_CONTROL, "no-store")], Json(rows)).into_response(),
+        Err(err) => internal(err, "block list"),
+    }
+}
+
+async fn block_add(State(s): State<AppState>, headers: HeaderMap, Json(b): Json<AllowBody>) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if !valid_did(&b.did) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let note = b.note.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(|n| n.chars().take(200).collect::<String>());
+    match crate::standard::block(&s.pool, &b.did, note.as_deref()).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(err) => internal(err, "block add"),
+    }
+}
+
+async fn block_remove(State(s): State<AppState>, headers: HeaderMap, Query(q): Query<DidQuery>) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if !valid_did(&q.did) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    match crate::standard::unblock(&s.pool, &q.did).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(err) => internal(err, "block remove"),
+    }
 }
