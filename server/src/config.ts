@@ -45,6 +45,8 @@ const Env = z.object({
   ZITADEL_JWKS_URL: z.string().url().optional(),
   /** сервис ленты (services/feed), например http://feed:8790 */
   FEED_URL: z.string().url().optional(),
+  /** токен админ-API ленты (белый список standard.site); тот же — в env сервиса ленты */
+  FEED_ADMIN_TOKEN: z.string().min(32).optional(),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   /** публичный адрес сайта: OAuth redirect_uri = PUBLIC_URL/api/auth/yandex/callback */
   PUBLIC_URL: z.string().url().default('http://localhost:3000'),

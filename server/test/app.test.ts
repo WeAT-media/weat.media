@@ -1,3 +1,4 @@
+import type { PeerContour } from '../src/contour.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
@@ -715,6 +716,11 @@ function fakePds(): PdsClient {
       tokenUser(jwt).acct.app.delete(name)
     },
     async adminUpdateHandle() {},
+    async didForIdentifier(identifier) {
+      const id = identifier.trim().toLowerCase()
+      if (id.startsWith('did:')) return byDid(id)?.[1].did
+      return [...accounts.entries()].find(([h, a]) => h === id || a.email.toLowerCase() === id)?.[1].did
+    },
     async adminUpdatePassword(did, password) {
       const hit = byDid(did)
       if (!hit) throw new PdsError(404, 'RepoNotFound', 'no repo')
@@ -752,7 +758,8 @@ function fakePds(): PdsClient {
     },
     async deleteRecord(jwt, repo, collection, rkey) {
       tokenUser(jwt)
-      const i = published.findIndex((p) => p.repo === repo && `r${published.indexOf(p) + 1}` === rkey)
+      stored.delete(`${repo}/${collection}/${rkey}`)
+      const i = published.findIndex((p) => p.repo === repo && p.collection === collection && `r${published.indexOf(p) + 1}` === rkey)
       if (i >= 0) published.splice(i, 1)
     },
   }
@@ -817,7 +824,7 @@ function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: bo
     feedUrl: opts.feedUrl,
     nodeRole: opts.nodeRole,
   }
-  cooldownLast = opts.cooldown ? createCooldown({ pds: deps.pds, secrets: deps.secrets, repo: memCooldown(), ms: 60_000 }) : undefined
+  cooldownLast = opts.cooldown ? createCooldown({ pds: deps.pds, secrets: deps.secrets, repo: memCooldown(), ms: 60_000, siteUrl: 'http://localhost:3000' }) : undefined
   deps.cooldown = cooldownLast
   return createApp(deps)
 }
@@ -1255,6 +1262,104 @@ test('pds gate: external createSession — TOTP account with main password refus
   }
 })
 
+test('pds gate: account from the other contour — local PDS 401, peer gate logs in; peer TOTP refusal passed through; no loops', async () => {
+  const { Hono } = await import('hono')
+  const { mountPdsGate } = await import('../src/pdsGate.ts')
+  const calls: string[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+    const u = String(url)
+    calls.push(u)
+    const { identifier } = JSON.parse(String(init?.body)) as { identifier: string }
+    const send = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+    if (u.startsWith('http://pds.test')) return send(401, { error: 'AuthenticationRequired', message: 'Invalid identifier or password' })
+    assert.equal(new Headers(init?.headers).get('x-indie-peer-hop'), '1', 'сосед получает метку перехода')
+    if (identifier === 'ru-user.weat.media') return send(200, { did: 'did:plc:ru', accessJwt: 'a', refreshJwt: 'r', didDoc: {} })
+    if (identifier === 'ru-totp.weat.media') return send(401, { error: 'AuthFactorTokenRequired', message: 'TOTP' })
+    return send(401, { error: 'AuthenticationRequired' })
+  }) as typeof fetch
+  try {
+    const app = new Hono()
+    mountPdsGate(app, {
+      pdsUrl: 'http://pds.test',
+      pds: {} as unknown as PdsClient,
+      mfa: { get: async () => ({ totpEnabledAt: null }) } as unknown as MfaRepo,
+      peer: { publicUrl: 'http://peer.test' } as unknown as PeerContour,
+    })
+    const login = (identifier: string, hop = false) =>
+      app.request('/pds/createSession', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(hop ? { 'x-indie-peer-hop': '1' } : {}) },
+        body: JSON.stringify({ identifier, password: 'pw' }),
+      })
+    const ok = await login('ru-user.weat.media')
+    assert.equal(ok.status, 200)
+    assert.equal((await ok.json()).did, 'did:plc:ru')
+    assert.equal((await (await login('ru-totp.weat.media')).json()).error, 'AuthFactorTokenRequired')
+    assert.equal((await login('nobody.weat.media')).status, 401)
+    calls.length = 0
+    assert.equal((await login('ru-user.weat.media', true)).status, 401, 'запрос от соседа дальше не идёт')
+    assert.deepEqual(calls, ['http://pds.test/xrpc/com.atproto.server.createSession'])
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('pds oauth sign-in gate: TOTP account refused whatever the password; others forwarded to PDS with headers and cookies intact; peer asked for foreign DIDs', async () => {
+  const { Hono } = await import('hono')
+  const { mountPdsGate } = await import('../src/pdsGate.ts')
+  const forwarded: { url: string; headers: Headers; body: string }[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+    const u = String(url)
+    if (u.startsWith('http://peer.test/api/peer/totp')) return new Response(JSON.stringify({ totp: new URL(u).searchParams.get('did') === 'did:plc:ru-totp' }), { status: 200 })
+    forwarded.push({ url: u, headers: new Headers(init?.headers), body: String(init?.body) })
+    const h = new Headers({ 'content-type': 'application/json' })
+    h.append('set-cookie', 'device-id=abc; Path=/; HttpOnly')
+    h.append('set-cookie', 'session-id=def; Path=/; HttpOnly')
+    return new Response(JSON.stringify({ account: { sub: 'did:plc:plain' } }), { status: 200, headers: h })
+  }) as typeof fetch
+  try {
+    const app = new Hono()
+    const dids: Record<string, string> = { 'totp.weat.media': 'did:plc:totp', 'plain.weat.media': 'did:plc:plain', 'plain@example.com': 'did:plc:plain', 'ru-totp.weat.media': 'did:plc:ru-totp', 'ru-plain.weat.media': 'did:plc:ru-plain' }
+    mountPdsGate(app, {
+      pdsUrl: 'http://pds.test',
+      pds: { didForIdentifier: async (id: string) => dids[id] } as unknown as PdsClient,
+      mfa: { get: async (did: string) => ({ totpEnabledAt: did === 'did:plc:totp' ? new Date() : null }) } as unknown as MfaRepo,
+      users: { findByDid: async (did: string) => (did.startsWith('did:plc:ru-') ? undefined : { did }) } as unknown as UserRepo,
+      peer: { publicUrl: 'http://peer.test' } as unknown as PeerContour,
+      peerSecret: 'x'.repeat(32),
+    })
+    const signIn = (identifier: string, password = 'pw') =>
+      app.request('/pds/oauth-sign-in', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://pds.weat.media', 'x-csrf-token': 't0k', cookie: 'csrf-token=t0k' },
+        body: JSON.stringify({ locale: 'ru', identifier, password }),
+      })
+    for (const pw of ['right', 'wrong']) {
+      const r = await signIn('totp.weat.media', pw)
+      assert.equal(r.status, 400)
+      assert.equal((await r.json()).error, 'invalid_request')
+    }
+    assert.equal((await signIn('ru-totp.weat.media')).status, 400, 'TOTP у пользователя соседнего контура')
+    assert.equal(forwarded.length, 0, 'до PDS не дошло')
+
+    const ok = await signIn('plain.weat.media')
+    assert.equal(ok.status, 200)
+    assert.deepEqual(ok.headers.getSetCookie(), ['device-id=abc; Path=/; HttpOnly', 'session-id=def; Path=/; HttpOnly'])
+    assert.equal(forwarded[0]!.url, 'http://pds.test/@atproto/oauth-provider/~api/sign-in')
+    assert.equal(forwarded[0]!.headers.get('origin'), 'https://pds.weat.media')
+    assert.equal(forwarded[0]!.headers.get('x-csrf-token'), 't0k')
+    assert.equal(forwarded[0]!.headers.get('cookie'), 'csrf-token=t0k')
+    assert.equal(JSON.parse(forwarded[0]!.body).password, 'pw')
+    assert.equal((await signIn('plain@example.com')).status, 200, 'вход по email')
+    assert.equal((await signIn('ru-plain.weat.media')).status, 200)
+    assert.equal((await signIn('nobody.weat.media')).status, 200, 'неизвестный — пусть ответит PDS')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
 test('system accounts: admin creates news (reserved handle via admin API), logs in via handoff; people cannot be impersonated', async () => {
   const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
   const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }
@@ -1676,6 +1781,29 @@ test('authenticated password change with email code requires confirmed email and
   const login = await fakePdsLast!.createSession('alina.indie.media', 'new-password-2', 'TWOFA-1')
   assert.equal(login.did, user.did)
   assert.equal((await app.request('/api/me/password/change', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method: 'email', code: mailbox.reset, password: 'attacker-password' }) })).status, 401)
+})
+
+test('provider-only user sets AT password in settings: provider login keeps working, wrong code leaves account passwordless', async () => {
+  const app = makeApp({ ipCountry: { '95.1.1.1': 'RU' } })
+  const ya = await oauthFlow(app, 'yandex', 'code-ivan', '95.1.1.1')
+  const s = await (await app.request('/api/auth/handoff', json({ code: ya.searchParams.get('handoff') }, '95.1.1.1'))).json()
+  const auth = { authorization: `Bearer ${s.accessJwt}`, 'content-type': 'application/json' }
+  const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers: auth, body: JSON.stringify(body) })
+  await post('/api/me/email/confirm/request', {})
+  assert.equal((await post('/api/me/email/confirm', { code: 'CONF-1' })).status, 200)
+  assert.equal((await post('/api/me/password/email/request', {})).status, 200)
+
+  assert.equal((await post('/api/me/password/change', { method: 'email', code: 'RESET-wrong', password: 'my-at-password' })).status, 401)
+  assert.equal((await getIds(app, s.accessJwt)).passwordLogin, false, 'неверный код — пароля по-прежнему нет')
+
+  assert.equal((await post('/api/me/password/change', { method: 'email', code: mailbox.reset, password: 'my-at-password' })).status, 200)
+  assert.equal((await getIds(app, s.accessJwt)).passwordLogin, true)
+  // теперь можно войти в Bluesky и другие AT-приложения: handle + новый пароль
+  assert.equal((await fakePdsLast!.createSession('ivan-petrov.indie.media', 'my-at-password', 'TWOFA-1')).did, s.user.did)
+  // а вход через Яндекс не сломался: в привязке теперь пароль приложения, а не старый основной
+  const again = await oauthFlow(app, 'yandex', 'code-ivan', '95.1.1.1')
+  const s2 = await (await app.request('/api/auth/handoff', json({ code: again.searchParams.get('handoff') }, '95.1.1.1'))).json()
+  assert.equal(s2.user.handle, 'ivan-petrov.indie.media')
 })
 
 test('authenticated password change with TOTP uses one-time second factor', async () => {
@@ -2514,6 +2642,61 @@ test('shared drafts: login required, Yjs updates sync, editor becomes reviewer, 
   const rec = published.at(-1)!.record as { reviewers?: { did: string; handle?: string }[] }
   assert.deepEqual(rec.reviewers, [{ did: b.user.did, handle: 'reviewer.indie.media' }])
   assert.equal((await app.request(`/api/shared/${share.token}`, { headers: H(b.accessJwt) })).status, 410, 'после публикации ссылка закрыта')
+})
+
+test('standard.site: copy on publish by default, opt-out checkbox, author button only for records already in PDS', async () => {
+  const app = makeApp()
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'stdwriter', email: 'std@example.com' }, '1.1.1.1'))).json()
+  const H = { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }
+  const pub = async (b: unknown) => (await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify(b) })).json()) as { uri: string }
+  const doc = (rkey: string) => stored.get(`${u.user.did}/site.standard.document/${rkey}`) as Record<string, unknown> | undefined
+
+  const a = await pub({ title: 'С копией', text: 'абзац' })
+  const ra = a.uri.split('/').pop()!
+  assert.equal(doc(ra)?.title, 'С копией', 'галочка по умолчанию — копия есть')
+  assert.equal(doc(ra)?.weatArticle, a.uri)
+
+  const b = await pub({ title: 'Без копии', text: 'абзац', standardSite: false })
+  const rb = b.uri.split('/').pop()!
+  assert.equal(doc(rb), undefined, 'галочку сняли — копии нет')
+
+  // кнопка у автора: состояние и копия задним числом
+  const status = (rkey: string, h = H) => app.request(`/api/me/articles/${rkey}/standard-site`, { headers: h })
+  assert.deepEqual(await (await status(rb)).json(), { inPds: true, eligible: true, mirrored: false })
+  const made = await app.request(`/api/me/articles/${rb}/standard-site`, { method: 'POST', headers: H })
+  assert.equal(made.status, 201)
+  assert.equal(doc(rb)?.title, 'Без копии')
+  assert.equal((await (await status(rb)).json()).mirrored, true)
+
+  // не записано в PDS (охлаждение, чужая или несуществующая статья) — кнопки нет
+  assert.equal((await (await status('nope')).json()).inPds, false)
+  const missing = await app.request('/api/me/articles/nope/standard-site', { method: 'POST', headers: H })
+  assert.equal(missing.status, 409)
+  assert.equal((await missing.json()).error, 'NotInRepository')
+
+  const n = await pub({ title: 'Скрытая', text: 'абзац', noindex: true })
+  const rn = n.uri.split('/').pop()!
+  assert.equal(doc(rn), undefined, 'noindex не копируется даже с галочкой')
+  assert.equal((await (await status(rn)).json()).eligible, false)
+  assert.equal((await app.request(`/api/me/articles/${rn}/standard-site`, { method: 'POST', headers: H })).status, 400)
+  assert.equal((await app.request(`/api/me/articles/${ra}/standard-site`, { method: 'POST' })).status, 401)
+})
+
+test('standard.site with cooldown: opt-out mark never reaches the repo, copy made only when allowed', async () => {
+  const app = makeApp({ cooldown: true, ipCountry: { '5.1.1.1': 'DE' } })
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'stdcool', email: 'stdcool@example.com' }, '5.1.1.1'))).json()
+  const H = { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }
+  const pub = async (b: unknown) => (await (await app.request('/api/me/articles', { method: 'POST', headers: H, body: JSON.stringify(b) })).json()) as { uri: string }
+  const yes = await pub({ title: 'Да', text: 'текст' })
+  const no = await pub({ title: 'Нет', text: 'текст', standardSite: false })
+  for (const r of [yes, no]) (await cooldownLast!.repo.get(r.uri))!.publish_at = new Date(Date.now() - 1000)
+  assert.equal(await cooldownLast!.publishDue(), 2)
+  const rec = (uri: string) => stored.get(`${u.user.did}/media.weat.article/${uri.split('/').pop()}`)!
+  const doc = (uri: string) => stored.get(`${u.user.did}/site.standard.document/${uri.split('/').pop()}`)
+  assert.equal(rec(no.uri).title, 'Нет')
+  assert.equal('$weatNoStandardSite' in rec(no.uri), false, 'служебная метка не в репозитории')
+  assert.equal(doc(no.uri), undefined)
+  assert.equal((doc(yes.uri) as { title?: string } | undefined)?.title, 'Да')
 })
 
 test('cooldown: article and comment stay on the site 24h, editable and deletable; then published to the repo at the same uri; staff sees the queue', async () => {

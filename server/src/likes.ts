@@ -9,7 +9,7 @@ import { PdsError, type PdsClient } from './pds.js'
 
 export const LIKE_COLLECTION = 'media.weat.like'
 
-const ARTICLE_URI = /^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/
+const ARTICLE_URI = /^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/(media\.weat\.article|site\.standard\.document)\/[A-Za-z0-9._~:-]+$/
 export const LikeBody = z.object({
   subject: z.string().regex(ARTICLE_URI, 'subject: at://did/media.weat.article/rkey'),
   cid: z.string().min(1).max(200),

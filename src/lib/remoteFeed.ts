@@ -26,7 +26,7 @@ export interface FeedItem {
     createdAt?: string
     paywall?: { accessType?: 'one-time' | 'subscription'; price?: number; currency?: 'RUB' | 'USD' | 'EUR'; tierId?: string }
     privateContent?: { id?: string }
-    source?: { url?: string; site?: string; author?: string; publishedAt?: string; crawledAt?: string }
+    source?: { url?: string; site?: string; author?: string; publishedAt?: string; crawledAt?: string; kind?: string }
     kind?: string
     videos?: RecordVideo[]
     noindex?: boolean
@@ -157,7 +157,9 @@ export function toArticle(i: FeedItem): Article | null {
   const created = r.createdAt ?? new Date().toISOString()
   // краулер ставит crawledAt (и пишет от учёток crawler-*); source без них — перепечатка, указанная самим автором
   const crawled = !!r.source?.url && (!!r.source.crawledAt || i.handle.startsWith('crawler-'))
-  const republished = !crawled && !!r.source?.url && /^https?:\/\//.test(r.source.url)
+  // документ standard.site (Leaflet, pckt…) из сети: лента хранит простой текст, полная версия — на сайте автора
+  const standard = r.source?.kind === 'standard.site'
+  const republished = !crawled && !standard && !!r.source?.url && /^https?:\/\//.test(r.source.url)
   const videos = toVideos(i)
   const preview = r.videos?.[0]?.preview
   return {
@@ -193,7 +195,8 @@ export function toArticle(i: FeedItem): Article | null {
     ...(r.text ? {} : { bodyPending: true }),
     cid: i.cid,
     indexedAt: created,
-    sourceType: crawled ? 'crawler' : 'native-pds',
+    sourceType: crawled ? 'crawler' : standard ? 'external-pds' : 'native-pds',
+    ...(standard && r.source?.url && /^https:\/\//.test(r.source.url) ? { original: { url: r.source.url, site: r.source.site ?? new URL(r.source.url).hostname } } : {}),
     canonicalId: i.uri,
     ...(crawled ? { source: { url: r.source!.url!, label: r.source!.site ?? new URL(r.source!.url!).hostname } } : {}),
     ...(r.paywall?.price !== undefined

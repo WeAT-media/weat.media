@@ -89,6 +89,12 @@ async function page(url) {
     meta('name', 'twitter:image', image)
     meta('name', 'twitter:image:alt', article.title)
     output = output.replace(/<meta name="description" content="[^"]*" \/>/, `<meta name="description" content="${escapeHtml(description)}" />`)
+    // standard.site: обратная ссылка на копию в site.standard.document — её делает сервер у бесплатных статей
+    // (server/src/standardDoc.ts); по ней клиенты standard.site проверяют, что документ принадлежит странице
+    const m = /^at:\/\/(did:[a-z]+:[A-Za-z0-9._:%-]+)\/media\.weat\.article\/([A-Za-z0-9._~:-]+)$/.exec(article.atUri || '')
+    if (m && !article.paywall && !article.noindex && article.sourceType === 'native-pds') {
+      output = output.replace('</head>', `<link rel="site.standard.document" href="${escapeHtml(`at://${m[1]}/site.standard.document/${m[2]}`)}" /></head>`)
+    }
   } else if (title) {
     output = output.replace(/<meta property="og:title" content="[^"]*" \/>/, `<meta property="og:title" content="${escapeHtml(title)}" />`)
   }

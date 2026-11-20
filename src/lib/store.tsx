@@ -786,6 +786,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             langs: article.language ? [article.language] : [],
             kind: video ? 'video' : 'text',
             ...(article.noindex ? { noindex: true } : {}),
+            ...(article.standardSite === false ? { standardSite: false } : {}),
             ...(draftId ? { draftId } : {}),
             ...(article.republished ? { republished: { url: article.republished.url, ...(article.republished.publishedAt ? { publishedAt: article.republished.publishedAt } : {}) } } : {}),
             ...(article.publishAt && article.publishAt > now ? { publishAt: new Date(article.publishAt).toISOString() } : {}),

@@ -22,6 +22,7 @@ import { buildCommentsFeed } from '@/lib/rss'
 import { useArticleTracking } from '@/lib/tracking'
 import { commentAnchor, fetchArticleBody, fetchComments, markdownToBlocks, remoteId, toArticle } from '@/lib/remoteFeed'
 import { hasSession, paidContent, pending as pendingApi } from '@/lib/api'
+import StandardSiteMirrorButton from '@/components/StandardSiteMirrorButton'
 import { safeHref } from '@/lib/safeUrl'
 import OwnershipClaim from '@/components/OwnershipClaim'
 import CollegiumIcon from '@/components/CollegiumIcon'
@@ -657,6 +658,12 @@ export default function ArticlePage() {
               </p>
             )
           })()}
+          {article.original && (
+            <p className="meta mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 border border-dashed border-border bg-secondary/40 p-4 !normal-case tracking-normal">
+              <Rss size={11} aria-hidden="true" /> Опубликовано на {article.original.site} (standard.site) — здесь текст без оформления ·
+              <a href={safeHref(article.original.url)} target="_blank" rel="noreferrer" className="text-accent underline-offset-4 hover:underline">читать оригинал</a>
+            </p>
+          )}
           {article.source && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-border bg-secondary/40 p-4">
               <p className="meta inline-flex min-w-0 flex-wrap items-center gap-1.5">
@@ -1008,6 +1015,13 @@ export default function ArticlePage() {
               )}
 
               {/* Вынести на суд */}
+              {/* копия старой статьи в standard.site — у автора, когда статья уже в PDS */}
+              {isOwnArticle && article.atUri && !article.pendingUntil && !article.paywall && !article.noindex && (
+                <div className="rule mt-10 pt-6">
+                  <StandardSiteMirrorButton atUri={article.atUri} />
+                </div>
+              )}
+
               <div className="rule mt-10 pt-6">
                 {isOwnArticle ? (
                   <p className="meta inline-flex items-center gap-1.5 text-muted-foreground">

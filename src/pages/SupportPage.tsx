@@ -1,8 +1,30 @@
 import { Link } from 'react-router'
-import { ArrowLeft, EyeOff, Landmark, LifeBuoy, Scale, ShieldCheck, Wrench } from 'lucide-react'
+import { ArrowLeft, AtSign, EyeOff, Landmark, LifeBuoy, Scale, ShieldCheck, Wrench } from 'lucide-react'
 import Reveal from '@/components/Reveal'
 
 const faq = [
+  {
+    icon: AtSign,
+    category: 'Вход через AT Protocol',
+    items: [
+      {
+        q: 'Как войти на weAT.media с аккаунтом Bluesky или своего PDS',
+        a: 'На странице входа в блоке «Через другой AT-сервер» введите handle полностью, например alice.bsky.social или ваш домен, и нажмите «Войти». Вас перенаправит на ваш сервер (bsky.social или собственный PDS) — подтвердите доступ там. Пароль от Bluesky weAT.media не видит. Если профиль уже привязан, откроется он, иначе создастся новый.',
+      },
+      {
+        q: 'Как войти в Bluesky с аккаунтом weAT.media',
+        a: 'В приложении Bluesky на экране входа выберите «Хостинг-провайдер» → «Свой» и укажите weat.media. Логин — handle целиком (например alina.weat.media), пароль — от weAT.media. Если включена двухфакторная защита, основной пароль в Bluesky не подойдёт: создайте пароль приложения в Настройки → Безопасность и войдите с ним. Аккаунты обоих регионов входят по одному адресу weat.media.',
+      },
+      {
+        q: 'Я вхожу через Google, GitHub или Яндекс — какой пароль вводить в Bluesky',
+        a: 'Своего пароля у такого аккаунта сначала нет. Задайте его: Настройки → Безопасность → «Задать пароль AT Protocol», подтвердите кодом из письма (email нужно подтвердить) или из приложения-аутентификатора. Вход через Google, GitHub или Яндекс на weAT.media продолжит работать. Этот же пароль спросит страница входа weat.media, если другое AT-приложение перенаправит вас сюда после ввода handle.',
+      },
+      {
+        q: 'Bluesky пишет «Invalid identifier or password»',
+        a: 'Проверьте, что в логине handle полностью, с .weat.media, а не только имя или email. Для аккаунтов с двухфакторной защитой нужен пароль приложения. После 20 неудачных попыток за минуту вход временно ограничивается — подождите минуту.',
+      },
+    ],
+  },
   {
     icon: EyeOff,
     category: 'Видимость записей',

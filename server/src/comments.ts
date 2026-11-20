@@ -10,7 +10,7 @@ import type { NotificationService } from './notifications.js'
  * тред статьи — из индекса ленты (services/feed). Персональные токены пишут через /v1/comments.
  */
 
-const ARTICLE_URI = /^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/
+const ARTICLE_URI = /^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/(media\.weat\.article|site\.standard\.document)\/[A-Za-z0-9._~:-]+$/
 const COMMENT_URI = /^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.comment\/[A-Za-z0-9._~:-]+$/
 const RKEY = /^[A-Za-z0-9._~:-]{1,512}$/
 const DID = /^did:[a-z]+:[A-Za-z0-9._:%-]{1,200}$/

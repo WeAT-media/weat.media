@@ -107,7 +107,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
   /** «Читать дальше»: общие теги и общие читатели — считает индекс (services/feed/src/rank.rs) */
   app.get('/feed/related', async (c) => {
     const uri = c.req.query('uri') ?? ''
-    if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/.test(uri)) {
+    if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/(media\.weat\.article|site\.standard\.document)\/[A-Za-z0-9._~:-]+$/.test(uri)) {
       return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey' }, 400)
     }
     const limit = String(Math.min(20, Math.max(1, Number(c.req.query('limit')) || 3)))
@@ -131,7 +131,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
       uri = direct?.uri ?? ''
       if (!uri && res?.status === 404) return c.json({ error: 'NotFound', message: 'Статья не найдена' }, 404)
     }
-    if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/media\.weat\.article\/[A-Za-z0-9._~:-]+$/.test(uri)) {
+    if (!/^at:\/\/did:[a-z]+:[A-Za-z0-9._:%-]+\/(media\.weat\.article|site\.standard\.document)\/[A-Za-z0-9._~:-]+$/.test(uri)) {
       return c.json({ error: 'InvalidRequest', message: 'uri: at://did/media.weat.article/rkey или short: <rkey>-<did-tail>' }, 400)
     }
     // перенесённая автору статья краулера: по старому адресу — копия автора

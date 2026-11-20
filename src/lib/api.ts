@@ -408,7 +408,12 @@ export const articles = {
     publishAt?: string
     /** перепечатка: оригинал и дата первой публикации (YYYY-MM-DD или ISO) */
     republished?: { url: string; publishedAt?: string }
+    /** копия в standard.site (site.standard.document); по умолчанию — да */
+    standardSite?: boolean
   }) => authed<{ uri: string; cid: string; pendingUntil?: string; visibleAt?: string }>('/me/articles', post(b)),
+  /** копия старой статьи в standard.site: только для уже записанных в PDS */
+  standardSiteStatus: (rkey: string) => authed<{ inPds: boolean; eligible: boolean; mirrored: boolean }>(`/me/articles/${encodeURIComponent(rkey)}/standard-site`),
+  mirrorToStandardSite: (rkey: string) => authed<{ uri: string }>(`/me/articles/${encodeURIComponent(rkey)}/standard-site`, { method: 'POST' }),
 }
 
 /** Черновик из импорта постов AT-аккаунта: text — markdown для редактора */

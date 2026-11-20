@@ -78,9 +78,13 @@ pub fn parse_article(rec: &Value, now: DateTime<Utc>) -> Option<Article> {
     };
     let created_at = past(rec.get("createdAt")).unwrap_or(now);
     let crawled = rec.get("source").and_then(|s| s.get("crawledAt")).is_some();
-    let published_at = past(rec.get("source").filter(|_| crawled).and_then(|s| s.get("publishedAt")))
-        .filter(|d| *d <= created_at)
-        .unwrap_or(created_at);
+    let published_at = past(
+        rec.get("source")
+            .filter(|_| crawled)
+            .and_then(|s| s.get("publishedAt")),
+    )
+    .filter(|d| *d <= created_at)
+    .unwrap_or(created_at);
     Some(Article {
         title: title.chars().take(300).collect(),
         created_at,
@@ -109,9 +113,16 @@ pub struct CommentRec {
     pub created_at: DateTime<Utc>,
 }
 
+/// лайк или комментарий — к статье: нашей или документу standard.site (crate::standard)
+fn article_subject(uri: &str) -> bool {
+    uri.starts_with("at://")
+        && (uri.contains(&format!("/{COLLECTION}/"))
+            || uri.contains(&format!("/{}/", crate::standard::STANDARD_DOC)))
+}
+
 pub fn parse_comment(rec: &Value, now: DateTime<Utc>) -> Option<CommentRec> {
     let subject = rec.get("subject")?.get("uri")?.as_str()?;
-    if !subject.starts_with("at://") || !subject.contains(&format!("/{COLLECTION}/")) {
+    if !article_subject(subject) {
         return None;
     }
     let text = rec.get("text")?.as_str()?.trim();
@@ -146,7 +157,7 @@ pub struct LikeRec {
 
 pub fn parse_like(rec: &Value, now: DateTime<Utc>) -> Option<LikeRec> {
     let subject = rec.get("subject")?.get("uri")?.as_str()?;
-    if !subject.starts_with("at://") || !subject.contains(&format!("/{COLLECTION}/")) {
+    if !article_subject(subject) {
         return None;
     }
     let created_at = rec

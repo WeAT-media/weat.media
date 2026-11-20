@@ -10,6 +10,7 @@ mod index;
 mod rank;
 mod record;
 mod rss;
+mod standard;
 
 use std::net::SocketAddr;
 
@@ -74,7 +75,10 @@ async fn main() {
         .map(|u| u.trim().trim_end_matches('/'))
         .filter(|u| u.starts_with("https://"))
     {
-        let peer = backfill::Pds { base: base.to_string(), http: pds.http.clone() };
+        let peer = backfill::Pds {
+            base: base.to_string(),
+            http: pds.http.clone(),
+        };
         let ws = base.replacen("https", "wss", 1);
         {
             let (pool, peer) = (pool.clone(), peer.clone());
@@ -87,6 +91,12 @@ async fn main() {
         }
         tokio::spawn(firehose::run(pool.clone(), peer, ws));
     }
+    // документы standard.site из всей сети — только авторы из белого списка (standard_allow)
+    tokio::spawn(standard::run(
+        pool.clone(),
+        standard::Resolver::new(env("PLC_URL", "https://plc.directory")),
+        env("JETSTREAM_URL", "wss://jetstream2.us-east.bsky.network"),
+    ));
     // досмотры видео для ранжирования; без ANALYTICS_URL видео ранжируются по лайкам и комментариям
     if let Ok(url) = std::env::var("ANALYTICS_URL") {
         tokio::spawn(completions::run(
@@ -102,6 +112,7 @@ async fn main() {
             .to_string(),
         site_name: env("SITE_NAME", "weAT.media"),
         cache: Default::default(),
+        admin_token: std::env::var("FEED_ADMIN_TOKEN").ok(),
     };
     let app = api::router(state).layer(
         CorsLayer::new()

@@ -15,6 +15,7 @@ import { mountFeedRoutes } from './feed.js'
 import { mountLikeRoutes } from './likes.js'
 import { mountCommentRoutes } from './comments.js'
 import { mountArticleRoutes } from './articles.js'
+import { mountStandardAdminRoutes } from './standardAdmin.js'
 import { memShared, mountSharedRoutes, type SharedRepo } from './shared.js'
 import { createCooldown, memCooldown, mountCooldownRoutes, mountPeerCooldownRoute, pendingSource, type Cooldown } from './cooldown.js'
 import { mountClaimRoutes, type ClaimRepo } from './claims.js'
@@ -79,6 +80,8 @@ export interface Deps {
   /** фильтр закрытых в контуре записей; по умолчанию — РФ-контур закрывает метки nsfw/politics */
   restricted?: import('./restricted.js').RestrictedFilter
   labelerToken?: string
+  /** админ-API ленты: белый список авторов standard.site */
+  feedAdminToken?: string
   /** сервис ленты; не задан — лента собирается обходом PDS */
   feedUrl?: string
   /** lava.top; не задан — оплата выключена (503 PaymentsDisabled) */
@@ -311,6 +314,7 @@ export function createApp(deps: Deps) {
       const user = await d.users.findByDid(s.user.did)
       if (user && !user.password_login && pendingAdopt.delete(s.accessJwt)) await adoptPassword(user, s.accessJwt)
     },
+    beforePasswordSet: (user, accessJwt) => identitiesToAppPasswords(user, accessJwt),
   })
   mountPaidRoutes(
     app,
@@ -328,10 +332,11 @@ export function createApp(deps: Deps) {
   mountMailboxRoutes(app, { mail: d.mail }, { requireStaff, audit })
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountFinanceRoutes(app, { payouts: d.payouts, users: d.users }, { requireStaff, audit })
-  mountPdsGate(app, { pdsUrl: d.pdsUrl, pds: d.pds, mfa: d.mfa })
+  mountPdsGate(app, { pdsUrl: d.pdsUrl, pds: d.pds, mfa: d.mfa, peer: d.peer, users: d.users, peerSecret: d.config.PEER_SECRET })
   const profiles = profileOps({ pds: d.pds, users: d.users })
   mountProfileRoutes(app, { pds: d.pds, ops: profiles }, { bearer })
   mountDraftRoutes(app, { pds: d.pds, drafts: d.drafts }, { bearer })
+  mountStandardAdminRoutes(app, { feedUrl: d.feedUrl, feedAdminToken: d.feedAdminToken }, { requireStaff, audit })
   mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken, hidden: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] }, { requireStaff, audit })
   // РФ-контур: записи с метками nsfw/politics закрыты на сервере (не настройка читателя)
   const restricted = d.restricted ?? createRestrictedFilter({ enabled: d.config.CONTOUR === 'ru', labelerUrl: d.labelerUrl })
@@ -348,9 +353,9 @@ export function createApp(deps: Deps) {
   mountCooldownRoutes(app, { pds: d.pds, cooldown: d.cooldown ?? createCooldown({ pds: d.pds, secrets: d.secrets, repo: memCooldown() }), drafts: d.drafts }, { bearer, requireStaff })
   const shared = d.shared ?? memShared()
   mountSharedRoutes(app, { pds: d.pds, drafts: d.drafts, shared, users: d.users }, { bearer })
-  mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown, notifications }, { bearer })
+  mountArticleRoutes(app, { pds: d.pds, shared, users: d.users, drafts: d.drafts, cooldown: d.cooldown, notifications, siteUrl: d.config.PUBLIC_URL }, { bearer })
   mountImportRoutes(app, { pds: d.pds, identities: d.identities, imports: d.imports, source: d.postSource ?? atprotoPostSource(d.config.ATPROTO_PLC_URL, d.config.ATPROTO_ALLOW_HTTP) }, { bearer })
-  mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets, drafts: d.drafts }, { bearer })
+  mountDeveloperRoutes(app, { users: d.users, pds: d.pds, developer: d.developer, secrets: d.secrets, drafts: d.drafts, siteUrl: d.config.PUBLIC_URL }, { bearer })
   const ids = mountIdentityRoutes(app, d, { geoOf, sessionDto, safeEqual, bearer, gate: mfaGate.gate })
   mountSystemAccountRoutes(app, { pds: d.pds, users: d.users, system: d.system, secrets: d.secrets, handleDomain: d.config.PDS_HANDLE_DOMAIN }, { requireStaff, audit, issueHandoff: ids.issueHandoff, sessionDto })
 
@@ -366,6 +371,10 @@ export function createApp(deps: Deps) {
    */
   const adoptPassword = async (user: UserRow, accessJwt: string) => {
     await d.users.setPasswordLogin(user.did, true)
+    await identitiesToAppPasswords(user, accessJwt)
+  }
+  /** привязки провайдеров, где хранится основной пароль PDS, — на пароли приложений (основной меняет пользователь) */
+  const identitiesToAppPasswords = async (user: UserRow, accessJwt: string) => {
     for (const i of await d.identities.listByDid(user.did)) {
       if (i.appPasswordName !== null) continue
       const name = `indie-${i.provider}-${randomBytes(3).toString('hex')}`

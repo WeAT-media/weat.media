@@ -8,6 +8,7 @@
 #              YANDEX_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, GH_OAUTH_CLIENT_ID/SECRET (GitHub), TELEGRAM_CLIENT_ID/SECRET
 #              (Google, GitHub, Telegram — только в глобальный контур: на RU-узлы не попадают)
 #     vars     ACME_EMAIL, SITE_URL, SITE_VERIFY_GOOGLE / _YANDEX / _BING
+#              NODE_IPS — IP всех узлов (NL-1, RU-1, RU-2…) через пробел: каждому узлу открыт admin API PDS соседей
 #   окружение — узел (у primary и standby одного контура секреты AppView и PDS ОДИНАКОВЫЕ, иначе после
 #   переключения не расшифруются привязанные аккаунты и TOTP)
 #     secrets  SSH_HOST, SSH_KEY, SSH_KNOWN_HOSTS                         доступ к узлу
@@ -19,6 +20,9 @@
 #              RESTIC_REPOSITORY, RESTIC_PASSWORD, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 #     vars     CONTOUR (global|ru), NODE_ROLE (primary|standby), COMPOSE_PROFILES, SITE_DOMAINS, PDS_HOST,
 #              PDS_URL, PEER_CONTOUR_URL
+#              ADMIN_ALLOW_IPS — сверх NODE_IPS: краулер, админы (через пробел)
+#              JETSTREAM_URL — узел Jetstream для ленты standard.site (РФ-узлы), пусто — jetstream2.us-east
+#     secrets  FEED_ADMIN_TOKEN — белый список standard.site (общий для AppView и ленты узла)
 #
 # Self-hosted runner намеренно не используется: репозиторий публичный, а раннер на проде выполнял бы чужой код.
 name: Deploy
@@ -172,6 +176,12 @@ jobs:
           # ставить метки через /admin (вместе с токеном LABELER_ADMIN_TOKEN)
           LABELER_URL: ${{ vars.LABELER_URL }}
           LABELER_PEER_IPS: ${{ vars.LABELER_PEER_IPS }}
+          # admin API PDS (createInviteCode и др.): узлы друг другу + краулер/админы; остальным — 404
+          NODE_IPS: ${{ vars.NODE_IPS }}
+          ADMIN_ALLOW_IPS: ${{ vars.ADMIN_ALLOW_IPS }}
+          FEED_ADMIN_TOKEN: ${{ secrets.FEED_ADMIN_TOKEN }}
+          # поток сети для ленты standard.site; РФ — свой узел Jetstream (vars окружения), пусто — по умолчанию
+          JETSTREAM_URL: ${{ vars.JETSTREAM_URL }}
           # пароль пользователя replicator: им резерв подписывается на публикацию indie_all
           REPLICATION_PASSWORD: ${{ secrets.REPLICATION_PASSWORD }}
           PG_BIND: ${{ vars.PG_BIND }}
@@ -217,13 +227,16 @@ jobs:
           {
             for k in CONTOUR NODE_ROLE COMPOSE_PROFILES SITE_DOMAINS PDS_HOST PEER_CONTOUR_URL PEER_PDS_URLS PEER_SECRET CRAWLER_API_URL WATCH_FROM WATCH_TARGETS ALERT_EMAIL ALERT_TELEGRAM_CHAT ALERT_TELEGRAM_TOKEN ACME_EMAIL ACME_DNS_USERNAME ACME_DNS_PASSWORD ACME_DNS_SUBDOMAIN \
                      PG_PASSWORD DATABASE_URL FEED_DATABASE_URL ANALYTICS_DATABASE_URL REPLICATION_PRIMARY_DSN SUPABASE_DSN REPLICATION_PASSWORD PG_BIND PG_BIND6 ZITADEL_ISSUER ZITADEL_PROJECT_ID LABELER_ADMIN_TOKEN LABELER_DIDS LABELER_PEER_IPS MAILBOX_SUPPORT_PASSWORD MAILBOX_LEGAL_PASSWORD MAILBOX_NOREPLY_PASSWORD \
-                     SECRETS_KEY ADMIN_TOKEN PAID_CONTENT_KEY PDS_ADMIN_PASSWORD ANALYTICS_VISITOR_SECRET \
+                     SECRETS_KEY ADMIN_TOKEN PAID_CONTENT_KEY PDS_ADMIN_PASSWORD ANALYTICS_VISITOR_SECRET FEED_ADMIN_TOKEN JETSTREAM_URL \
                      LAVA_API_KEY LAVA_OFFER_ID LAVA_WEBHOOK_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
                      GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET TELEGRAM_CLIENT_ID TELEGRAM_CLIENT_SECRET RESTIC_REPOSITORY RESTIC_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
               line "$k"
             done
-            printf 'PUBLIC_URL=%s\nCORS_ORIGIN=%s\nPDS_HANDLE_DOMAIN=weat.media\nACME_DNS_SERVER=https://auth.acme-dns.io\nGEOIP_DB_PATH=/geoip/country.mmdb\nADMIN_ALLOW_IPS=127.0.0.1/32\nBACKUP_INTERVAL_SEC=300\n' "$SITE_URL" "$SITE_URL"
+            printf 'PUBLIC_URL=%s\nCORS_ORIGIN=%s\nPDS_HANDLE_DOMAIN=weat.media\nACME_DNS_SERVER=https://auth.acme-dns.io\nGEOIP_DB_PATH=/geoip/country.mmdb\nBACKUP_INTERVAL_SEC=300\n' "$SITE_URL" "$SITE_URL"
             [ "$CONTOUR" = ru ] && echo MAIL_HOST=mail-ru.weat.media || echo MAIL_HOST=mail.weat.media
+            # только IP/CIDR — мусор в переменной не должен сломать Caddyfile; localhost — всегда
+            allow=$(printf '%s %s' "${NODE_IPS:-}" "${ADMIN_ALLOW_IPS:-}" | tr ',' ' ' | tr -s ' ' '\n' | grep -E '^(([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?|[0-9a-fA-F]*:[0-9a-fA-F:]+(/[0-9]{1,3})?)$' | sort -u | tr '\n' ' ')
+            echo "ADMIN_ALLOW_IPS=127.0.0.1/32${allow:+ ${allow% }}"
             # AppView ходит к коллегиям внутри узла, если они здесь; ключей подписи в .env нет
             if [ -n "${LABELER_KEYS:-}" ]; then echo LABELER_URL=http://labeler:8791; else line LABELER_URL; fi
           } > node.env
@@ -246,6 +259,23 @@ jobs:
           rm -f node.env node.env.pds node.env.labeler
           # .env.override на узле (пишет failover.yml: роль после переключения) перекрывает переменные GitHub
           ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" 'cd /opt/weat/deploy/node && chmod 600 .env.new .env.pds.new .env.labeler.new && mv .env.new .env && if [ -s .env.override ]; then awk -F= "NR==FNR{o[\$1]=1;next} !(\$1 in o)" .env.override .env > .env.tmp; cat .env.override >> .env.tmp; chmod 600 .env.tmp; mv .env.tmp .env; fi && mv .env.pds.new .env.pds && mv .env.labeler.new .env.labeler'
+
+      - name: Проверить Jetstream с узла
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+          JETSTREAM_URL: ${{ vars.JETSTREAM_URL }}
+        run: |
+          ssh -i ~/.ssh/deploy -o BatchMode=yes "root@$HOST" JETSTREAM_URL="$JETSTREAM_URL" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          url="${JETSTREAM_URL:-wss://jetstream2.us-east.bsky.network}"
+          url=$(printf '%s' "$url" | sed 's#^wss://#https://#')
+          status=$(curl --http1.1 -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+            -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+            "$url/subscribe?wantedCollections=site.standard.document" 2>/dev/null) || true
+          echo "Jetstream $url: HTTP $status"
+          [ "$status" = 101 ]
+          REMOTE
 
       - name: Обновить узел
         env:

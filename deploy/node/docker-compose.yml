@@ -70,6 +70,9 @@ services:
       PEER_PDS_URLS: ${PEER_PDS_URLS:-}
       # досмотры видео для ранжирования (раз в 5 минут)
       ANALYTICS_URL: http://analytics:8789
+      # standard.site (Leaflet, pckt…): авторы из белого списка админки; токен — общий с AppView (.env)
+      FEED_ADMIN_TOKEN: ${FEED_ADMIN_TOKEN:-}
+      JETSTREAM_URL: ${JETSTREAM_URL:-wss://jetstream2.us-east.bsky.network}
     depends_on: [pds]
 
   # коллегии присяжных (Rust, services/labeler): подписанные метки на <id>.justice.weat.media.

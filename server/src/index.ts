@@ -34,7 +34,7 @@ await migrate(sql, { standby: config.NODE_ROLE === 'standby' })
 const pds = createPdsClient(config.PDS_URL, config.PDS_ADMIN_PASSWORD)
 const secrets = createSecretBox(config.SECRETS_KEY)
 const premiumOrders = premiumOrderRepo(sql)
-const cooldown = createCooldown({ pds, secrets, repo: cooldownRepo(sql) })
+const cooldown = createCooldown({ pds, secrets, repo: cooldownRepo(sql), siteUrl: config.PUBLIC_URL })
 // созревшие записи уходят в AT раз в минуту — только с основного узла (на standby — та же база по репликации)
 if (config.NODE_ROLE === 'primary') {
   setInterval(() => {
@@ -77,6 +77,7 @@ const app = createApp({
     passwords: { support: config.MAILBOX_SUPPORT_PASSWORD, legal: config.MAILBOX_LEGAL_PASSWORD, noreply: config.MAILBOX_NOREPLY_PASSWORD },
   }),
   feedUrl: config.FEED_URL,
+  feedAdminToken: config.FEED_ADMIN_TOKEN,
   labelerUrl: config.LABELER_URL,
   labelerToken: config.LABELER_ADMIN_TOKEN,
   staff:

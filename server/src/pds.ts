@@ -32,6 +32,8 @@ export interface PdsClient {
   adminUpdateHandle(did: string, handle: string): Promise<void>
   /** admin: смена основного пароля локального аккаунта после подтверждённого AppView второго фактора */
   adminUpdatePassword(did: string, password: string): Promise<void>
+  /** DID аккаунта этого PDS по тому, что вводят при входе: handle, email или DID; undefined — не наш */
+  didForIdentifier(identifier: string): Promise<string | undefined>
   requestEmailConfirmation(accessJwt: string): Promise<void>
   confirmEmail(accessJwt: string, email: string, token: string): Promise<void>
   /** включение email-2FA: при подтверждённом email срабатывает сразу; выключение — по коду из письма */
@@ -197,6 +199,20 @@ export function createPdsClient(baseUrl: string, adminPassword: string): PdsClie
     },
     async adminUpdatePassword(did, password) {
       await xrpc('POST', 'com.atproto.admin.updateAccountPassword', { auth: adminAuth, body: { did, password } })
+    },
+    async didForIdentifier(identifier) {
+      const id = identifier.trim().toLowerCase()
+      if (id.startsWith('did:')) return id
+      try {
+        if (id.includes('@')) {
+          const r = await xrpc<{ accounts?: { did: string; email?: string }[] }>('GET', `com.atproto.admin.searchAccounts?${new URLSearchParams({ email: id, limit: '5' })}`, { auth: adminAuth })
+          return r.accounts?.find((a) => a.email?.toLowerCase() === id)?.did
+        }
+        return (await xrpc<{ did: string }>('GET', `com.atproto.identity.resolveHandle?${new URLSearchParams({ handle: id })}`)).did
+      } catch (e) {
+        if (e instanceof PdsError && e.status < 500) return undefined
+        throw e
+      }
     },
     async revokeAppPassword(accessJwt, name) {
       await xrpc('POST', 'com.atproto.server.revokeAppPassword', { auth: `Bearer ${accessJwt}`, body: { name } })

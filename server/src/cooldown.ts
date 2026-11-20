@@ -1,4 +1,6 @@
 import { randomBytes, randomInt } from 'node:crypto'
+import { mirrorStandardDoc, STANDARD_OPT_OUT_FIELD } from './standardDoc.js'
+import { ARTICLE_COLLECTION } from './paidContent.js'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { Sql } from './db.js'
@@ -206,7 +208,7 @@ export interface Cooldown {
   publishDue(): Promise<number>
 }
 
-export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: CooldownRepo; ms?: number }): Cooldown {
+export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: CooldownRepo; ms?: number; siteUrl?: string }): Cooldown {
   const ms = d.ms ?? COOLDOWN_MS
   return {
     repo: d.repo,
@@ -230,10 +232,15 @@ export function createCooldown(d: { pds: PdsClient; secrets: SecretBox; repo: Co
           const creds = await d.repo.getCreds(r.did)
           if (!creds) throw new Error('нет app-пароля для публикации')
           const session = await d.pds.createSession(r.did, d.secrets.open(creds.enc))
-          await d.pds.putRecord(session.accessJwt, r.did, r.collection, r.rkey, r.record)
+          // метка «без standard.site» — только для нас: в репозиторий автора не пишем
+          const { [STANDARD_OPT_OUT_FIELD]: noStandard, ...record } = r.record
+          await d.pds.putRecord(session.accessJwt, r.did, r.collection, r.rkey, record)
           // автор удалил запись, пока она публиковалась, — убираем из репозитория
           if (!(await d.repo.markPublished(r.uri))) await d.pds.deleteRecord(session.accessJwt, r.did, r.collection, r.rkey).catch(() => {})
-          else n++
+          else {
+            n++
+            if (r.collection === ARTICLE_COLLECTION && d.siteUrl && !noStandard) await mirrorStandardDoc(d.pds, session.accessJwt, r.did, r.rkey, record, d.siteUrl)
+          }
         } catch (e) {
           // пароль приложения отозван — забываем его: следующая публикация с сайта создаст новый
           if (e instanceof PdsError && e.status === 401) await d.repo.dropCreds(r.did)

@@ -131,6 +131,8 @@ export interface Article {
   indexedAt?: string
   /** происхождение: свой PDS / внешний PDS / краулер / репост */
   sourceType?: 'native-pds' | 'external-pds' | 'crawler' | 'repost'
+  /** документ standard.site с другой площадки: здесь простой текст, оформленный оригинал — по ссылке */
+  original?: { url: string; site: string }
   /** канонический идентификатор публикации (при репосте/импорте — оригинал) */
   canonicalId?: string
   /** соавтор статьи, свободный текст */
@@ -148,6 +150,8 @@ export interface Article {
   collectionId?: string
   /** автор попросил поисковики не индексировать статью (robots noindex) */
   noindex?: boolean
+  /** автор снял галочку «Опубликовать также в standard.site» (только при публикации) */
+  standardSite?: false
   geoBlock?: GeoBlock
   /** пришла из индекса ленты (настоящая запись PDS), а не из демо-данных */
   fromIndex?: boolean

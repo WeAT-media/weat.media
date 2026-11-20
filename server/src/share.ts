@@ -1,4 +1,5 @@
 import type { Hono } from 'hono'
+import { standardDocUri } from './standardDoc.js'
 import { resolvePds } from './imports.js'
 import { avatarDataUri, renderArticleCard } from './ogImage.js'
 import type { PendingSource } from './cooldown.js'
@@ -52,7 +53,7 @@ function inlineMarkdown(text: string): string {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
 }
 
-export function sharePage(o: { siteName: string; siteUrl: string; url: string; canonicalUrl?: string; title: string; description: string; author?: string; authorUrl?: string; image: string; publishedAt?: string; modifiedAt?: string; text?: string; tags?: string[]; noindex?: boolean }): string {
+export function sharePage(o: { siteName: string; siteUrl: string; url: string; canonicalUrl?: string; title: string; description: string; author?: string; authorUrl?: string; image: string; publishedAt?: string; modifiedAt?: string; text?: string; tags?: string[]; noindex?: boolean; standardDoc?: string | null }): string {
   const title = esc(o.title)
   const desc = esc(o.description)
   const canonical = o.canonicalUrl ?? o.url
@@ -71,7 +72,7 @@ export function sharePage(o: { siteName: string; siteUrl: string; url: string; c
 <title>${title} — ${esc(o.siteName)}</title>
 <meta name="description" content="${desc}">
 ${o.noindex ? '<meta name="robots" content="noindex">\n' : ''}
-<link rel="canonical" href="${esc(canonical)}">
+<link rel="canonical" href="${esc(canonical)}">${o.standardDoc ? `\n<link rel="site.standard.document" href="${esc(o.standardDoc)}">` : ''}
 <meta property="og:type" content="${o.text ? 'article' : 'website'}">
 <meta property="og:site_name" content="${esc(o.siteName)}">
 <meta property="og:title" content="${title}">
@@ -252,6 +253,6 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     const author = a.handle ? `@${a.handle}` : r.source?.author
     const canonicalUrl = !a.handle?.startsWith('crawler-') && !r.source?.crawledAt && /^https?:\/\//.test(r.source?.url ?? '') ? r.source?.url : undefined
     c.header('cache-control', 'public, max-age=300')
-    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, canonicalUrl, title: title.slice(0, 200), description: description.slice(0, 300), author, authorUrl: a.handle ? `${d.siteUrl}/profile/${encodeURIComponent(a.handle)}` : undefined, image: r.title?.trim() ? `${d.siteUrl}/api/og/article/${encodeURIComponent(id)}.png` : image, publishedAt: r.createdAt ?? a.created_at, modifiedAt: r.updatedAt ?? a.created_at, text: r.text, tags: r.tags, noindex: r.noindex === true }))
+    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, canonicalUrl, title: title.slice(0, 200), description: description.slice(0, 300), author, authorUrl: a.handle ? `${d.siteUrl}/profile/${encodeURIComponent(a.handle)}` : undefined, image: r.title?.trim() ? `${d.siteUrl}/api/og/article/${encodeURIComponent(id)}.png` : image, publishedAt: r.createdAt ?? a.created_at, modifiedAt: r.updatedAt ?? a.created_at, text: r.text, tags: r.tags, noindex: r.noindex === true, standardDoc: a.uri ? standardDocUri(a.uri, r as Record<string, unknown>) : null }))
   })
 }

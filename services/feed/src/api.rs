@@ -1,6 +1,7 @@
 //! HTTP: GET /feed-api/articles (лента с фильтрами и keyset-курсором), /feed-api/health.
 
 use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -22,6 +23,8 @@ pub struct AppState {
     pub site_name: String,
     /// готовые ответы hot, best и related (cache.rs)
     pub cache: std::sync::Arc<crate::cache::Cache>,
+    /// FEED_ADMIN_TOKEN: белый список standard.site меняет только AppView (админка); None — маршрутов нет
+    pub admin_token: Option<String>,
 }
 
 /// медленнее этого — warn в лог: сигнал, что пора предрасчитывать score (см. rank.rs)
@@ -65,6 +68,12 @@ pub fn router(state: AppState) -> Router {
         .route("/feed-api/related", get(related))
         .route("/rss/author/{handle}", get(crate::rss::author))
         .route("/rss/comments/{did}/{rkey}", get(crate::rss::comments))
+        .route(
+            "/feed-api/admin/standard",
+            get(standard_list)
+                .post(standard_allow)
+                .delete(standard_disallow),
+        )
         .with_state(state)
 }
 
@@ -458,5 +467,121 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn fuzz_did_validation() {
+        let mut seed = 0x243f6a8885a308d3u64;
+        for _ in 0..10_000 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let value = format!(
+                "did:plc:{seed:x}\0\u{202e}{}",
+                "a".repeat((seed as usize) % 256)
+            );
+            if valid_did(&value) {
+                assert!(value.len() <= 200);
+                assert!(
+                    value
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b".:-_%".contains(&b))
+                );
+            }
+        }
+    }
+}
+
+/// сравнение токена за постоянное время
+fn admin_ok(s: &AppState, headers: &HeaderMap) -> bool {
+    let Some(want) = s.admin_token.as_deref().filter(|t| !t.is_empty()) else {
+        return false;
+    };
+    let got = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    got.len() == want.len()
+        && got
+            .bytes()
+            .zip(want.bytes())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0
+}
+
+fn valid_did(did: &str) -> bool {
+    did.len() <= 200
+        && (did.starts_with("did:plc:") || did.starts_with("did:web:"))
+        && did
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".:-_%".contains(&b))
+}
+
+#[derive(Deserialize)]
+struct AllowBody {
+    did: String,
+    note: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DidQuery {
+    did: String,
+}
+
+async fn standard_list(State(s): State<AppState>, headers: HeaderMap) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match crate::standard::list_allowed(&s.pool).await {
+        Ok(rows) => ([(header::CACHE_CONTROL, "no-store")], Json(rows)).into_response(),
+        Err(err) => {
+            tracing::error!(%err, "standard list");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn standard_allow(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(b): Json<AllowBody>,
+) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if !valid_did(&b.did) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let note = b
+        .note
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(|n| n.chars().take(200).collect::<String>());
+    match crate::standard::allow(&s.pool, &b.did, note.as_deref()).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(err) => {
+            tracing::error!(%err, "standard allow");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn standard_disallow(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<DidQuery>,
+) -> Response {
+    if !admin_ok(&s, &headers) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if !valid_did(&q.did) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    match crate::standard::disallow(&s.pool, &q.did).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(err) => {
+            tracing::error!(%err, "standard disallow");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }

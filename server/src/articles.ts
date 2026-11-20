@@ -1,4 +1,5 @@
 import type { Context, Hono } from 'hono'
+import { mirrorStandardDoc, standardDocument, STANDARD_DOC_COLLECTION, STANDARD_OPT_OUT_FIELD } from './standardDoc.js'
 import { z } from 'zod'
 import { PdsError, type PdsClient } from './pds.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
@@ -62,13 +63,15 @@ export const PublishArticleBody = z
           .optional(),
       })
       .optional(),
+    /** копия в site.standard.document (standard.site): только у бесплатных статей; по умолчанию — да */
+    standardSite: z.boolean().default(true),
     /** отложенный пост: время выхода на сайте; в AT — через 24 ч после него */
     publishAt: z.string().datetime({ offset: true }).optional(),
   })
   .refine((b) => b.kind === 'text' || b.videos.length > 0, 'у видео-записи нужен хотя бы один ролик')
   .refine((b) => b.kind === 'video' || b.text.trim().length > 0, 'text: напишите хотя бы абзац')
 
-const fail = (code: string, message: string, status: 400 | 401) => new PdsError(status, code, message)
+const fail = (code: string, message: string, status: 400 | 401 | 409 | 503) => new PdsError(status, code, message)
 
 /** перепечатка → source записи (без crawledAt: это не краулер, а сам автор указал оригинал) */
 export function sourceOf(url: string, publishedAt?: string) {
@@ -93,7 +96,7 @@ export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new D
   }
 }
 
-export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo; cooldown?: Cooldown; notifications?: NotificationService }, h: { bearer(c: Context): string | undefined }) {
+export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo; cooldown?: Cooldown; notifications?: NotificationService; siteUrl?: string }, h: { bearer(c: Context): string | undefined }) {
   app.post('/me/articles', async (c) => {
     const token = h.bearer(c)
     if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
@@ -113,7 +116,7 @@ export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: Shar
     // createdAt — момент выхода на сайте: назначенное время или текущее
     const record = articleRecord(parsed.data, scheduledAt && scheduledAt > new Date() ? scheduledAt : new Date(), reviewers)
     // период охлаждения: 24 ч запись только на сайте — автор правит или удаляет без следа в сети
-    const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, record, scheduledAt) : null
+    const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, parsed.data.standardSite ? record : { ...record, [STANDARD_OPT_OUT_FIELD]: true }, scheduledAt) : null
     if (draft && d.shared) await d.shared.closeFor(draft.id)
     if (held) {
       if (held.visible_at <= new Date()) await d.notifications?.article(did, handle, held.uri, parsed.data.title)
@@ -121,7 +124,38 @@ export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: Shar
     }
     if (scheduledAt && scheduledAt > new Date()) throw fail('InvalidRequest', 'Отложенная публикация недоступна для этого входа', 400)
     const { uri, cid } = await d.pds.createRecord(token, did, ARTICLE_COLLECTION, record)
+    if (d.siteUrl && parsed.data.standardSite) await mirrorStandardDoc(d.pds, token, did, uri.split('/').pop()!, record, d.siteUrl)
     await d.notifications?.article(did, handle, uri, parsed.data.title)
     return c.json({ uri, cid }, 201)
+  })
+
+  /**
+   * Старые статьи (до копий в standard.site) — копия по кнопке автора. Только то, что уже записано в PDS:
+   * у статьи на охлаждении записи в репозитории ещё нет, её копия появится при публикации.
+   */
+  const ownArticle = async (c: Context) => {
+    const token = h.bearer(c)
+    if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
+    const rkey = c.req.param('rkey') ?? ''
+    if (!/^[A-Za-z0-9._~:-]{1,512}$/.test(rkey)) throw fail('InvalidRequest', 'Неверный rkey', 400)
+    const { did } = await d.pds.getSession(token)
+    const record = await d.pds.getRecord(did, ARTICLE_COLLECTION, rkey).catch(() => undefined)
+    return { token, did, rkey, record }
+  }
+
+  app.get('/me/articles/:rkey/standard-site', async (c) => {
+    const { did, rkey, record } = await ownArticle(c)
+    const mirrored = record ? !!(await d.pds.getRecord(did, STANDARD_DOC_COLLECTION, rkey).catch(() => undefined)) : false
+    return c.json({ inPds: !!record, eligible: !!record && !!d.siteUrl && !!standardDocument(record, did, rkey, d.siteUrl), mirrored })
+  })
+
+  app.post('/me/articles/:rkey/standard-site', async (c) => {
+    const { token, did, rkey, record } = await ownArticle(c)
+    if (!record) throw fail('NotInRepository', 'Статья ещё не записана в AT (например, идёт период охлаждения) — копия появится сама при публикации', 409)
+    if (!d.siteUrl) throw fail('NotConfigured', 'Адрес сайта не настроен', 503)
+    const doc = standardDocument(record, did, rkey, d.siteUrl)
+    if (!doc) throw fail('NotEligible', 'В standard.site копируются только бесплатные статьи без «Не индексировать»', 400)
+    const { uri } = await d.pds.putRecord(token, did, STANDARD_DOC_COLLECTION, rkey, doc)
+    return c.json({ uri }, 201)
   })
 }

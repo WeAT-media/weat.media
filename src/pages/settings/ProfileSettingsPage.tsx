@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ImagePlus, Trash2 } from 'lucide-react'
 import Reveal from '@/components/Reveal'
+import StandardSiteNotice from '@/components/StandardSiteNotice'
 import { useStore } from '@/lib/store'
 import { useNavigate } from 'react-router'
 import { ApiError, api, avatarUrl, handles, profile } from '@/lib/api'
@@ -89,6 +90,10 @@ export default function ProfileSettingsPage() {
         <p className="mt-2 max-w-[60ch] text-sm text-muted-foreground">
           Имя, «О себе» и фото хранятся в вашем репозитории — их видят все приложения AT, включая Bluesky.
         </p>
+
+        <div className="mt-5">
+          <StandardSiteNotice />
+        </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-4">
           {avatar ? (

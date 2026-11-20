@@ -43,7 +43,15 @@ export function createMfaGate(d: SecurityDeps) {
 export function mountSecurityRoutes(
   app: Hono,
   d: SecurityDeps,
-  h: { bearer(c: Context): string | undefined; afterMfa?(body: SessionBody): Promise<void> },
+  h: {
+    bearer(c: Context): string | undefined
+    afterMfa?(body: SessionBody): Promise<void>
+    /**
+     * перед первым паролем у входившего только через провайдера (Google, GitHub, Яндекс): привязки, где сервер
+     * хранит основной пароль PDS, переводятся на пароли приложений — иначе новый пароль сломал бы вход через провайдера
+     */
+    beforePasswordSet?(user: UserRow, accessJwt: string): Promise<void>
+  },
 ) {
   const requireUser = async (c: Context): Promise<{ user: UserRow; token: string }> => {
     const token = h.bearer(c)
@@ -146,6 +154,7 @@ export function mountSecurityRoutes(
   app.post('/me/password/change', async (c) => {
     const { user, token } = await requireUser(c)
     const { method, code, password } = await body(c, PasswordChangeBody)
+    if (!user.password_login) await h.beforePasswordSet?.(user, token)
     if (method === 'email') {
       const info = await d.pds.getSession(token)
       if (!info.email || !info.emailConfirmed) throw fail('EmailNotConfirmed', 'Сначала подтвердите email')

@@ -32,7 +32,7 @@
 		zone auth {
 			match {
 				method POST
-				path /api/auth/login /api/auth/register /api/auth/mfa /api/auth/handoff /api/auth/password/*
+				path /api/auth/login /api/auth/register /api/auth/mfa /api/auth/handoff /api/auth/password/* /xrpc/com.atproto.server.createSession /xrpc/com.atproto.server.createAccount /xrpc/com.atproto.server.requestPasswordReset /xrpc/com.atproto.server.resetPassword
 			}
 			key {client_ip}
 			events 20
@@ -120,6 +120,25 @@
 	header @agent_manifest -X-Frame-Options
 	header @agent_manifest -Content-Security-Policy
 
+	# Вход в Bluesky и другие AT-клиенты с хостингом «weat.media»: XRPC — в PDS этого контура
+	# (CORS отдаёт PDS). createSession — через гейт AppView: TOTP и поиск аккаунта в соседнем контуре.
+	# После входа клиент работает с PDS из didDoc (pds.weat.media / pds-ru.weat.media).
+	@xrpc_login path /xrpc/com.atproto.server.createSession
+	handle @xrpc_login {
+		header -Content-Security-Policy
+		rewrite * /api/pds/createSession
+		reverse_proxy appview:8787
+	}
+	@xrpc path /xrpc/*
+	handle @xrpc {
+		# admin API PDS и выпуск инвайтов через сайт закрыты всем — на {$PDS_HOST} они открыты только ADMIN_ALLOW_IPS
+		@xrpc_admin path /xrpc/com.atproto.admin.* /xrpc/com.atproto.server.createInviteCode*
+		respond @xrpc_admin 404
+		header -Content-Security-Policy
+		header -X-Frame-Options
+		reverse_proxy pds:2583
+	}
+
 	# Карта публичных статей и авторов формируется из того же регионального индекса.
 	@sitemap path /sitemap.xml
 	handle @sitemap {
@@ -201,11 +220,11 @@
 	import security_headers
 
 	# admin API PDS и выпуск инвайтов — только с адресов краулера/админов (ADMIN_ALLOW_IPS)
+	# respond — внутри handle ниже: на верхнем уровне Caddy выполняет его ПОСЛЕ handle, и запрос успевал уйти в PDS
 	@admin {
 		path /xrpc/com.atproto.admin.* /xrpc/com.atproto.server.createInviteCode*
 		not remote_ip {$ADMIN_ALLOW_IPS:127.0.0.1/32}
 	}
-	respond @admin 404
 
 	# вход снаружи — через AppView: у аккаунтов с TOTP полный вход паролем без второго фактора закрыт
 	# (server/src/pdsGate.ts); пароли приложений и аккаунты без TOTP работают как обычно
@@ -214,11 +233,18 @@
 		reverse_proxy appview:8787
 	}
 
+	# вход в другие AT-приложения через OAuth (страница входа PDS): у аккаунтов с TOTP закрыт — PDS о TOTP не знает
+	# (server/src/pdsGate.ts); остальным запрос уходит в PDS без изменений
+	handle /@atproto/oauth-provider/~api/sign-in {
+		rewrite * /api/pds/oauth-sign-in
+		reverse_proxy appview:8787
+	}
+
 	# подбор паролей напрямую в PDS, минуя AppView
 	rate_limit {
 		zone pds_auth {
 			match {
-				path /xrpc/com.atproto.server.createSession /xrpc/com.atproto.server.createAccount /xrpc/com.atproto.server.requestPasswordReset /xrpc/com.atproto.server.resetPassword
+				path /xrpc/com.atproto.server.createSession /xrpc/com.atproto.server.createAccount /xrpc/com.atproto.server.requestPasswordReset /xrpc/com.atproto.server.resetPassword /@atproto/oauth-provider/~api/sign-in
 			}
 			key {client_ip}
 			events 20
@@ -235,6 +261,7 @@
 		max_size 50MB
 	}
 	handle {
+		respond @admin 404
 		reverse_proxy pds:2583
 	}
 }

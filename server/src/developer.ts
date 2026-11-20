@@ -1,4 +1,5 @@
 import { sourceOf } from './articles.js'
+import { mirrorStandardDoc, unmirrorStandardDoc } from './standardDoc.js'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
@@ -218,6 +219,8 @@ export interface DeveloperDeps {
   secrets: SecretBox
   /** черновики — для POST /v1/drafts (перенос статей черновиками) */
   drafts?: DraftRepo
+  /** публичный адрес сайта — для копии статьи в site.standard.document */
+  siteUrl?: string
 }
 
 const fail = (code: string, message: string, status: 400 | 401 | 403 | 404) => new PdsError(status, code, message)
@@ -461,6 +464,7 @@ export function mountDeveloperRoutes(app: Hono, d: DeveloperDeps, h: { bearer(c:
       createdAt: new Date().toISOString(),
     }
     const { uri, cid } = await d.pds.createRecord(s.accessJwt, user.did, ARTICLE_COLLECTION, record)
+    if (d.siteUrl) await mirrorStandardDoc(d.pds, s.accessJwt, user.did, uri.split('/').pop()!, record, d.siteUrl)
     return c.json({ uri, cid }, 201)
   })
 
@@ -489,6 +493,7 @@ export function mountDeveloperRoutes(app: Hono, d: DeveloperDeps, h: { bearer(c:
     const { row, user } = await byToken(c, 'articles:delete')
     const s = await pdsSession(row, user)
     await d.pds.deleteRecord(s.accessJwt, user.did, ARTICLE_COLLECTION, c.req.param('rkey'))
+    await unmirrorStandardDoc(d.pds, s.accessJwt, user.did, c.req.param('rkey'))
     return c.json({ ok: true })
   })
 }

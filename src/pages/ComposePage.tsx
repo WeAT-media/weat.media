@@ -19,6 +19,7 @@ import { profileMetaSeed } from '@/data/profiles'
 import { MAX_VIDEO_SIZE, formatFileSize, keepSessionVideo, releaseObjectUrl } from '@/lib/videoUploads'
 import { LANGUAGES } from '@/data/languages'
 import Reveal from '@/components/Reveal'
+import StandardSiteNotice from '@/components/StandardSiteNotice'
 import VideoPlayer from '@/components/VideoPlayer'
 import BlocksEditor from '@/components/BlocksEditor'
 import { plainExcerpt } from '@/lib/plainText'
@@ -295,6 +296,7 @@ export default function ComposePage() {
   const [step, setStep] = useState<1 | 2>(1)
   const [collectionId, setCollectionId] = useState('')
   const [noindex, setNoindex] = useState(false)
+  const [standardSite, setStandardSite] = useState(true)
   // перепечатка: статья уже выходила — ссылка на оригинал и дата первой публикации (пишутся в запись: source)
   const [republish, setRepublish] = useState(false)
   const [republishUrl, setRepublishUrl] = useState('')
@@ -315,8 +317,8 @@ export default function ComposePage() {
 
   // Черновик = текст (шаг 1) + настройки публикации (шаг 2). Видео-файл не сохраняется — только ссылка.
   const draftMeta = useMemo(
-    () => ({ step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput, republish, republishUrl, republishDate }),
-    [step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, scheduleMode, publishAtInput, republish, republishUrl, republishDate],
+    () => ({ step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, standardSite, scheduleMode, publishAtInput, republish, republishUrl, republishDate }),
+    [step, subtitle, tags, language, kind, videoMode, videoUrl, videoDesc, isPaid, accessType, tierId, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, collectionId, noindex, standardSite, scheduleMode, publishAtInput, republish, republishUrl, republishDate],
   )
   // настройки из черновика приходят асинхронно (после загрузки) — разовое применение к полям формы
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -346,6 +348,7 @@ export default function ComposePage() {
     str(m.previewEnd, setPreviewEnd)
     str(m.collectionId, setCollectionId)
     bool(m.noindex, setNoindex)
+    bool(m.standardSite, setStandardSite)
     bool(m.republish, setRepublish)
     str(m.republishUrl, setRepublishUrl)
     str(m.republishDate, setRepublishDate)
@@ -447,6 +450,7 @@ export default function ComposePage() {
       kind,
       collectionId: collectionId || undefined,
       noindex: noindex || undefined,
+      ...(standardSite ? {} : { standardSite: false as const }),
       ...(republish && /^https?:\/\/\S+$/.test(republishUrl.trim())
         ? { republished: { url: republishUrl.trim(), site: (() => { try { return new URL(republishUrl.trim()).hostname.replace(/^www\./, '') } catch { return '' } })(), ...(republishDate ? { publishedAt: republishDate.length > 10 ? new Date(republishDate).toISOString() : republishDate } : {}) } }
         : {}),
@@ -475,7 +479,7 @@ export default function ComposePage() {
         return { price: Number(price) || 0, currency, period, accessType }
       })(),
     }),
-    [title, subtitle, tags, language, fullText, kind, collectionId, noindex, scheduleMode, publishAtInput, videoMode, videoUrl, videoDesc, videoPreview, isPaid, accessType, tierId, tiers, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, user, republish, republishUrl, republishDate],
+    [title, subtitle, tags, language, fullText, kind, collectionId, noindex, standardSite, scheduleMode, publishAtInput, videoMode, videoUrl, videoDesc, videoPreview, isPaid, accessType, tierId, tiers, price, currency, period, teaser, coAuthors, editors, previewStart, previewEnd, user, republish, republishUrl, republishDate],
   )
 
 
@@ -1323,6 +1327,20 @@ export default function ComposePage() {
                 </span>
               </span>
             </label>
+
+            <label className="flex items-start gap-2.5 text-sm">
+              <input type="checkbox" checked={standardSite && !isPaid && !noindex} disabled={isPaid || noindex} onChange={(e) => setStandardSite(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Опубликовать также в standard.site
+                <span className="meta mt-0.5 block !normal-case tracking-normal">
+                  {isPaid || noindex
+                    ? 'недоступно для платных статей и статей с «Не индексировать»'
+                    : 'копия для приложений standard.site (Leaflet, pckt…) со ссылкой на эту статью; после охлаждения — вместе с публикацией в AT'}
+                </span>
+              </span>
+            </label>
+
+            <StandardSiteNotice />
 
             <div className="rule pt-6">
               <p className="meta mb-3">Предпросмотр всей статьи</p>

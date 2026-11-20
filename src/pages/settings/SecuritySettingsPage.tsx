@@ -6,6 +6,7 @@ import { CheckCircle2, Copy, KeyRound, Mail, ShieldCheck, Smartphone } from 'luc
 import Reveal from '@/components/Reveal'
 import { hasSession, security, type SecurityView } from '@/lib/api'
 import { SITE_NAME } from '@/config/site'
+import { useStore } from '@/lib/store'
 
 const inputCls =
   'min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -25,6 +26,7 @@ function Badge({ on, children }: { on: boolean; children: string }) {
 
 /** Безопасность: подтверждение email, email-2FA (по умолчанию), приложение-аутентификатор, резервные коды */
 export default function SecuritySettingsPage() {
+  const { user } = useStore()
   const [params] = useSearchParams()
   const welcome = params.get('welcome') === '1'
   const [view, setView] = useState<SecurityView | null>(null)
@@ -99,10 +101,16 @@ export default function SecuritySettingsPage() {
         {view && (
           <div className="mt-6">
             <div className={card}>
-              <p className="flex flex-wrap items-center gap-2 text-sm font-semibold"><KeyRound size={16} aria-hidden="true" /> Пароль AT Protocol</p>
+              <p className="flex flex-wrap items-center gap-2 text-sm font-semibold"><KeyRound size={16} aria-hidden="true" /> {view.passwordLogin ? 'Пароль AT Protocol' : 'Задать пароль AT Protocol'}</p>
               <p className="mt-1 max-w-[60ch] text-sm text-muted-foreground">
-                Пароль только для вашего аккаунта на PDS {SITE_NAME}. Подтвердите изменение кодом из письма или приложения-аутентификатора.
+                Пароль вашего аккаунта на PDS {SITE_NAME}. С ним можно войти в Bluesky и другие AT-приложения: логин —{' '}
+                <span className="font-mono text-foreground">{user?.handle ?? 'ваш handle'}</span>, хостинг — weat.media. Подтвердите изменение кодом из письма или приложения-аутентификатора.
               </p>
+              {!view.passwordLogin && (
+                <p className="mt-2 max-w-[60ch] text-sm text-muted-foreground">
+                  Вы входите через привязанный сервис (Google, GitHub, Яндекс…), поэтому своего пароля у аккаунта пока нет. Задайте его — вход через сервис продолжит работать.
+                </p>
+              )}
               <form onSubmit={(e) => {
                 if (newPassword !== passwordRepeat) {
                   e.preventDefault()
@@ -140,7 +148,7 @@ export default function SecuritySettingsPage() {
                     setPasswordCodeSent(true)
                     setNotice('Код для смены пароля отправлен на email.')
                   })} className="btn-ghost !px-3.5 !py-2 !text-[11px]">{passwordCodeSent ? 'Прислать снова' : 'Получить код'}</button>}
-                  <button type="submit" disabled={busy || newPassword.length < 8 || !passwordCode.trim()} className="btn-primary !px-3.5 !py-2 !text-[11px]">Сменить пароль</button>
+                  <button type="submit" disabled={busy || newPassword.length < 8 || !passwordCode.trim()} className="btn-primary !px-3.5 !py-2 !text-[11px]">{view.passwordLogin ? 'Сменить пароль' : 'Задать пароль'}</button>
                 </div>
                 {passwordMethod === 'email' && !view.emailConfirmed && <p className="text-sm text-muted-foreground">Сначала подтвердите email ниже.</p>}
                 {passwordMethod === 'totp' && !view.totpEnabled && <p className="text-sm text-muted-foreground">Сначала подключите приложение-аутентификатор ниже.</p>}
