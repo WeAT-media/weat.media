@@ -91,6 +91,8 @@ pub struct Params {
     lang: Option<String>,
     /// internal | external
     source: Option<String>,
+    /// weat — статьи площадки (без standard.site), standard — только внешние площадки, all (по умолчанию) — всё
+    origin: Option<String>,
     author: Option<String>,
     /// full — записи целиком (по умолчанию карточки без текста)
     view: Option<String>,
@@ -150,6 +152,12 @@ pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
         Some("internal") => Some(false),
         Some(_) => return Err("source: all | internal | external"),
     };
+    let standard = match p.origin.as_deref() {
+        None | Some("") | Some("all") => None,
+        Some("standard") => Some(true),
+        Some("weat") => Some(false),
+        Some(_) => return Err("origin: all | weat | standard"),
+    };
     let lang = p.lang.filter(|l| l != "all" && l.len() <= 10);
     let did = p.author.filter(|a| a.starts_with("did:") && a.len() <= 200);
     let full = p.view.as_deref() == Some("full");
@@ -165,6 +173,7 @@ pub fn to_query(p: Params) -> Result<index::Query, &'static str> {
         tags,
         lang,
         external,
+        standard,
         did,
         full,
         sort,
@@ -440,6 +449,16 @@ mod tests {
                 "at://did:plc:b/media.weat.article/2"
             ]
         );
+    }
+
+    #[test]
+    fn origin_param_selects_standard_documents() {
+        let q = |o: Option<&str>| to_query(Params { origin: o.map(str::to_string), ..Default::default() }).map(|q| q.standard);
+        assert_eq!(q(None), Ok(None));
+        assert_eq!(q(Some("all")), Ok(None));
+        assert_eq!(q(Some("weat")), Ok(Some(false)));
+        assert_eq!(q(Some("standard")), Ok(Some(true)));
+        assert!(q(Some("x")).is_err());
     }
 
     #[test]

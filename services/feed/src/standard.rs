@@ -285,7 +285,7 @@ pub fn to_article_record(
         "createdAt": published.to_rfc3339(),
         "source": source,
     });
-    if let Some(d) = description {
+    if let Some(d) = &description {
         out["excerpt"] = json!(d);
     }
     // площадка (content.$type): по ней админка считает документы и убирает их при выключении
@@ -297,10 +297,28 @@ pub fn to_article_record(
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).filter(|l| (2..=10).contains(&l.len())).take(3).map(str::to_string).collect())
         .unwrap_or_default();
+    // язык не указан (у Leaflet почти всегда) — по алфавиту текста, иначе сайт считал бы статью русской
+    let langs = if langs.is_empty() { guess_lang(title, text).map(|l| vec![l.to_string()]).unwrap_or_default() } else { langs };
     if !langs.is_empty() {
         out["langs"] = json!(langs);
     }
     Some(out)
+}
+
+/// кириллица — ru, латиница — en; другие алфавиты и смесь без перевеса — не знаем
+pub fn guess_lang(title: &str, text: &str) -> Option<&'static str> {
+    let (mut cyr, mut lat) = (0usize, 0usize);
+    for c in title.chars().chain(text.chars()).take(5000) {
+        match c {
+            'а'..='я' | 'А'..='Я' | 'ё' | 'Ё' => cyr += 1,
+            'a'..='z' | 'A'..='Z' => lat += 1,
+            _ => {}
+        }
+    }
+    if cyr + lat < 20 {
+        return None;
+    }
+    if cyr * 2 > lat { Some("ru") } else if lat > cyr * 4 { Some("en") } else { None }
 }
 
 /// content.$type документа: по нему узнаём площадку (pub.leaflet.content, blog.pckt.content…).
@@ -908,5 +926,16 @@ mod tests {
         let standard = Policy { platforms: ["site.standard.text".to_string()].into(), ..Default::default() };
         assert_eq!(standard.accepts("did:plc:writer", content_type(&plain)), Some(false));
         assert!(standard.whole_network());
+    }
+
+    #[test]
+    fn language_guessed_from_alphabet_when_missing() {
+        assert_eq!(guess_lang("Pass your exam", "Prepare for the Chartered Wealth Manager examination"), Some("en"));
+        assert_eq!(guess_lang("Заметки", "Короткий текст о том, как устроена лента"), Some("ru"));
+        assert_eq!(guess_lang("短い", "日本語のテキスト"), None);
+        let rec = json!({ "site": "https://a.b", "title": "Hello world", "textContent": "Some English text long enough to count letters" });
+        assert_eq!(to_article_record(&rec, None, now()).unwrap()["langs"], json!(["en"]));
+        let rec = json!({ "site": "https://a.b", "title": "Hello", "textContent": "text", "langs": ["it"] });
+        assert_eq!(to_article_record(&rec, None, now()).unwrap()["langs"], json!(["it"]), "указанный автором — главнее");
     }
 }

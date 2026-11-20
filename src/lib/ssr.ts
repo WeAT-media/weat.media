@@ -13,7 +13,7 @@ export interface SsrData {
   renderedAt?: number
   articles?: Article[]
   feed?: FeedPage
-  hot?: { period: 'day' | 'week' | 'month'; list: { a: Article; score: number }[] }
+  hot?: { period: 'day' | 'week' | 'month'; origin?: 'weat' | 'standard' | 'all'; list: { a: Article; score: number }[] }
   profile?: ApiUser
 }
 

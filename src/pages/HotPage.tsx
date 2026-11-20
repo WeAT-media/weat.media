@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { Flame } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import Stamp from '@/components/Stamp'
@@ -6,9 +7,10 @@ import Reveal from '@/components/Reveal'
 import PaywallBadge from '@/components/PaywallBadge'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { commentCount, hotness } from '@/lib/analytics'
-import { fetchRanked } from '@/lib/remoteFeed'
+import { fetchRanked, type FeedOrigin } from '@/lib/remoteFeed'
 import { SOURCE_URL } from '@/config/site'
 import { ssrData } from '@/lib/ssr'
+import { useI18n } from '@/lib/i18n'
 import type { Article } from '@/types/types'
 
 type Period = 'day' | 'week' | 'month'
@@ -21,28 +23,42 @@ const PERIODS: { key: Period; label: string; days: number }[] = [
 /** Дайджест «Горячее»: ранжирование по горячести за выбранный период (окно — services/feed/src/rank.rs) */
 export default function HotPage() {
   const { articles, unlocked, upvotes } = useStore()
+  const { t } = useI18n()
   const [period, setPeriod] = useState<Period>('week')
+  // источник — как в ленте (Feed.tsx): без параметра — только статьи площадки, внешние площадки — по выбору
+  const [params, setParams] = useSearchParams()
+  const originParam = params.get('origin')
+  const origin: 'weat' | 'any' | 'standard' = originParam === 'any' || originParam === 'standard' ? originParam : 'weat'
+  const apiOrigin: FeedOrigin = origin === 'any' ? 'all' : origin
+  const setOrigin = (v: 'weat' | 'any' | 'standard') =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (v === 'weat') next.delete('origin')
+      else next.set('origin', v)
+      return next
+    })
   // ранжирует сервер по всему индексу; пока не ответил или индекс пуст — локальная оценка загруженного
-  const [ranked, setRanked] = useState<{ period: Period; list: { a: Article; score: number }[] } | null>(() => ssrData()?.hot ?? null)
+  const [ranked, setRanked] = useState<{ period: Period; origin?: FeedOrigin; list: { a: Article; score: number }[] } | null>(() => ssrData()?.hot ?? null)
   useEffect(() => {
     let alive = true
-    fetchRanked({ sort: 'hot', period, limit: 50 }).then(
-      (r) => alive && setRanked({ period, list: r.map(({ article, score }) => ({ a: article, score })) }),
+    fetchRanked({ sort: 'hot', period, origin: apiOrigin, limit: 50 }).then(
+      (r) => alive && setRanked({ period, origin: apiOrigin, list: r.map(({ article, score }) => ({ a: article, score })) }),
     )
     return () => {
       alive = false
     }
-  }, [period])
+  }, [period, apiOrigin])
   const now = new Date().toISOString()
   const since = Date.parse(now) - PERIODS.find((p) => p.key === period)!.days * 86_400_000
   const local = articles
     .filter((a) => !a.publishAt || a.publishAt <= now)
     .filter((a) => (Date.parse(a.publishedAtFull ?? a.publishedAt) || 0) >= since)
+    .filter((a) => origin === 'any' || (a.sourceType === 'external-pds') === (origin === 'standard'))
     .map((a) => ({ a, score: Math.round(hotness(a, upvotes.includes(a.id)) * 1000) / 10 }))
     .sort((x, y) => y.score - x.score)
   // карточка из стора знает о моём лайке и свежих комментариях — берём её, если есть
   const byId = new Map(articles.map((a) => [a.id, a]))
-  const server = ranked?.period === period ? ranked.list : null
+  const server = ranked?.period === period && (ranked.origin ?? 'weat') === apiOrigin ? ranked.list : null
   const hot = server?.length
     ? server.map(({ a, score }) => ({ a: byId.get(a.id) ?? a, score: Math.round(score * 1000) / 10 }))
     : local
@@ -76,6 +92,28 @@ export default function HotPage() {
               {p.label}
             </button>
           ))}
+        </div>
+        <div role="group" aria-label={t('feedOriginFilter')} className="mt-3 flex flex-wrap items-center gap-2">
+          {(
+            [
+              { key: 'weat', label: t('originWeat') },
+              { key: 'standard', label: t('originStandard') },
+              { key: 'any', label: t('originAny') },
+            ] as const
+          ).map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              aria-pressed={origin === o.key}
+              onClick={() => setOrigin(o.key)}
+              className={`cursor-pointer rounded-full border px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.05em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                origin === o.key ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground hover:text-accent'
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+          <span className="meta !normal-case tracking-normal">{t('originHint')}</span>
         </div>
       </div>
 

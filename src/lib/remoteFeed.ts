@@ -251,11 +251,16 @@ export function fetchArticleBody(uri: string): Promise<Article | null> {
   return p
 }
 
+/** откуда статьи: weat — написанные на площадке (по умолчанию), standard — Leaflet, pckt, Offprint…, all — всё */
+export type FeedOrigin = 'weat' | 'standard' | 'all'
+
 export interface RankQuery {
   sort: 'hot' | 'best'
   metric?: 'likes' | 'comments'
   period?: 'day' | 'week' | 'month' | 'all'
   source?: 'internal' | 'external'
+  /** weat — без внешних площадок standard.site, standard — только они */
+  origin?: FeedOrigin
   /** любой из тегов */
   tags?: string[]
   lang?: string
@@ -267,6 +272,7 @@ export interface RankQuery {
 export async function fetchRanked(q: RankQuery): Promise<{ article: Article; score: number }[]> {
   const params = new URLSearchParams({ limit: String(q.limit ?? 50), sort: q.sort })
   for (const k of ['metric', 'period', 'source', 'lang', 'kind'] as const) if (q[k]) params.set(k, q[k]!)
+  if (q.origin && q.origin !== 'all') params.set('origin', q.origin)
   if (q.tags?.length) params.set('tags', q.tags.join(','))
   try {
     const res = await fetch(`${BASE}/feed?${params}`)
@@ -312,12 +318,13 @@ export interface FeedPageResult {
   cursor: string | null
 }
 
-export async function fetchFeedPage(q: { limit: number; offset?: number; tags?: string[]; lang?: string; kind?: 'text' | 'video'; author?: string }): Promise<FeedPageResult> {
+export async function fetchFeedPage(q: { limit: number; offset?: number; tags?: string[]; lang?: string; kind?: 'text' | 'video'; author?: string; origin?: FeedOrigin }): Promise<FeedPageResult> {
   const params = new URLSearchParams({ limit: String(q.limit), offset: String(q.offset ?? 0) })
   if (q.tags?.length) params.set('tags', q.tags.join(','))
   if (q.lang && q.lang !== 'all') params.set('lang', q.lang)
   if (q.kind) params.set('kind', q.kind)
   if (q.author) params.set('author', q.author)
+  if (q.origin && q.origin !== 'all') params.set('origin', q.origin)
   const res = await fetch(`${BASE}/feed?${params}`)
   if (!res.ok) throw new Error('Feed unavailable')
   const page = await res.json() as { articles: FeedItem[]; total?: number; cursor?: string | null }

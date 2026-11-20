@@ -323,6 +323,8 @@ pub struct Query {
     pub lang: Option<String>,
     /// Some(true) — только внешние (краулер, репост), Some(false) — только написанные на площадке
     pub external: Option<bool>,
+    /// Some(true) — только документы внешних площадок standard.site (Leaflet, pckt…), Some(false) — без них
+    pub standard: Option<bool>,
     pub did: Option<String>,
     /** true — запись целиком; false — карточка ленты без текста статьи */
     pub full: bool,
@@ -385,6 +387,10 @@ pub async fn feed(pool: &PgPool, q: &Query) -> sqlx::Result<Vec<Row>> {
         b.push(" AND (a.source_site IS NOT NULL) = ")
             .push_bind(external);
     }
+    if let Some(standard) = q.standard {
+        b.push(" AND (position('/site.standard.document/' in a.uri) > 0) = ")
+            .push_bind(standard);
+    }
     if let Some(did) = &q.did {
         b.push(" AND a.did = ").push_bind(did.clone());
     }
@@ -428,6 +434,10 @@ pub async fn count(pool: &PgPool, q: &Query) -> sqlx::Result<i64> {
     if let Some(external) = q.external {
         b.push(" AND (a.source_site IS NOT NULL) = ")
             .push_bind(external);
+    }
+    if let Some(standard) = q.standard {
+        b.push(" AND (position('/site.standard.document/' in a.uri) > 0) = ")
+            .push_bind(standard);
     }
     if let Some(did) = &q.did {
         b.push(" AND a.did = ").push_bind(did.clone());

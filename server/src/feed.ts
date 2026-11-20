@@ -173,7 +173,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
     if (d.feedUrl) {
       // фильтры и курсор — как есть; ответ той же формы { articles, cursor }
       const q = new URLSearchParams()
-      for (const k of ['cursor', 'offset', 'tags', 'lang', 'source', 'author', 'view', 'sort', 'metric', 'period', 'kind']) {
+      for (const k of ['cursor', 'offset', 'tags', 'lang', 'source', 'origin', 'author', 'view', 'sort', 'metric', 'period', 'kind']) {
         const v = c.req.query(k)
         if (v) q.set(k, v)
       }
@@ -185,7 +185,7 @@ export function mountFeedRoutes(app: Hono, d: { pds: PdsClient; feedUrl?: string
           const body = (await stripBody(await res.json())) as { articles?: { uri: string }[] }
           // первая страница «Свежего» без фильтров по источнику — с ждущими статьями сверху
           const sort = c.req.query('sort')
-          if (body.articles && !c.req.query('cursor') && (!sort || sort === 'new') && !c.req.query('source') && !c.req.query('view') && !c.req.query('lang')) {
+          if (body.articles && !c.req.query('cursor') && (!sort || sort === 'new') && !c.req.query('source') && c.req.query('origin') !== 'standard' && !c.req.query('view') && !c.req.query('lang')) {
             const seen = new Set(body.articles.map((a) => a.uri))
             const extra = (await held({ author: c.req.query('author'), tags: c.req.query('tags'), kind: c.req.query('kind') })).filter((a) => !seen.has(a.uri))
             body.articles = [...(await strip(extra)), ...body.articles]

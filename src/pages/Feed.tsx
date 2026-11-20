@@ -12,7 +12,7 @@ import BookmarkButton from '@/components/BookmarkButton'
 import FeedBest from '@/components/FeedBest'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { hotness } from '@/lib/analytics'
-import { fetchFeedPage, fetchRanked } from '@/lib/remoteFeed'
+import { fetchFeedPage, fetchRanked, type FeedOrigin } from '@/lib/remoteFeed'
 import { ssrData, ssrNow, type FeedPage } from '@/lib/ssr'
 import type { Article } from '@/types/types'
 import { LANGUAGES, languageName } from '@/data/languages'
@@ -109,6 +109,10 @@ export default function Feed() {
   const kindParam = params.get('kind')
   const kind: 'all' | 'text' | 'video' = kindParam === 'text' || kindParam === 'video' ? kindParam : 'all'
   const page = Math.max(1, Number(params.get('page')) || 1)
+  // источник: по умолчанию — только статьи площадки; внешние (standard.site) — по выбору
+  const originParam = params.get('origin')
+  const origin: 'weat' | 'any' | 'standard' = originParam === 'any' || originParam === 'standard' ? originParam : 'weat'
+  const apiOrigin: FeedOrigin = origin === 'any' ? 'all' : origin
 
   /** меняет параметры; любой новый фильтр возвращает на первую страницу */
   const setQuery = (patch: Record<string, string | null>, keepPage = false) =>
@@ -128,6 +132,7 @@ export default function Feed() {
   const toggleTag = (t: string) => setTags(feedTags.includes(t) ? feedTags.filter((x) => x !== t) : [...feedTags, t])
   const setLang = (v: string) => setQuery({ lang: v })
   const setKind = (v: 'all' | 'text' | 'video') => setQuery({ kind: v })
+  const setOrigin = (v: 'weat' | 'any' | 'standard') => setQuery({ origin: v === 'weat' ? null : v })
 
   // открыли /feed без tags — подставляем сохранённые в настройках теги
   useEffect(() => {
@@ -175,7 +180,7 @@ export default function Feed() {
   }, [articles, upvotes, bookmarks, authorSubscriptions, feedTags, tagCounts])
 
   // «Горячее» ранжирует сервер по всему индексу с теми же тегами и языком; null — ещё не ответил
-  const hotKey = `${feedTags.join(',')}|${lang}|${kind}`
+  const hotKey = `${feedTags.join(',')}|${lang}|${kind}|${apiOrigin}`
   const [serverHot, setServerHot] = useState<{ key: string; list: { article: Article; score: number }[] } | null>(null)
   const wantHot = prefs.feedSort === 'hot'
   const freshKey = `${hotKey}|${page}`
@@ -186,24 +191,24 @@ export default function Feed() {
   useEffect(() => {
     if (wantHot || serverFresh?.key === freshKey) return
     let alive = true
-    fetchFeedPage({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, tags: feedTags, lang, ...(kind === 'all' ? {} : { kind }) }).then(
+    fetchFeedPage({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, tags: feedTags, lang, origin: apiOrigin, ...(kind === 'all' ? {} : { kind }) }).then(
       (r) => alive && setServerFresh({ key: freshKey, articles: r.articles, total: r.total }),
       () => {},
     )
     return () => {
       alive = false
     }
-  }, [wantHot, serverFresh, freshKey, feedTags, lang, kind, page])
+  }, [wantHot, serverFresh, freshKey, feedTags, lang, kind, page, apiOrigin])
   useEffect(() => {
     if (!wantHot) return
     let alive = true
-    fetchRanked({ sort: 'hot', limit: 100, tags: feedTags, ...(lang === 'all' ? {} : { lang }), ...(kind === 'all' ? {} : { kind }) }).then(
+    fetchRanked({ sort: 'hot', limit: 100, tags: feedTags, origin: apiOrigin, ...(lang === 'all' ? {} : { lang }), ...(kind === 'all' ? {} : { kind }) }).then(
       (list) => alive && setServerHot({ key: hotKey, list }),
     )
     return () => {
       alive = false
     }
-  }, [wantHot, hotKey, feedTags, lang, kind])
+  }, [wantHot, hotKey, feedTags, lang, kind, apiOrigin])
 
   const [openedAt] = useState(ssrNow)
   const visible = useMemo(() => {
@@ -217,7 +222,8 @@ export default function Feed() {
       // ANY: достаточно одного выбранного тега
       (feedTags.length === 0 || a.tags.some((t) => feedTags.includes(t))) &&
       (lang === 'all' || (a.language ?? 'ru') === lang) &&
-      (kind === 'all' || (a.kind ?? 'text') === kind)
+      (kind === 'all' || (a.kind ?? 'text') === kind) &&
+      (origin === 'any' || (a.sourceType === 'external-pds') === (origin === 'standard'))
     const list = articles.filter(passes)
     if (prefs.feedSort !== 'hot') {
       if (serverFresh?.key === freshKey) return serverFresh.articles.filter(passes)
@@ -234,7 +240,7 @@ export default function Feed() {
     const inServer = new Set(ranked.map((r) => r.a.id))
     const own = list.filter((a) => !a.fromIndex && !inServer.has(a.id)).map((a) => ({ a, score: hotness(a, upvotes.includes(a.id)) }))
     return [...ranked, ...own].sort((x, y) => y.score - x.score).map((x) => x.a)
-  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes, serverHot, hotKey, serverFresh, freshKey, openedAt])
+  }, [articles, hideGuilty, feedTags, lang, kind, prefs.showCondemned, prefs.feedSort, upvotes, serverHot, hotKey, serverFresh, freshKey, openedAt, origin])
   const freshTotal = !wantHot && serverFresh?.key === freshKey ? serverFresh.total : visible.length
   const pages = Math.max(1, Math.ceil(freshTotal / PAGE_SIZE))
   const current = Math.min(page, pages)
@@ -369,6 +375,26 @@ export default function Feed() {
 
           <Reveal>
             <section className="rule pt-6">
+              <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('feedOrigin')}</h2>
+              <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('feedOriginFilter')}>
+                {(
+                  [
+                    { key: 'weat', label: t('originWeat') },
+                    { key: 'standard', label: t('originStandard') },
+                    { key: 'any', label: t('originAny') },
+                  ] as const
+                ).map((opt) => (
+                  <button key={opt.key} onClick={() => setOrigin(opt.key)} aria-pressed={origin === opt.key} className={chip(origin === opt.key)}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="meta mt-2 !normal-case tracking-normal">{t('originHint')}</p>
+            </section>
+          </Reveal>
+
+          <Reveal>
+            <section className="rule pt-6">
               <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">{t('contentType')}</h2>
               <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('contentTypeFilter')}>
                 {(
@@ -410,7 +436,7 @@ export default function Feed() {
           </Reveal>
 
           <Reveal>
-            <FeedBest articles={articles} upvoted={upvotes} />
+            <FeedBest articles={articles} upvoted={upvotes} feedOrigin={apiOrigin} />
           </Reveal>
 
           <Reveal>

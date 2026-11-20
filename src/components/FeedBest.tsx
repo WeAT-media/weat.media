@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MessageSquare, Trophy, ArrowBigUp } from 'lucide-react'
 import { commentCount, upvoteCount } from '@/lib/analytics'
-import { fetchRanked } from '@/lib/remoteFeed'
+import { fetchRanked, type FeedOrigin } from '@/lib/remoteFeed'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
 import { ssrNow } from '@/lib/ssr'
 import type { Article } from '@/types/types'
@@ -16,7 +16,8 @@ const DAY = 86_400_000
 const isInternal = (a: Article) => (a.sourceType ?? 'native-pds') === 'native-pds'
 
 /** «Лучшее»: топ-5 за день, неделю или месяц по комментариям или голосам, с фильтром источника */
-export default function FeedBest({ articles, upvoted }: { articles: Article[]; upvoted: string[] }) {
+/** feedOrigin — источник ленты (weAT.media / другие площадки / всё): «Лучшее» следует за ним */
+export default function FeedBest({ articles, upvoted, feedOrigin = 'all' }: { articles: Article[]; upvoted: string[]; feedOrigin?: FeedOrigin }) {
   const [period, setPeriod] = useState<Period>('week')
   const [metric, setMetric] = useState<Metric>('upvotes')
   const [origin, setOrigin] = useState<Origin>('all')
@@ -25,7 +26,7 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
 
   // топ по всему индексу с сервера; null — ещё грузится, пусто — считаем по загруженным
   const [server, setServer] = useState<{ key: string; list: Article[] } | null>(null)
-  const key = `${period}|${metric}|${origin}`
+  const key = `${period}|${metric}|${origin}|${feedOrigin}`
   useEffect(() => {
     let alive = true
     fetchRanked({
@@ -33,12 +34,13 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
       metric: metric === 'comments' ? 'comments' : 'likes',
       period,
       ...(origin === 'all' ? {} : { source: origin }),
+      origin: feedOrigin,
       limit: 5,
     }).then((r) => alive && setServer({ key, list: r.map((x) => x.article) }))
     return () => {
       alive = false
     }
-  }, [key, period, metric, origin])
+  }, [key, period, metric, origin, feedOrigin])
 
   const top = useMemo(() => {
     const score = (a: Article) => (metric === 'comments' ? commentCount(a) : upvoteCount(a, upvoted.includes(a.id)))
@@ -51,10 +53,11 @@ export default function FeedBest({ articles, upvoted }: { articles: Article[]; u
     return articles
       .filter((a) => Date.parse(a.publishedAt) >= since)
       .filter((a) => origin === 'all' || (origin === 'internal') === isInternal(a))
+      .filter((a) => feedOrigin === 'all' || (a.sourceType === 'external-pds') === (feedOrigin === 'standard'))
       .map((a) => ({ a, score: score(a) }))
       .sort((x, y) => y.score - x.score)
       .slice(0, 5)
-  }, [articles, upvoted, period, metric, origin, now, server, key])
+  }, [articles, upvoted, period, metric, origin, now, server, key, feedOrigin])
 
   const seg = <T extends string>(value: T, set: (v: T) => void, opts: { key: T; label: string }[], label: string) => (
     <div role="group" aria-label={label} className="flex rounded-full border border-border bg-secondary/60 p-0.5">
