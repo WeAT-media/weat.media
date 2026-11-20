@@ -332,7 +332,10 @@ www.{$PDS_HANDLE_DOMAIN} {
 	import tls_dns
 	import security_headers
 	encode zstd gzip
-	header Access-Control-Allow-Origin "https://{$PDS_HANDLE_DOMAIN}"
+	# статика публичная и без cookie: «*», а не один сайт — модули и шрифты грузятся с crossorigin, и с
+	# ru.weat.media, nl-1.weat.media браузер их блокировал. Подставлять Origin запроса нельзя: CDN кэширует
+	# ответ по адресу, и другой сайт получил бы чужой заголовок.
+	header Access-Control-Allow-Origin "*"
 	@cdn_global_assets path /global/assets/*
 	handle @cdn_global_assets {
 		uri replace /global/ /
