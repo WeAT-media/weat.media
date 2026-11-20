@@ -16,7 +16,7 @@ const InteractiveVideo = lazy(() => import('@/components/InteractiveVideo'))
  * Один блок статьи. Общий для страницы статьи и предпросмотра в редакторе — чтобы автор видел ровно то,
  * что увидит читатель. Опросы и mdx рисует вызывающий: у них своё состояние (голоса, компонент).
  */
-export default function Block({ block, id }: { block: ArticleBlock; id?: string }) {
+export default function Block({ block, id, eager = false }: { block: ArticleBlock; id?: string; eager?: boolean }) {
   if (block.type === 'poll' || block.type === 'mdx') return null
   if (block.type === 'carousel') return <ArticleCarousel raw={block.text} />
   if (block.type === 'callout') return <CalloutView raw={block.text} />
@@ -43,7 +43,7 @@ export default function Block({ block, id }: { block: ArticleBlock; id?: string 
     if (!src) return null
     return (
       <figure className="my-8">
-        <img src={src} alt={block.alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md border border-border" />
+        <img src={src} alt={block.alt ?? ''} loading={eager ? 'eager' : 'lazy'} fetchPriority={eager ? 'high' : 'auto'} decoding="async" referrerPolicy="no-referrer" className="mx-auto max-h-[70vh] w-auto max-w-full rounded-md border border-border" />
         {block.alt && <figcaption className="meta mt-2 text-center !normal-case tracking-normal">{block.alt}</figcaption>}
       </figure>
     )

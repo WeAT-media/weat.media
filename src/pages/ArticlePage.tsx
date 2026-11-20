@@ -491,8 +491,9 @@ export default function ArticlePage() {
               className="meta"
               dateTime={article.publishedAtFull ?? article.publishedAt}
               title={article.publishedAtFull ? new Date(article.publishedAtFull).toLocaleString('ru-RU') : undefined}
+              suppressHydrationWarning
             >
-              {/* дата и время публикации (у старых записей — только дата) */}
+              {/* часовой пояс сервера и браузера различается: React заменит только текст даты */}
               {article.publishedAtFull && !Number.isNaN(Date.parse(article.publishedAtFull))
                 ? new Date(article.publishedAtFull).toLocaleString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                 : article.publishedAt}
@@ -987,7 +988,7 @@ export default function ArticlePage() {
                   ) : b.type === 'mdx' ? (
                     <MdxBlock component={b.component ?? 'box'} text={b.text} />
                   ) : (
-                    <Block block={b} id={tocItems.find((t) => t.index === i)?.id} />
+                    <Block block={b} id={tocItems.find((t) => t.index === i)?.id} eager={b.type === 'image' && visibleBlocks.findIndex((block) => block.type === 'image') === i} />
                   )}
                   {i === 2 && <AdBanner articleUri={article.atUri} />}
                 </div>
