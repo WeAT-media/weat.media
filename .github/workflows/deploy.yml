@@ -235,7 +235,7 @@ jobs:
             printf 'PUBLIC_URL=%s\nCORS_ORIGIN=%s\nPDS_HANDLE_DOMAIN=weat.media\nACME_DNS_SERVER=https://auth.acme-dns.io\nGEOIP_DB_PATH=/geoip/country.mmdb\nBACKUP_INTERVAL_SEC=300\n' "$SITE_URL" "$SITE_URL"
             [ "$CONTOUR" = ru ] && echo MAIL_HOST=mail-ru.weat.media || echo MAIL_HOST=mail.weat.media
             # только IP/CIDR — мусор в переменной не должен сломать Caddyfile; localhost — всегда
-            allow=$(printf '%s %s' "${NODE_IPS:-}" "${ADMIN_ALLOW_IPS:-}" | tr ',' ' ' | tr -s ' ' '\n' | grep -E '^(([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?|[0-9a-fA-F]*:[0-9a-fA-F:]+(/[0-9]{1,3})?)$' | sort -u | tr '\n' ' ')
+            allow=$(printf '%s %s' "${NODE_IPS:-}" "${ADMIN_ALLOW_IPS:-}" | tr ',' ' ' | tr -s ' ' '\n' | grep -E '^(([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?|[0-9a-fA-F]*:[0-9a-fA-F:]+(/[0-9]{1,3})?)$' | sort -u | tr '\n' ' ' || true)
             echo "ADMIN_ALLOW_IPS=127.0.0.1/32${allow:+ ${allow% }}"
             # AppView ходит к коллегиям внутри узла, если они здесь; ключей подписи в .env нет
             if [ -n "${LABELER_KEYS:-}" ]; then echo LABELER_URL=http://labeler:8791; else line LABELER_URL; fi
