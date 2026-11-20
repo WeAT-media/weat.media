@@ -161,6 +161,14 @@
 		reverse_proxy 127.0.0.1:3000
 	}
 
+	# Критические шрифты идут с того же соединения, что HTML; CDN используется только для JS/CSS.
+	@fonts path /fonts/*
+	handle @fonts {
+		root * /srv
+		header Cache-Control "public, max-age=604800"
+		file_server
+	}
+
 	# Сборка SPA. Файлы /assets/* — с хешем в имени: кэш навсегда; нет файла — 404, а не index.html
 	# (иначе import() куска страницы получал HTML и экран оставался белым до перезагрузки).
 	# index.html и прочее — no-cache: браузер каждый раз сверяет ETag и после деплоя берёт новую сборку.
