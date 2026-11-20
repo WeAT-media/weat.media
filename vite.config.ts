@@ -12,7 +12,7 @@ process.env.VITE_SITE_NAME ??= 'weAT.media'
 process.env.VITE_SITE_URL ??= 'https://weat.media'
 process.env.VITE_STATIC_URL ??= '/'
 process.env.VITE_STATIC_ORIGIN ??= new URL(process.env.VITE_STATIC_URL, process.env.VITE_SITE_URL).origin
-process.env.VITE_FONT_URL ??= '/'
+process.env.VITE_FONT_URL ??= new URL('/', process.env.VITE_SITE_URL).toString()
 
 const proxy = {
   // только /api/*: сама страница /api — маршрут SPA (документация)
