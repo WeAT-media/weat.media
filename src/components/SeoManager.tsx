@@ -39,7 +39,8 @@ export default function SeoManager() {
   useEffect(() => {
     const title = article ? `${article.title} — ${SITE_NAME}` : author ? `${author.name} (@${author.handle}) — ${SITE_NAME}` : staticPage ? `${staticPage.title} — ${SITE_NAME}` : `${SITE_NAME} — свободное медиа`
     const description = article ? (article.subtitle || article.excerpt).slice(0, 300) : author ? `Публикации ${author.name} (@${author.handle}) в ${SITE_NAME}.` : staticPage?.description ?? `Публикации и открытое сообщество ${SITE_NAME}.`
-    const canonical = `${SITE_URL}${pathname}`
+    const pageUrl = `${SITE_URL}${pathname}`
+    const canonical = article?.republished?.url || pageUrl
     const privatePage = /^\/(admin|login|auth|compose|shared-draft|purchase|after-payments)/.test(pathname) || pathname.includes('/settings') || pathname === '/ads/dashboard' || pathname === '/support/tickets'
     const knownPage = !!staticPage || /^\/(article|collection|case|profile|legal|support|design|ads|crawler)(\/|$)/.test(pathname)
     const missingArticle = !!articleId && !article
@@ -51,7 +52,7 @@ export default function SeoManager() {
     setMeta('meta[name="robots"]', 'name', 'robots', robots)
     setMeta('meta[property="og:title"]', 'property', 'og:title', title)
     setMeta('meta[property="og:description"]', 'property', 'og:description', description)
-    setMeta('meta[property="og:url"]', 'property', 'og:url', canonical)
+    setMeta('meta[property="og:url"]', 'property', 'og:url', pageUrl)
     setMeta('meta[property="og:type"]', 'property', 'og:type', article ? 'article' : 'website')
     setMeta('meta[property="og:image"]', 'property', 'og:image', article?.fromIndex ? `${SITE_URL}/api/og/article/${encodeURIComponent(article.id)}.png` : `${SITE_URL}/og-image.png`)
     setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', title)
@@ -72,12 +73,12 @@ export default function SeoManager() {
       author: { '@type': 'Person', name: article.author.name, url: `${SITE_URL}/profile/${article.author.handle}` },
       publisher: { '@type': 'Organization', name: SITE_NAME, url: SITE_URL },
     } : author ? {
-      '@context': 'https://schema.org', '@type': 'ProfilePage', mainEntity: { '@type': 'Person', name: author.name, alternateName: `@${author.handle}`, identifier: author.did, url: canonical },
+      '@context': 'https://schema.org', '@type': 'ProfilePage', mainEntity: { '@type': 'Person', name: author.name, alternateName: `@${author.handle}`, identifier: author.did, url: pageUrl },
     } : {
       '@context': 'https://schema.org', '@graph': [
         { '@type': 'Organization', '@id': `${SITE_URL}/#organization`, name: SITE_NAME, url: SITE_URL },
         { '@type': 'WebSite', '@id': `${SITE_URL}/#website`, name: SITE_NAME, url: SITE_URL, description, publisher: { '@id': `${SITE_URL}/#organization` } },
-        ...(staticPage && pathname !== '/' ? [{ '@type': 'WebPage', name: staticPage.title, url: canonical, description, isPartOf: { '@id': `${SITE_URL}/#website` } }] : []),
+        ...(staticPage && pathname !== '/' ? [{ '@type': 'WebPage', name: staticPage.title, url: pageUrl, description, isPartOf: { '@id': `${SITE_URL}/#website` } }] : []),
       ],
     }
     let script = document.getElementById('page-structured-data')

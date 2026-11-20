@@ -11,6 +11,7 @@ process.env.VITE_SITE_NAME ??= 'weAT.media'
 // абсолютный адрес нужен соцсетям для картинки превью (og:image)
 process.env.VITE_SITE_URL ??= 'https://weat.media'
 process.env.VITE_STATIC_URL ??= '/'
+process.env.VITE_STATIC_ORIGIN ??= new URL(process.env.VITE_STATIC_URL, process.env.VITE_SITE_URL).origin
 
 const proxy = {
   // только /api/*: сама страница /api — маршрут SPA (документация)

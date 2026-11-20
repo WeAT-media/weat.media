@@ -1163,10 +1163,13 @@ test('admin: 5 bad staff tokens in a row ban the IP; other IPs and anonymous pag
   assert.ok(auditLog.some((e) => e.action === 'staff.ip_banned' && e.target === '7.7.7.7'))
 })
 
-test('share: readable article HTML escapes fields and includes BlogPosting; unknown id returns 404', async () => {
+test('share: readable article HTML escapes fields and includes BlogPosting and original canonical; unknown id returns 404', async () => {
   const { sharePage, plainExcerpt, sitemapXml } = await import('../src/share.ts')
-  const html = sharePage({ siteName: 'weAT.media', siteUrl: 'https://weat.media', url: 'https://weat.media/article/x-abcdef', title: 'A <b>"x"</b>', description: 'd&d', image: 'https://weat.media/og-image.png', text: '## Ответ\n\nТекст **важно**', author: '@author', publishedAt: '2026-01-01T00:00:00Z' })
+  const html = sharePage({ siteName: 'weAT.media', siteUrl: 'https://weat.media', url: 'https://weat.media/article/x-abcdef', canonicalUrl: 'https://example.com/original?a=1&b=2', title: 'A <b>"x"</b>', description: 'd&d', image: 'https://weat.media/og-image.png', text: '## Ответ\n\nТекст **важно**', author: '@author', publishedAt: '2026-01-01T00:00:00Z' })
   assert.match(html, /<meta property="og:title" content="A &lt;b&gt;&quot;x&quot;&lt;\/b&gt;">/)
+  assert.match(html, /<link rel="canonical" href="https:\/\/example.com\/original\?a=1&amp;b=2">/)
+  assert.match(html, /<meta property="og:url" content="https:\/\/weat.media\/article\/x-abcdef">/)
+  assert.match(html, /"mainEntityOfPage":"https:\/\/example.com\/original\?a=1&b=2"/)
   assert.match(html, /<meta name="twitter:card" content="summary_large_image">/)
   assert.match(html, /"@type":"BlogPosting"/)
   assert.match(html, /<h3>Ответ<\/h3>/)

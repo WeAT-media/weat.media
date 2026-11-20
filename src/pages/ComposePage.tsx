@@ -1,6 +1,6 @@
 import { FEE_NOTE } from '@/components/FeeNote'
 import { markdownToBlocks } from '@/lib/remoteFeed'
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import {
   ArrowLeft,
@@ -57,19 +57,19 @@ const MAX_TAGS = 5
 
 
 /** markdown — тело редактора: рендер тем же BlockSuite (только чтение), что и в редакторе */
-function Preview({ article, markdown, doc }: { article: Article; markdown: string; doc: import('yjs').Doc | null }) {
+const Preview = memo(function Preview({ title, subtitle, paywall, kind, markdown, doc }: { title: string; subtitle?: string; paywall?: Paywall; kind: Article['kind']; markdown: string; doc: import('yjs').Doc | null }) {
   return (
     <div className="rounded-md border border-border bg-background p-6">
       <p className="meta">Предпросмотр</p>
-      <h1 className="mt-3 text-2xl font-extrabold tracking-tight">{article.title}</h1>
-      {article.subtitle && <p className="mt-2 text-muted-foreground">{article.subtitle}</p>}
-      {article.paywall && (
+      <h1 className="mt-3 text-2xl font-extrabold tracking-tight">{title}</h1>
+      {subtitle && <p className="mt-2 text-muted-foreground">{subtitle}</p>}
+      {paywall && (
         <p className="meta mt-3 inline-flex items-center gap-1.5 text-accent">
-          <Lock size={11} aria-hidden="true" /> Платная · {formatMoney(article.paywall.price, article.paywall.currency ?? 'RUB')}
-          {article.paywall.period === 'month' ? '/мес' : ' разово'}
+          <Lock size={11} aria-hidden="true" /> Платная · {formatMoney(paywall.price, paywall.currency ?? 'RUB')}
+          {paywall.period === 'month' ? '/мес' : ' разово'}
         </p>
       )}
-      {article.kind === 'video' && (
+      {kind === 'video' && (
         <div className="mt-4 flex aspect-video w-full items-center justify-center rounded-md bg-primary">
           <Clapperboard size={28} className="text-primary-foreground/60" aria-hidden="true" />
         </div>
@@ -84,7 +84,7 @@ function Preview({ article, markdown, doc }: { article: Article; markdown: strin
       </div>
     </div>
   )
-}
+})
 
 
 /**
@@ -1296,11 +1296,11 @@ export default function ComposePage() {
 
             <div className="space-y-2">
               <label className="flex items-start gap-2.5 text-sm">
-                <input type="checkbox" checked={republish} onChange={(e) => setRepublish(e.target.checked)} className="mt-0.5" />
+                <input type="checkbox" checked={republish} onChange={(e) => setRepublish(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>
                   Перепечатка — статья уже публиковалась
                   <span className="meta mt-0.5 block !normal-case tracking-normal">
-                    ссылка на оригинал и дата попадут в запись: даже если оригинал удалят, читатель откроет его копию в Wayback Machine
+                    оригинал получит canonical в поиске; ссылка и дата сохранятся в записи, а копия будет доступна через Wayback Machine
                   </span>
                 </span>
               </label>
@@ -1315,7 +1315,7 @@ export default function ComposePage() {
             </div>
 
             <label className="flex items-start gap-2.5 text-sm">
-              <input type="checkbox" checked={noindex} onChange={(e) => setNoindex(e.target.checked)} className="mt-0.5" />
+              <input type="checkbox" checked={noindex} onChange={(e) => setNoindex(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 Не индексировать поисковиками
                 <span className="meta mt-0.5 block !normal-case tracking-normal">
@@ -1326,7 +1326,7 @@ export default function ComposePage() {
 
             <div className="rule pt-6">
               <p className="meta mb-3">Предпросмотр всей статьи</p>
-              <Preview article={draft} markdown={fullText.replace(/^#\s+.*(?:\n+|$)/, '')} doc={liveDoc} />
+              <Preview title={draft.title} subtitle={draft.subtitle} paywall={draft.paywall} kind={draft.kind} markdown={fullText.replace(/^#\s+.*(?:\n+|$)/, '')} doc={liveDoc} />
             </div>
 
                       <div className="flex flex-wrap items-center gap-3">

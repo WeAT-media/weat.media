@@ -3,8 +3,11 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const template = await readFile(process.env.SSR_TEMPLATE || '/srv/app.html', 'utf8')
+const templatePath = process.env.SSR_TEMPLATE || '/srv/app.html'
+const template = await readFile(templatePath, 'utf8')
 const manifest = JSON.parse(await readFile(process.env.SSR_MANIFEST || '/srv/.vite/manifest.json', 'utf8'))
+const cssFile = manifest['index.html']?.css?.[0]
+const inlineCss = cssFile ? await readFile(resolve(templatePath, '..', cssFile), 'utf8') : ''
 const { render } = await import(pathToFileURL(resolve(process.env.SSR_BUNDLE || '/srv-ssr/entry-server.js')).href)
 const apiBase = (process.env.SSR_API_BASE || 'http://appview:8787/api').replace(/\/$/, '')
 const mainSrc = /<script type="module" crossorigin src="([^"]+)"/.exec(template)?.[1] || '/assets/'
@@ -65,8 +68,10 @@ async function page(url) {
         : data.path === '/hot' ? 'Горячее — weAT.media' : null
   let output = template.replace('<div id="root"></div>', `<div id="root">${html}</div>`)
   if (title) output = output.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(title)}</title>`)
-  const canonical = `https://weat.media${data.path}`
+  const pageUrl = `https://weat.media${data.path}`
+  const canonical = article?.republished?.url || pageUrl
   if (article && data.path.startsWith('/article/')) {
+    if (inlineCss) output = output.replace(/<link rel="stylesheet"[^>]*>/, `<style>${inlineCss}</style>`)
     const description = (article.subtitle || article.excerpt || '').slice(0, 300)
     const image = `https://weat.media/api/og/article/${encodeURIComponent(article.id)}.png`
     const meta = (attribute, key, value) => {
@@ -75,7 +80,7 @@ async function page(url) {
     meta('property', 'og:type', 'article')
     meta('property', 'og:title', article.title)
     meta('property', 'og:description', description)
-    meta('property', 'og:url', canonical)
+    meta('property', 'og:url', pageUrl)
     meta('property', 'og:image', image)
     meta('property', 'og:image:alt', article.title)
     meta('property', 'vk:image', image)

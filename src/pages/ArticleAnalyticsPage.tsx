@@ -32,14 +32,14 @@ function fmtTime(sec: number): string {
 }
 
 /**
- * Open Analytics: открытые метрики статьи (агрегаты, без персональных данных),
- * доступ к которым — Premium-функция. Гость → вход; обычный пользователь →
- * Premium upsell без данных аналитики.
+ * Open Analytics: открытые метрики статьи (агрегаты, без персональных данных).
+ * Автор видит свои записи без Premium; остальные пользователи — по подписке.
  */
 export default function ArticleAnalyticsPage() {
   const { id } = useParams()
   const { articles, upvotes, user, isPremium } = useStore()
   const article = articles.find((a) => a.id === id)
+  const isAuthor = !!user && !!article && (user.did === article.author.did || user.handle === article.author.handle)
   const real = useArticleStats(article?.id)
 
   if (!article) {
@@ -54,7 +54,7 @@ export default function ArticleAnalyticsPage() {
   }
 
   // Гейт до вычисления и рендера метрик: данные аналитики не попадают в DOM
-  if (!user || !isPremium) {
+  if (!user || (!isPremium && !isAuthor)) {
     return (
       <div className="mx-auto max-w-[720px] px-5 py-24">
         <Link
@@ -122,7 +122,7 @@ export default function ArticleAnalyticsPage() {
           модель: просмотры и зрители оцениваются по сессиям, без персональных данных.
         </p>
         <p className="meta mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
-          открытые метрики · доступ Premium · автор видит больше
+          открытые метрики · {isAuthor ? 'ваша запись' : 'доступ Premium'}
         </p>
         <p className={`meta mt-2 ${an.real ? 'text-accent' : 'text-muted-foreground'}`} role="status">
           {real === undefined ? 'загружаем данные…' : an.real ? 'реальные данные · без cookie и IP' : 'демо-данные: реальных просмотров пока нет'}

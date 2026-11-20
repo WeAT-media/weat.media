@@ -52,11 +52,12 @@ function inlineMarkdown(text: string): string {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
 }
 
-export function sharePage(o: { siteName: string; siteUrl: string; url: string; title: string; description: string; author?: string; authorUrl?: string; image: string; publishedAt?: string; modifiedAt?: string; text?: string; tags?: string[]; noindex?: boolean }): string {
+export function sharePage(o: { siteName: string; siteUrl: string; url: string; canonicalUrl?: string; title: string; description: string; author?: string; authorUrl?: string; image: string; publishedAt?: string; modifiedAt?: string; text?: string; tags?: string[]; noindex?: boolean }): string {
   const title = esc(o.title)
   const desc = esc(o.description)
+  const canonical = o.canonicalUrl ?? o.url
   const ld = JSON.stringify(o.text ? {
-    '@context': 'https://schema.org', '@type': 'BlogPosting', mainEntityOfPage: o.url, headline: o.title, description: o.description,
+    '@context': 'https://schema.org', '@type': 'BlogPosting', mainEntityOfPage: canonical, headline: o.title, description: o.description,
     image: [o.image], datePublished: o.publishedAt, dateModified: o.modifiedAt ?? o.publishedAt, inLanguage: 'ru',
     author: { '@type': 'Person', name: o.author ?? o.siteName, ...(o.authorUrl ? { url: o.authorUrl } : {}) },
     publisher: { '@type': 'Organization', name: o.siteName, url: o.siteUrl }, keywords: o.tags?.join(', '),
@@ -70,7 +71,7 @@ export function sharePage(o: { siteName: string; siteUrl: string; url: string; t
 <title>${title} — ${esc(o.siteName)}</title>
 <meta name="description" content="${desc}">
 ${o.noindex ? '<meta name="robots" content="noindex">\n' : ''}
-<link rel="canonical" href="${esc(o.url)}">
+<link rel="canonical" href="${esc(canonical)}">
 <meta property="og:type" content="${o.text ? 'article' : 'website'}">
 <meta property="og:site_name" content="${esc(o.siteName)}">
 <meta property="og:title" content="${title}">
@@ -105,7 +106,7 @@ interface FeedArticle {
   did?: string
   handle?: string | null
   created_at?: string
-  record?: { title?: string; subtitle?: string; excerpt?: string; text?: string; noindex?: boolean; createdAt?: string; updatedAt?: string; tags?: string[]; source?: { site?: string; author?: string } }
+  record?: { title?: string; subtitle?: string; excerpt?: string; text?: string; noindex?: boolean; createdAt?: string; updatedAt?: string; tags?: string[]; source?: { url?: string; site?: string; author?: string; crawledAt?: string } }
 }
 
 /** имя и фото автора из его профиля AT (app.bsky.actor.profile на его PDS) */
@@ -249,7 +250,8 @@ export function mountShareRoutes(app: Hono, d: { feedUrl?: string; siteUrl: stri
     const title = (r.title ?? '').trim() || siteName
     const description = (r.subtitle ?? '').trim() || (r.excerpt ?? '').trim() || plainExcerpt(r.text ?? '') || siteName
     const author = a.handle ? `@${a.handle}` : r.source?.author
+    const canonicalUrl = !a.handle?.startsWith('crawler-') && !r.source?.crawledAt && /^https?:\/\//.test(r.source?.url ?? '') ? r.source?.url : undefined
     c.header('cache-control', 'public, max-age=300')
-    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, title: title.slice(0, 200), description: description.slice(0, 300), author, authorUrl: a.handle ? `${d.siteUrl}/profile/${encodeURIComponent(a.handle)}` : undefined, image: r.title?.trim() ? `${d.siteUrl}/api/og/article/${encodeURIComponent(id)}.png` : image, publishedAt: r.createdAt ?? a.created_at, modifiedAt: r.updatedAt ?? a.created_at, text: r.text, tags: r.tags, noindex: r.noindex === true }))
+    return c.html(sharePage({ siteName, siteUrl: d.siteUrl, url, canonicalUrl, title: title.slice(0, 200), description: description.slice(0, 300), author, authorUrl: a.handle ? `${d.siteUrl}/profile/${encodeURIComponent(a.handle)}` : undefined, image: r.title?.trim() ? `${d.siteUrl}/api/og/article/${encodeURIComponent(id)}.png` : image, publishedAt: r.createdAt ?? a.created_at, modifiedAt: r.updatedAt ?? a.created_at, text: r.text, tags: r.tags, noindex: r.noindex === true }))
   })
 }
