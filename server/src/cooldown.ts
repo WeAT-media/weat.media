@@ -1,4 +1,5 @@
 import { randomBytes, randomInt } from 'node:crypto'
+import type { FeedStream } from './feedStream.js'
 import { mirrorStandardDoc, STANDARD_OPT_OUT_FIELD } from './standardDoc.js'
 import { ARTICLE_COLLECTION } from './paidContent.js'
 import type { Context, Hono } from 'hono'
@@ -293,7 +294,7 @@ const CommentEdit = z.object({ text: z.string().trim().min(1).max(10_000) })
 
 export function mountCooldownRoutes(
   app: Hono,
-  d: { pds: PdsClient; cooldown: Cooldown; drafts: DraftRepo },
+  d: { pds: PdsClient; cooldown: Cooldown; drafts: DraftRepo; feedStream?: FeedStream },
   h: { bearer(c: Context): string | undefined; requireStaff(c: Context, role: 'moderator'): Promise<unknown> },
 ) {
   // модерация: всё, что ждёт ухода в AT (и отложенное до выхода), — чтобы успеть поставить метку коллегии.
@@ -349,6 +350,9 @@ export function mountCooldownRoutes(
     }
     const updated = await d.cooldown.repo.update(row.uri, record)
     if (!updated) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')
+    if (row.collection === ARTICLE_COLLECTION && updated.visible_at <= new Date()) {
+      d.feedStream?.emit({ type: 'updated', uri: row.uri, did: row.did, title: String(updated.record.title ?? ''), createdAt: updated.visible_at.toISOString(), paid: false, pending: true })
+    }
     return c.json(pendingFeedItem(updated))
   })
 
@@ -381,6 +385,7 @@ export function mountCooldownRoutes(
   app.delete('/me/pending', async (c) => {
     const row = await own(c)
     if (!(await d.cooldown.repo.remove(row.uri))) throw new PdsError(409, 'AlreadyPublished', 'Запись уже публикуется')
+    if (row.collection === ARTICLE_COLLECTION) d.feedStream?.emit({ type: 'deleted', uri: row.uri, did: row.did, pending: true })
     return c.json({ ok: true })
   })
 }

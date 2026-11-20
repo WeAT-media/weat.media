@@ -96,7 +96,9 @@
 	import security_headers
 	import csp
 	import edge_limits
-	encode zstd gzip
+	# живая лента (SSE, /api/feed/stream) — без сжатия: оно копит поток, и события приходили бы пачками
+	@compressible not path /api/feed/stream
+	encode @compressible zstd gzip
 
 	# служебные страницы не индексировать, даже если на них где-то есть ссылка (robots.txt — только просьба не обходить)
 	@noindex path /admin /admin/* /api/* /crawler-api/* /analytics-api/* /settings /settings/* /profile/*/settings* /login /login/* /auth/* /compose /shared-draft/* /ads/dashboard /support/tickets /purchase/* /after-payments

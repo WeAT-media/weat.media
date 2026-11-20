@@ -66,6 +66,7 @@ pub fn router(state: AppState) -> Router {
         .route("/feed-api/likes", get(likes))
         .route("/feed-api/comments", get(comments))
         .route("/feed-api/related", get(related))
+        .route("/feed-api/stream", get(stream))
         .route("/rss/author/{handle}", get(crate::rss::author))
         .route("/rss/comments/{did}/{rkey}", get(crate::rss::comments))
         .route(
@@ -584,4 +585,24 @@ async fn standard_disallow(
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+/// SSE: новые, изменённые и удалённые статьи индекса. Подписчик, который не успевает, получает
+/// событие `lagged` (часть пропущена — перечитать ленту) и продолжает с текущих событий.
+async fn stream() -> axum::response::sse::Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>> {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use tokio::sync::broadcast::error::RecvError;
+    let rx = crate::events::subscribe();
+    let events = futures_util::stream::unfold(rx, |mut rx| async move {
+        let ev = match rx.recv().await {
+            Ok(ev) => {
+                let data = serde_json::to_string(&ev).unwrap_or_default();
+                Event::default().event(ev.kind).id(ev.at.timestamp_micros().to_string()).data(data)
+            }
+            Err(RecvError::Lagged(n)) => Event::default().event("lagged").data(format!("{{\"missed\":{n}}}")),
+            Err(RecvError::Closed) => return None,
+        };
+        Some((Ok(ev), rx))
+    });
+    Sse::new(events).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(20)))
 }

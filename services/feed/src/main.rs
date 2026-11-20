@@ -5,6 +5,7 @@ mod api;
 mod backfill;
 mod cache;
 mod completions;
+mod events;
 mod firehose;
 mod index;
 mod rank;

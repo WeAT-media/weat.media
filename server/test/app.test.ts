@@ -1360,6 +1360,72 @@ test('pds oauth sign-in gate: TOTP account refused whatever the password; others
   }
 })
 
+test('feed stream (SSE): index events relayed through one upstream, restricted dropped, cooldown article announced as pending', async () => {
+  const { createServer } = await import('node:http')
+  let upstreamConnections = 0
+  let push: ((event: string, data: unknown) => void) | null = null
+  const feed = createServer((req, res) => {
+    if (req.url !== '/feed-api/stream') return void res.writeHead(404).end()
+    upstreamConnections++
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    push = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  })
+  await new Promise<void>((r) => feed.listen(0, '127.0.0.1', r))
+  const port = (feed.address() as { port: number }).port
+  const bad = 'at://did:plc:x/media.weat.article/bad'
+  const app = makeApp({ feedUrl: `http://127.0.0.1:${port}`, cooldown: true, ipCountry: { '5.1.1.1': 'DE' }, restricted: { enabled: true, async blocked(uris: string[]) { return new Set(uris.filter((u) => u === bad)) } } as Deps['restricted'] })
+  const open = async () => {
+    const ctrl = new AbortController()
+    const res = await app.request('/api/feed/stream', { signal: ctrl.signal })
+    assert.equal(res.status, 200)
+    assert.match(res.headers.get('content-type') ?? '', /text\/event-stream/)
+    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader()
+    let buf = ''
+    const next = async (name: string) => {
+      for (;;) {
+        const m = new RegExp(`event: ${name}\\ndata: (.*)\\n`).exec(buf)
+        if (m) {
+          buf = buf.slice(m.index + m[0].length)
+          return JSON.parse(m[1]!) as Record<string, unknown>
+        }
+        const { value, done } = await reader.read()
+        if (done) throw new Error('stream closed')
+        buf += value
+      }
+    }
+    return { next, close: async () => { await reader.cancel(); ctrl.abort() } }
+  }
+  try {
+    const a = await open()
+    const b = await open()
+    await a.next('ready')
+    await b.next('ready')
+    for (let i = 0; i < 50 && !push; i++) await new Promise((r) => setTimeout(r, 10))
+    assert.equal(upstreamConnections, 1, 'одно соединение с лентой на всех слушателей')
+
+    push!('created', { type: 'created', uri: bad, did: 'did:plc:x', id: 'bad-plc:x', title: 'Закрытая', at: 'now' })
+    push!('created', { type: 'created', uri: 'at://did:plc:x/media.weat.article/ok', did: 'did:plc:x', id: 'ok-plc:x', title: 'Открытая', at: 'now' })
+    assert.equal((await a.next('created')).title, 'Открытая', 'закрытая метками в РФ не рассылается')
+    assert.equal((await b.next('created')).title, 'Открытая')
+    push!('deleted', { type: 'deleted', uri: bad, did: 'did:plc:x', id: 'bad-plc:x', at: 'now' })
+    assert.equal((await a.next('deleted')).uri, bad, 'удаление — всегда')
+
+    // статья на охлаждении: видна на сайте сразу — событие pending
+    const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'livewriter', email: 'live@example.com' }, '5.1.1.1'))).json()
+    const pub = await (await app.request('/api/me/articles', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Свежая', text: 'текст' }) })).json()
+    const ev = await a.next('created')
+    assert.equal(ev.uri, pub.uri)
+    assert.equal(ev.pending, true)
+    assert.equal(ev.title, 'Свежая')
+    assert.equal(ev.id, `${pub.uri.split('/').pop()}-${u.user.did.slice(-6)}`)
+    await a.close()
+    await b.close()
+  } finally {
+    feed.closeAllConnections()
+    feed.close()
+  }
+})
+
 test('system accounts: admin creates news (reserved handle via admin API), logs in via handoff; people cannot be impersonated', async () => {
   const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
   const admin = { authorization: `Bearer ${await staffToken(['admin'])}`, 'content-type': 'application/json' }

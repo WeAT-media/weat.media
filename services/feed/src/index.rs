@@ -16,13 +16,14 @@ pub async fn upsert(
     a: &Article,
     record: &Value,
 ) -> sqlx::Result<()> {
-    sqlx::query(
+    let inserted = sqlx::query(
         "INSERT INTO articles (uri, did, rkey, cid, created_at, title, tags, langs, source_site, paid, record, published_at, kind)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (uri) DO UPDATE SET cid = EXCLUDED.cid, created_at = EXCLUDED.created_at, published_at = EXCLUDED.published_at, kind = EXCLUDED.kind, title = EXCLUDED.title,
            tags = EXCLUDED.tags, langs = EXCLUDED.langs, source_site = EXCLUDED.source_site, paid = EXCLUDED.paid,
            record = EXCLUDED.record, indexed_at = now()
-         WHERE articles.cid IS DISTINCT FROM EXCLUDED.cid",
+         WHERE articles.cid IS DISTINCT FROM EXCLUDED.cid
+         RETURNING (xmax = 0) AS inserted",
     )
     .bind(uri)
     .bind(did)
@@ -37,16 +38,39 @@ pub async fn upsert(
     .bind(record)
     .bind(a.published_at)
     .bind(if a.video { "video" } else { "text" })
-    .execute(pool)
+    .fetch_optional(pool)
     .await?;
+    // None — та же версия (тот же CID): ничего не изменилось, события нет
+    if let Some(row) = inserted {
+        let inserted: bool = sqlx::Row::get(&row, "inserted");
+        if let Some((did, id)) = crate::events::short_id(uri) {
+            crate::events::emit(crate::events::ArticleEvent {
+                kind: if inserted { "created" } else { "updated" },
+                uri: uri.to_string(),
+                did,
+                id,
+                title: Some(a.title.clone()),
+                created_at: Some(a.created_at),
+                paid: Some(a.paid),
+                source_site: a.source_site.clone(),
+                at: chrono::Utc::now(),
+            });
+        }
+    }
     Ok(())
 }
 
 pub async fn delete(pool: &PgPool, uri: &str) -> sqlx::Result<()> {
-    sqlx::query("DELETE FROM articles WHERE uri = $1")
+    let gone = sqlx::query("DELETE FROM articles WHERE uri = $1")
         .bind(uri)
         .execute(pool)
-        .await?;
+        .await?
+        .rows_affected();
+    if gone > 0 {
+        if let Some((did, id)) = crate::events::short_id(uri) {
+            crate::events::emit(crate::events::ArticleEvent { kind: "deleted", uri: uri.to_string(), did, id, title: None, created_at: None, paid: None, source_site: None, at: chrono::Utc::now() });
+        }
+    }
     sqlx::query("DELETE FROM comments WHERE uri = $1")
         .bind(uri)
         .execute(pool)

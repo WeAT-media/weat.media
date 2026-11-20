@@ -18,7 +18,8 @@ interface Op {
   auth?: 'bearer' | 'admin' | 'pat' | 'staff'
   body?: z.ZodType
   query?: Record<string, { description: string; required?: boolean }>
-  ok: { status: number; schema?: z.ZodType; description: string }
+  /** contentType — не JSON: text/event-stream (SSE) и т.п.; по умолчанию application/json */
+  ok: { status: number; schema?: z.ZodType; description: string; contentType?: string }
   errors?: [number, string][]
 }
 
@@ -409,6 +410,36 @@ const ops: Op[] = [
   },
   { method: 'delete', path: '/v1/comments/{rkey}', tag: 'publicApi', summary: 'Удалить свой комментарий', auth: 'pat', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[401, 'InvalidToken'], [403, 'Forbidden — нет comments:write']] },
   {
+    method: 'get', path: '/feed/stream', tag: 'profile', summary: 'Живая лента статей (SSE)',
+    description: [
+      'Server-Sent Events: статья появилась на сайте, изменилась или удалена. Подписка: `new EventSource("https://weat.media/api/feed/stream")`.',
+      '',
+      'События (поле `event`): `ready` — подключились (retry 5 с); `created`, `updated`, `deleted` — данные ниже; `ping` — раз в 20 с тишины; `lagged` — часть событий пропущена (`{ missed }`), перечитайте `GET /feed`.',
+      '',
+      'Источники: индекс ленты (всё, что записано в AT — PDS площадки и документы standard.site авторов из белого списка) и охлаждение: статья уже видна на сайте, но уйдёт в AT через 24 ч (`pending: true`). После охлаждения придёт `created` ещё раз — сводите события по `uri`.',
+      '',
+      'Только метаданные: текст — `GET /feed/article?short=<id>`. В РФ-контуре записи с метками nsfw/politics не рассылаются. Без авторизации; до 2000 подписчиков на узел (дальше 503).',
+    ].join('\n'),
+    ok: {
+      status: 200,
+      contentType: 'text/event-stream',
+      description: 'Поток событий; data — JSON',
+      schema: z.object({
+        type: z.enum(['created', 'updated', 'deleted']),
+        uri: z.string().describe('at://did/media.weat.article/rkey или at://did/site.standard.document/rkey'),
+        did: z.string(),
+        id: z.string().describe('короткий id: /article/<id>'),
+        title: z.string().optional(),
+        createdAt: z.string().optional(),
+        paid: z.boolean().optional(),
+        sourceSite: z.string().optional().describe('домен внешней записи (standard.site, перепечатка)'),
+        pending: z.boolean().optional().describe('видна на сайте, в AT ещё не ушла (охлаждение)'),
+        at: z.string().describe('время события'),
+      }),
+    },
+    errors: [[503, 'TooManyListeners']],
+  },
+  {
     method: 'get', path: '/feed', tag: 'profile', summary: 'Лента статей площадки',
     description: 'Статьи media.weat.article. Индекс обновляется по потоку событий PDS за ~1 с. sort=hot — (лайки + 2·комментарии + 1) / (часы + 2)^1.5 за 14 дней; sort=best — по лайкам или комментариям за период. У hot и best в ответе есть score.',
     query: {
@@ -691,7 +722,7 @@ export function buildOpenApi(serverUrl = '/api', { internal = false }: { interna
     const responses: Record<string, unknown> = {
       [op.ok.status]: {
         description: op.ok.description,
-        ...(op.ok.schema ? { content: { 'application/json': { schema: json(op.ok.schema, 'output') } } } : {}),
+        ...(op.ok.schema ? { content: { [op.ok.contentType ?? 'application/json']: { schema: json(op.ok.schema, 'output') } } } : {}),
       },
     }
     for (const [status, codes] of op.errors ?? []) {

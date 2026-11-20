@@ -1,4 +1,5 @@
 import type { Context, Hono } from 'hono'
+import type { FeedStream } from './feedStream.js'
 import { mirrorStandardDoc, standardDocument, STANDARD_DOC_COLLECTION, STANDARD_OPT_OUT_FIELD } from './standardDoc.js'
 import { z } from 'zod'
 import { PdsError, type PdsClient } from './pds.js'
@@ -96,7 +97,7 @@ export function articleRecord(b: z.infer<typeof PublishArticleBody>, now = new D
   }
 }
 
-export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo; cooldown?: Cooldown; notifications?: NotificationService; siteUrl?: string }, h: { bearer(c: Context): string | undefined }) {
+export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: SharedRepo; users?: UserRepo; drafts?: DraftRepo; cooldown?: Cooldown; notifications?: NotificationService; siteUrl?: string; feedStream?: FeedStream }, h: { bearer(c: Context): string | undefined }) {
   app.post('/me/articles', async (c) => {
     const token = h.bearer(c)
     if (!token) throw fail('AuthenticationRequired', 'Нужно войти', 401)
@@ -119,7 +120,11 @@ export function mountArticleRoutes(app: Hono, d: { pds: PdsClient; shared?: Shar
     const held = d.cooldown ? await d.cooldown.hold({ token, did, handle }, ARTICLE_COLLECTION, parsed.data.standardSite ? record : { ...record, [STANDARD_OPT_OUT_FIELD]: true }, scheduledAt) : null
     if (draft && d.shared) await d.shared.closeFor(draft.id)
     if (held) {
-      if (held.visible_at <= new Date()) await d.notifications?.article(did, handle, held.uri, parsed.data.title)
+      if (held.visible_at <= new Date()) {
+        await d.notifications?.article(did, handle, held.uri, parsed.data.title)
+        // на сайте видна сразу, в AT уйдёт после охлаждения — живой ленте сообщаем сейчас
+        d.feedStream?.emit({ type: 'created', uri: held.uri, did, title: parsed.data.title, createdAt: held.visible_at.toISOString(), paid: false, pending: true })
+      }
       return c.json({ uri: held.uri, cid: '', pendingUntil: held.publish_at.toISOString(), visibleAt: held.visible_at.toISOString() }, 201)
     }
     if (scheduledAt && scheduledAt > new Date()) throw fail('InvalidRequest', 'Отложенная публикация недоступна для этого входа', 400)
