@@ -92,7 +92,7 @@ async fn main() {
         }
         tokio::spawn(firehose::run(pool.clone(), peer, ws));
     }
-    // документы standard.site из всей сети — только авторы из белого списка (standard_allow)
+    // документы standard.site: включённые площадки и авторы из белого списка, с блок-листом
     tokio::spawn(standard::run(
         pool.clone(),
         standard::Resolver::new(env("PLC_URL", "https://plc.directory")),

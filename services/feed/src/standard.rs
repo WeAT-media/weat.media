@@ -1,10 +1,10 @@
 //! Документы standard.site (site.standard.document) из всей сети: Leaflet, pckt и другие площадки.
 //!
-//! Источник — Jetstream (JSON-поток relay) с фильтром wantedCollections + wantedDids: в индекс попадают
-//! только авторы из белого списка standard_allow (его ведут админы). Историю нового автора догружаем
-//! с его PDS (DID → PLC / did:web → listRecords). Документ переводится в форму нашей статьи: текст —
-//! textContent (простой текст), source — ссылка на оригинал; форматированный content у каждой площадки
-//! свой (open union), его не разбираем — полную версию читают на сайте автора.
+//! Источник — Jetstream (JSON-поток relay): в индекс попадают документы включённых площадок
+//! и авторы из белого списка standard_allow; блок-лист сильнее обоих правил. Историю нового автора
+//! догружаем с его PDS (DID → PLC / did:web → listRecords). Документ переводится в форму нашей статьи:
+//! текст — textContent или блоки Leaflet, source — ссылка на оригинал. Документы Offprint и других
+//! Standard-площадок без content.$type получают виртуальный тип site.standard.text.
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
@@ -303,9 +303,13 @@ pub fn to_article_record(
     Some(out)
 }
 
-/// content.$type документа: по нему узнаём площадку (pub.leaflet.content, blog.pckt.content…)
+/// content.$type документа: по нему узнаём площадку (pub.leaflet.content, blog.pckt.content…).
+/// Offprint и другие Standard-публикации с одним textContent получают виртуальный тип site.standard.text.
 pub fn content_type(rec: &Value) -> Option<&str> {
-    rec.get("content")?.get("$type")?.as_str()
+    match rec.get("content") {
+        None | Some(Value::Null) => Some("site.standard.text"),
+        Some(content) => content.get("$type")?.as_str(),
+    }
 }
 
 /// Текст Leaflet: страницы → блоки text, header, списки (с вложенностью) → абзацы markdown
@@ -898,5 +902,11 @@ mod tests {
         assert_eq!(p.accepts("did:plc:spam", Some("pub.leaflet.content")), None, "блок сильнее площадки");
         assert!(p.whole_network());
         assert!(!Policy { allow: ["did:plc:friend".to_string()].into(), ..Default::default() }.whole_network());
+
+        let plain = json!({ "title": "Offprint post", "textContent": "plain text" });
+        assert_eq!(content_type(&plain), Some("site.standard.text"));
+        let standard = Policy { platforms: ["site.standard.text".to_string()].into(), ..Default::default() };
+        assert_eq!(standard.accepts("did:plc:writer", content_type(&plain)), Some(false));
+        assert!(standard.whole_network());
     }
 }
