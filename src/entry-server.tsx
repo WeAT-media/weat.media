@@ -54,7 +54,10 @@ export async function render(url: string, apiBase: string): Promise<{ html: stri
     }
   } else if (articleId) {
     const item = await json<FeedItem>(`${apiBase}/feed/article?${new URLSearchParams({ short: articleId })}`)
-    const article = item ? toArticle(item) : null
+    const fullItem = item?.uri && !item.record.text
+      ? await json<FeedItem>(`${apiBase}/feed/article?${new URLSearchParams({ uri: item.uri })}`)
+      : item
+    const article = fullItem ? toArticle(fullItem) : null
     data.articles = article ? [article] : []
   } else if (profileId) {
     const id = decodePathParam(profileId)

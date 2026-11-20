@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Rss } from 'lucide-react'
 import { downloadXml } from '@/lib/rss'
+import { SITE_URL } from '@/config/site'
 
 const cls =
   'inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -22,7 +23,7 @@ export default function RssButton({
 }) {
   const [copied, setCopied] = useState(false)
   if (href) {
-    const url = new URL(href, window.location.origin).toString()
+    const url = new URL(href, SITE_URL).toString()
     return (
       <span className="inline-flex items-center gap-1">
         <a href={url} target="_blank" rel="noopener" type="application/rss+xml" title={`${label} — подписаться в RSS-читалке`} className={cls}>
