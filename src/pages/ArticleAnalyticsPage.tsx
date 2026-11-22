@@ -119,7 +119,7 @@ export default function ArticleAnalyticsPage() {
         <h1 className="mt-2 text-3xl font-extrabold leading-tight tracking-tight md:text-4xl">{article.title}</h1>
         <p className="mt-3 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">
           Публичные агрегаты помогают оценить вовлечённость и заметить возможную накрутку. Это приблизительная
-          модель: просмотры и зрители оцениваются по сессиям, без персональных данных.
+          модель: просмотры и зрители оцениваются по сессиям и псевдонимным техническим сигналам.
         </p>
         <p className="meta mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
           открытые метрики · {isAuthor ? 'ваша запись' : 'доступ Premium'}
@@ -228,6 +228,31 @@ export default function ArticleAnalyticsPage() {
         </Reveal>
       )}
 
+      {an.canvasFingerprints.length > 0 && (
+        <Reveal className="mt-10">
+          <section className="rule pt-8" aria-label="Canvas-сигнатуры устройств">
+            <h2 className="font-mono text-[13px] font-bold uppercase tracking-[0.12em]">Canvas-сигнатуры</h2>
+            <p className="mt-3 max-w-[68ch] text-sm leading-relaxed text-muted-foreground">
+              Первые 12 hex-символов SHA-256 открытой canvas-отрисовки. Одинаковые подписи группируют похожие
+              графические окружения, но не раскрывают и не доказывают ОС, её версию или модель устройства.
+              <Link to="/legal/cookies" className="ml-1 text-accent underline underline-offset-2">Точный алгоритм</Link>
+            </p>
+            <table className="mt-5 w-full text-sm">
+              <thead><tr className="meta text-left"><th className="pb-2 font-normal">Сигнатура</th><th className="pb-2 font-normal">Доля</th><th className="pb-2 text-right font-normal">Просмотры</th></tr></thead>
+              <tbody>
+                {an.canvasFingerprints.map((f) => (
+                  <tr key={f.signature} className="border-t border-border">
+                    <td className="py-2 font-mono text-[13px]">{f.signature}…</td>
+                    <td className="py-2 text-muted-foreground">{f.pct}%</td>
+                    <td className="py-2 text-right">{f.views.toLocaleString('ru-RU')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </Reveal>
+      )}
+
       {/* Видео-плейлист: per-video демо-метрики. Retention/CTR есть только у native
           (своя телеметрия); внешние площадки без их API ничего не отдают — не выдумываем. */}
       {(() => {
@@ -326,7 +351,7 @@ export default function ArticleAnalyticsPage() {
             Методика: всплеск просмотров без соразмерных комментариев и дочитываний, высокая доля анонимных
             просмотров и концентрация одного источника — повод для проверки, а не автоматический вердикт.
             Подтверждение накрутки выносит коллегия присяжных в открытом разбирательстве. {an.real
-              ? 'Данные — дневные агрегаты: без cookie, без хранения IP; уникальные зрители считаются по хешу, который меняется каждые сутки. Повторный просмотр в течение 30 минут не засчитывается, боты и браузеры с Do Not Track не учитываются.'
+              ? 'Данные — дневные агрегаты: без рекламных cookie и хранения IP; уникальные зрители считаются по дневному хешу, а графические окружения группируются по открытой canvas-сигнатуре. Повторный просмотр в течение 30 минут не засчитывается, боты и браузеры с Do Not Track не учитываются.'
               : 'Пока реальных просмотров нет, числа демонстрационные и детерминированно выведены из записи.'}
           </p>
         </section>

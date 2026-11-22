@@ -30,7 +30,8 @@ export default function CookieBanner() {
     <div role="dialog" aria-modal="false" aria-label="Cookie и статистика" aria-describedby="cookie-description" className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-[720px] border border-border bg-background p-5 shadow-xs md:inset-x-6">
       <p id="cookie-description" className="text-sm leading-relaxed">
         Мы используем только необходимое хранилище браузера: вход, настройки, история. Рекламных cookie нет. С вашего
-        разрешения считаем анонимную статистику просмотров и запоминаем, по какой ссылке вы пришли (UTM).{' '}
+        разрешения считаем статистику просмотров, включая псевдонимную canvas-сигнатуру графического окружения,
+        и запоминаем, по какой ссылке вы пришли (UTM).{' '}
         <Link to="/legal/cookies" className="text-accent underline underline-offset-2">Подробнее</Link>
       </p>
       <div className="mt-4 flex flex-wrap gap-2">

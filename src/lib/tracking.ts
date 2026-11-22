@@ -3,10 +3,12 @@ import { hasSession } from '@/lib/api'
 import type { RealStats } from '@/lib/analytics'
 import { lastTouchUtm, parseUtm } from '@/lib/utm'
 import { analyticsAllowed } from '@/lib/consent'
+import { canvasFingerprint } from '@/lib/canvasFingerprint'
 
 /**
- * Открытая аналитика: beacon в weat-analytics. Без cookie и идентификаторов —
- * сервис считает дневной хеш сам и не хранит IP. DNT/GPC браузера — не отправляем ничего.
+ * Открытая аналитика: beacon в weat-analytics. Без cookie и сохранённых идентификаторов —
+ * сервис считает дневной хеш сам и не хранит IP. При просмотре добавляется открытый canvas-хеш
+ * (canvasFingerprint.ts). DNT/GPC браузера — не отправляем ничего.
  */
 const BASE = import.meta.env.VITE_ANALYTICS_URL ?? '/analytics-api'
 
@@ -17,11 +19,14 @@ const optedOut = () =>
 function send(payload: Record<string, unknown>) {
   if (optedOut()) return
   // ЕЭЗ/UK/CH — только с согласия (consent.ts); остальным — как раньше
-  void analyticsAllowed().then((ok) => ok && beacon(payload))
+  void analyticsAllowed().then((ok) => {
+    if (ok) void beacon(payload)
+  })
 }
 
-function beacon(payload: Record<string, unknown>) {
-  const body = JSON.stringify(payload)
+async function beacon(payload: Record<string, unknown>) {
+  const f = payload.k === 'view' ? await canvasFingerprint() : null
+  const body = JSON.stringify(f ? { ...payload, f } : payload)
   // text/plain — простой запрос без CORS-preflight; sendBeacon переживает закрытие вкладки
   if (navigator.sendBeacon?.(`${BASE}/collect`, new Blob([body], { type: 'text/plain' }))) return
   fetch(`${BASE}/collect`, { method: 'POST', body, keepalive: true, headers: { 'content-type': 'text/plain' } }).catch(() => {})

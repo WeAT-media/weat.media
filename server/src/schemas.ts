@@ -36,7 +36,7 @@ export const Utm = z.object({
 export type UtmData = z.infer<typeof Utm>
 
 /** редакция юридических документов; меняется вместе с текстами на /legal/* */
-export const LEGAL_VERSION = '2026-11-12'
+export const LEGAL_VERSION = '2026-11-22'
 
 export const Username = z
   .string()

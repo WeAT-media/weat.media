@@ -52,6 +52,7 @@ pub fn router(state: Shared) -> Router {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UtmIn {
     source: String,
     #[serde(default)]
@@ -60,14 +61,16 @@ pub struct UtmIn {
     campaign: String,
 }
 
-/// Компактный beacon: { a, k, ms?, r?, u?, auth? }
+/// Компактный beacon: { a, k, ms?, r?, u?, auth?, f? }
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Collect {
     a: String,
     k: String,
     ms: Option<i64>,
     r: Option<String>,
     u: Option<UtmIn>,
+    f: Option<String>,
     #[serde(default)]
     auth: bool,
 }
@@ -127,10 +130,17 @@ fn pick_ip(trust_proxy: bool, headers: &HeaderMap, peer: SocketAddr) -> String {
     peer.ip().to_string()
 }
 
+fn valid_canvas(f: &str) -> bool {
+    f.len() == 64 && f.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
 /// sendBeacon шлёт text/plain — тело разбираем как JSON независимо от content-type
 async fn collect(State(s): State<Shared>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap, body: String) -> StatusCode {
     let Ok(c) = serde_json::from_str::<Collect>(&body) else { return StatusCode::BAD_REQUEST };
     if !valid_article(&c.a) {
+        return StatusCode::BAD_REQUEST;
+    }
+    if c.f.as_ref().is_some_and(|f| !valid_canvas(f)) {
         return StatusCode::BAD_REQUEST;
     }
     let ua = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("");
@@ -157,7 +167,7 @@ async fn collect(State(s): State<Shared>, ConnectInfo(peer): ConnectInfo<SocketA
                 medium: clip(&u.medium, 100),
                 campaign: clip(&u.campaign, 100),
             });
-            Kind::View { source: classify::source(c.r.as_deref(), &s.own_hosts), utm, anon: !c.auth }
+            Kind::View { source: classify::source(c.r.as_deref(), &s.own_hosts), utm, anon: !c.auth, canvas: c.f }
         }
         "read" => {
             if !lock(&s.reads).fresh(&c.a, visitor, now) {
@@ -254,6 +264,12 @@ pub struct UtmOut {
 }
 
 #[derive(Serialize)]
+pub struct CanvasFingerprintOut {
+    signature: String,
+    views: i64,
+}
+
+#[derive(Serialize)]
 pub struct Stats {
     article_id: String,
     since: NaiveDate,
@@ -265,6 +281,7 @@ pub struct Stats {
     daily: Vec<DayOut>,
     sources: Vec<SourceOut>,
     utm: Vec<UtmOut>,
+    canvas_fingerprints: Vec<CanvasFingerprintOut>,
 }
 
 async fn article_stats(State(s): State<Shared>, Path(id): Path<String>, Query(q): Query<StatsQuery>) -> Response {
@@ -312,6 +329,15 @@ pub async fn load_stats(pool: &PgPool, id: &str, since: NaiveDate, today: NaiveD
     .fetch_all(pool)
     .await?;
 
+    let canvas: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT left(hash, 12) AS signature, sum(views)::int8 FROM article_canvas_fingerprints WHERE article_id = $1 AND day >= $2
+         GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 20",
+    )
+    .bind(id)
+    .bind(since)
+    .fetch_all(pool)
+    .await?;
+
     // пустые дни — нулями, чтобы график был непрерывным
     let mut daily = vec![];
     let mut d = since;
@@ -333,6 +359,7 @@ pub async fn load_stats(pool: &PgPool, id: &str, since: NaiveDate, today: NaiveD
         daily,
         sources: sources.into_iter().map(|(channel, name, views)| SourceOut { channel, name, views }).collect(),
         utm: utm.into_iter().map(|(source, medium, campaign, views)| UtmOut { source, medium, campaign, views }).collect(),
+        canvas_fingerprints: canvas.into_iter().map(|(signature, views)| CanvasFingerprintOut { signature, views }).collect(),
     })
 }
 
@@ -368,6 +395,21 @@ mod tests {
         assert!(!valid_article("random/string.with:chars"));
         assert!(!valid_article("a b"));
         assert!(!valid_article("<script>"));
+    }
+
+    #[test]
+    fn collect_rejects_unknown_fields() {
+        assert!(serde_json::from_str::<Collect>(r#"{"a":"article","k":"view","ms":1000,"r":"https://example.com","u":{"source":"news","medium":"email","campaign":"launch"},"auth":true}"#).is_ok());
+        assert!(serde_json::from_str::<Collect>(r#"{"a":"article","k":"view","unexpected":1}"#).is_err());
+        assert!(serde_json::from_str::<Collect>(r#"{"a":"article","k":"view","u":{"source":"news","unexpected":1}}"#).is_err());
+    }
+
+    #[test]
+    fn canvas_hash_is_strict_sha256_hex() {
+        assert!(valid_canvas(&"ab".repeat(32)));
+        assert!(!valid_canvas(&"AB".repeat(32)));
+        assert!(!valid_canvas(&"g".repeat(64)));
+        assert!(!valid_canvas(&"a".repeat(63)));
     }
 
     #[test]

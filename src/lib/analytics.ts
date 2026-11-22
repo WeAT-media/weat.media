@@ -54,6 +54,7 @@ export interface ArticleAnalytics {
   /** true — данные сервиса аналитики; false — демо-модель */
   real: boolean
   utm: { source: string; medium: string; campaign: string; views: number }[]
+  canvasFingerprints: { signature: string; views: number; pct: number }[]
 }
 
 /** Ответ weat-analytics: GET /analytics-api/articles/:id */
@@ -66,10 +67,11 @@ export interface RealStats {
   daily: { day: string; views: number; uniques: number; reads: number }[]
   sources: { channel: 'feed' | 'direct' | 'search' | 'social' | 'other'; name: string; views: number }[]
   utm: { source: string; medium: string; campaign: string; views: number }[]
+  canvas_fingerprints: { signature: string; views: number }[]
 }
 
 /** статья из сети без просмотров (или сервис аналитики недоступен): честные нули, а не модель */
-export const EMPTY_STATS: RealStats = { views: 0, uniques: 0, anon_views: 0, reads: 0, avg_time_ms: 0, daily: [], sources: [], utm: [] }
+export const EMPTY_STATS: RealStats = { views: 0, uniques: 0, anon_views: 0, reads: 0, avg_time_ms: 0, daily: [], sources: [], utm: [], canvas_fingerprints: [] }
 
 const CHANNEL_LABEL: Record<RealStats['sources'][number]['channel'], string> = {
   feed: `Лента ${SITE_NAME}`,
@@ -123,6 +125,7 @@ export function fromRealStats(article: Article, upvotes: number, r: RealStats): 
     status,
     real: true,
     utm: r.utm,
+    canvasFingerprints: (r.canvas_fingerprints ?? []).map((f) => ({ ...f, pct: pct(f.views, r.views) })),
   }
 }
 
@@ -191,5 +194,6 @@ export function getArticleAnalytics(article: Article, upvotes: number): ArticleA
     status,
     real: false,
     utm: [],
+    canvasFingerprints: [],
   }
 }

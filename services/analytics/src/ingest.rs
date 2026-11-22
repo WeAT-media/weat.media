@@ -13,7 +13,7 @@ use crate::classify::Source;
 
 #[derive(Debug, Clone)]
 pub enum Kind {
-    View { source: Source, utm: Option<Utm>, anon: bool },
+    View { source: Source, utm: Option<Utm>, anon: bool, canvas: Option<String> },
     Read,
     Time { ms: i64 },
     /// видео запущено
@@ -56,6 +56,7 @@ pub struct Batch {
     pub daily: HashMap<Key, Counters>,
     pub sources: HashMap<(String, NaiveDate, &'static str, String), i64>,
     pub utm: HashMap<(String, NaiveDate, Utm), i64>,
+    pub canvas: HashMap<(String, NaiveDate, String), i64>,
     pub visitors: HashSet<(String, NaiveDate, [u8; 8])>,
     pub len: usize,
 }
@@ -110,7 +111,7 @@ impl Batch {
         self.len += 1;
         let c = self.daily.entry((e.article_id.clone(), e.day)).or_default();
         match e.kind {
-            Kind::View { source, utm, anon } => {
+            Kind::View { source, utm, anon, canvas } => {
                 c.views += 1;
                 if anon {
                     c.anon_views += 1;
@@ -118,6 +119,9 @@ impl Batch {
                 *self.sources.entry((e.article_id.clone(), e.day, source.channel, source.name)).or_default() += 1;
                 if let Some(u) = utm {
                     *self.utm.entry((e.article_id.clone(), e.day, u)).or_default() += 1;
+                }
+                if let Some(hash) = canvas {
+                    *self.canvas.entry((e.article_id.clone(), e.day, hash)).or_default() += 1;
                 }
                 self.visitors.insert((e.article_id, e.day, e.visitor));
             }
@@ -229,6 +233,24 @@ pub async fn flush(pool: &PgPool, b: Batch) -> sqlx::Result<()> {
         .await?;
     }
 
+    if !b.canvas.is_empty() {
+        let (mut a, mut d, mut h, mut v) = (vec![], vec![], vec![], vec![]);
+        for ((article, day, hash), n) in b.canvas {
+            a.push(article);
+            d.push(day);
+            h.push(hash);
+            v.push(n);
+        }
+        sqlx::query(
+            "INSERT INTO article_canvas_fingerprints AS t (article_id, day, hash, views)
+             SELECT * FROM UNNEST($1::text[], $2::date[], $3::text[], $4::int8[])
+             ON CONFLICT (article_id, day, hash) DO UPDATE SET views = t.views + EXCLUDED.views",
+        )
+        .bind(&a).bind(&d).bind(&h).bind(&v)
+        .execute(&mut *tx)
+        .await?;
+    }
+
     tx.commit().await
 }
 
@@ -279,8 +301,8 @@ mod tests {
     fn batch_folds_counters() {
         let mut b = Batch::default();
         let src = Source { channel: "search", name: "google.com".into() };
-        b.add(ev(Kind::View { source: src.clone(), utm: None, anon: true }));
-        b.add(ev(Kind::View { source: src, utm: Some(Utm { source: "tg".into(), medium: String::new(), campaign: "launch".into() }), anon: false }));
+        b.add(ev(Kind::View { source: src.clone(), utm: None, anon: true, canvas: Some("ab".repeat(32)) }));
+        b.add(ev(Kind::View { source: src, utm: Some(Utm { source: "tg".into(), medium: String::new(), campaign: "launch".into() }), anon: false, canvas: Some("ab".repeat(32)) }));
         b.add(ev(Kind::Read));
         b.add(ev(Kind::Time { ms: 30_000 }));
         b.add(ev(Kind::Play));
@@ -289,6 +311,7 @@ mod tests {
         assert_eq!(*c, Counters { views: 2, anon_views: 1, reads: 1, time_ms_sum: 30_000, time_n: 1, plays: 1, completes: 1 });
         assert_eq!(b.sources.values().sum::<i64>(), 2);
         assert_eq!(b.utm.len(), 1);
+        assert_eq!(b.canvas.values().sum::<i64>(), 2);
         assert_eq!(b.visitors.len(), 1, "один посетитель");
     }
 
