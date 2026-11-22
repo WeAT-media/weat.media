@@ -2,6 +2,7 @@ import { normalizeIVideo } from '@/lib/interactiveVideo'
 import { parseFaq } from '@/lib/faq'
 import { parseActionButton } from '@/lib/actionButton'
 import { normalizePoll } from '@/lib/poll'
+import { parseTimeline } from '@/lib/timeline'
 import type { ArticleBlock } from '@/types/types'
 
 /**
@@ -10,7 +11,7 @@ import type { ArticleBlock } from '@/types/types'
  * читателю показалась бы блоком кода. Всё нормализуется — читатель получает только проверенное.
  */
 
-const FENCES = ['carousel', 'poll', 'userblock', 'button', 'faq', 'ivideo', 'callout', 'bookmark'] as const
+const FENCES = ['carousel', 'poll', 'userblock', 'button', 'faq', 'ivideo', 'callout', 'bookmark', 'timeline'] as const
 
 export const isCustomFence = (lang: string) => (FENCES as readonly string[]).includes(lang)
 
@@ -37,6 +38,10 @@ export function customFenceBlock(lang: string, inner: string): ArticleBlock | nu
       case 'faq': {
         const faq = parseFaq(inner)
         return faq ? { type: 'faq', text: JSON.stringify(faq) } : null
+      }
+      case 'timeline': {
+        const timeline = parseTimeline(inner)
+        return timeline ? { type: 'timeline', text: JSON.stringify(timeline) } : null
       }
       case 'ivideo': {
         const { data } = normalizeIVideo(JSON.parse(inner))

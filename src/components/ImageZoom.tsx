@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Download, LoaderCircle, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { toWebp } from '@/lib/imageCompression'
 
 /**
  * Увеличение картинок статьи по клику или тапу. Обработчик один на весь текст (делегирование): картинки
@@ -27,17 +28,19 @@ function fileName(src: string): string {
  * Свой адрес и PDS — напрямую; чужой сайт CSP (connect-src) не пустит — через /api/image-proxy.
  * Не вышло — открываем картинку в новой вкладке.
  */
-async function download(src: string) {
+async function download(src: string, compressed: boolean) {
   const abs = new URL(src, location.href)
   const direct = abs.origin === location.origin || /(^|\.)weat\.media$/.test(abs.hostname)
   const url = direct ? abs.toString() : `/api/image-proxy?${new URLSearchParams({ url: abs.toString() })}`
   try {
     const res = await fetch(url)
     if (!res.ok) throw new Error(String(res.status))
-    const blobUrl = URL.createObjectURL(await res.blob())
+    const source = await res.blob()
+    const blob = compressed ? await toWebp(source) : source
+    const blobUrl = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = blobUrl
-    a.download = fileName(src)
+    a.download = compressed ? fileName(src).replace(/\.\w{2,5}$/, '.webp') : fileName(src)
     document.body.append(a)
     a.click()
     a.remove()
@@ -54,6 +57,8 @@ export default function ImageZoom({ children }: { children: ReactNode }) {
   const [img, setImg] = useState<{ src: string; alt: string } | null>(null)
   const [zoom, setZoom] = useState<{ w: number; fx: number; fy: number } | null>(null)
   const [turn, setTurn] = useState(0)
+  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (!img) return
@@ -73,6 +78,8 @@ export default function ImageZoom({ children }: { children: ReactNode }) {
     e.preventDefault()
     setZoom(null)
     setTurn(0)
+    setDownloadOpen(false)
+    setDownloading(false)
     setImg({ src: t.currentSrc || t.src, alt: t.alt })
   }
 
@@ -163,9 +170,39 @@ export default function ImageZoom({ children }: { children: ReactNode }) {
                 >
                   {zoom ? <ZoomOut size={18} aria-hidden="true" /> : <ZoomIn size={18} aria-hidden="true" />}
                 </button>
-                <button type="button" onClick={() => void download(img.src)} aria-label="Скачать" title="Скачать" className={ctl}>
-                  <Download size={18} aria-hidden="true" />
-                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setDownloadOpen((open) => !open)}
+                    aria-label="Скачать"
+                    aria-expanded={downloadOpen}
+                    title="Скачать"
+                    className={ctl}
+                  >
+                    <Download size={18} aria-hidden="true" />
+                  </button>
+                  {downloadOpen && (
+                    <div className="absolute bottom-full right-0 mb-2 w-52 rounded-lg border border-white/15 bg-neutral-900 p-1.5 shadow-xl">
+                      {([{ compressed: false, label: 'Оригинал' }, { compressed: true, label: 'Сжатая WebP' }]).map(({ compressed, label }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          disabled={downloading}
+                          onClick={async () => {
+                            setDownloading(true)
+                            await download(img.src, compressed)
+                            setDownloading(false)
+                            setDownloadOpen(false)
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-white/90 hover:bg-white/10 disabled:opacity-60"
+                        >
+                          {downloading ? <LoaderCircle size={15} className="animate-spin" aria-hidden="true" /> : <Download size={15} aria-hidden="true" />}
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             <button

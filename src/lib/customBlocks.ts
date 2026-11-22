@@ -21,6 +21,7 @@ import {
 import type { CalloutTone } from '@/types/types'
 import { DEFAULT_IVIDEO, normalizeIVideo } from '@/lib/interactiveVideo'
 import { DEFAULT_POLL_SETTINGS, POLL_DURATIONS, durationLabel, normalizePoll, type PollData, type PollSettings } from '@/lib/poll'
+import { DEFAULT_TIMELINE, parseTimeline, type Timeline } from '@/lib/timeline'
 
 /**
  * Настоящие BlockSuite-блоки "Карусель" и "Опрос" вместо прежнего хака
@@ -72,6 +73,7 @@ export const TABLE_FLAVOUR = 'affine:mdtable'
 export interface TableData { rows: string[][] }
 export const DEFAULT_TABLE: TableData = { rows: [['Колонка 1', 'Колонка 2'], ['', '']] }
 export const BUTTON_FLAVOUR = 'affine:actionbutton'
+export const TIMELINE_FLAVOUR = 'affine:timeline'
 
 export interface ActionButtonData {
   label: string
@@ -143,10 +145,16 @@ export const TableBlockSchema = defineBlockSchema({
   metadata: { version: 1, role: 'content' },
 })
 
-export const customBlockSchemas = [CarouselBlockSchema, PollBlockSchema, CalloutBlockSchema, UserBlockSchema, IVideoBlockSchema, FaqBlockSchema, ActionButtonBlockSchema, TableBlockSchema]
+export const TimelineBlockSchema = defineBlockSchema({
+  flavour: TIMELINE_FLAVOUR,
+  props: (): DataProps => ({ data: JSON.stringify(DEFAULT_TIMELINE) }),
+  metadata: { version: 1, role: 'content' },
+})
+
+export const customBlockSchemas = [CarouselBlockSchema, PollBlockSchema, CalloutBlockSchema, UserBlockSchema, IVideoBlockSchema, FaqBlockSchema, ActionButtonBlockSchema, TableBlockSchema, TimelineBlockSchema]
 
 /** Блоки, которые есть только у Premium: у остальных в редакторе превращаются в текст */
-export const PREMIUM_FLAVOURS = new Set<string>([USER_BLOCK_FLAVOUR, CALLOUT_FLAVOUR, FAQ_FLAVOUR, BUTTON_FLAVOUR])
+export const PREMIUM_FLAVOURS = new Set<string>([USER_BLOCK_FLAVOUR, CALLOUT_FLAVOUR, FAQ_FLAVOUR, BUTTON_FLAVOUR, TIMELINE_FLAVOUR])
 
 /** Блоки только для статей: в комментариях (compact-редактор) превращаются в текст */
 export const ARTICLE_ONLY_FLAVOURS = new Set<string>([FAQ_FLAVOUR, IVIDEO_FLAVOUR, BUTTON_FLAVOUR])
@@ -828,6 +836,57 @@ export class FaqBlockComponent extends BlockComponent<BlockModel<DataProps>> {
   }
 }
 
+export class TimelineBlockComponent extends BlockComponent<BlockModel<DataProps>> {
+  static override styles = [
+    blockStyles,
+    css`
+      .indie-timeline__item { border-top: 1px solid var(--affine-border-color, #e3e2e4); padding-top: 8px; margin-top: 8px; }
+      .indie-timeline__date { flex: 0 0 130px; }
+      .indie-timeline__text { width: 100%; min-height: 52px; margin-top: 6px; padding: 6px 8px; border: 1px solid var(--affine-border-color, #e3e2e4); border-radius: 6px; background: var(--affine-background-primary-color, #fff); color: inherit; font: inherit; font-size: 13px; resize: vertical; }
+      .indie-timeline__orientation { flex: 0 0 150px; padding: 6px 8px; border: 1px solid var(--affine-border-color, #e3e2e4); border-radius: 6px; background: var(--affine-background-primary-color, #fff); color: inherit; }
+    `,
+  ]
+
+  private get data(): Timeline {
+    return parseTimeline(this.model.data) ?? DEFAULT_TIMELINE
+  }
+  private persist(next: Timeline) {
+    this.doc.updateBlock(this.model, { data: JSON.stringify(next) })
+  }
+  private setItem(i: number, patch: Partial<Timeline['items'][number]>) {
+    const data = this.data
+    this.persist({ ...data, items: data.items.map((item, n) => (n === i ? { ...item, ...patch } : item)) })
+  }
+
+  override renderBlock() {
+    const { title, orientation, items } = this.data
+    return html`
+      <div class="indie-block" contenteditable="false" @keydown=${stopEnter}>
+        <div class="indie-block__label">Timeline · Premium</div>
+        <div class="indie-block__row">
+          <input .value=${title} placeholder="Заголовок" @input=${(e: Event) => this.persist({ ...this.data, title: (e.target as HTMLInputElement).value })} />
+          <select class="indie-timeline__orientation" @change=${(e: Event) => this.persist({ ...this.data, orientation: (e.target as HTMLSelectElement).value as Timeline['orientation'] })}>
+            <option value="vertical" ?selected=${orientation === 'vertical'}>Вертикальный</option>
+            <option value="horizontal" ?selected=${orientation === 'horizontal'}>Горизонтальный</option>
+          </select>
+        </div>
+        ${items.map((item, i) => html`
+          <div class="indie-timeline__item">
+            <div class="indie-block__row">
+              <input class="indie-timeline__date" .value=${item.date} placeholder="Дата или период" @input=${(e: Event) => this.setItem(i, { date: (e.target as HTMLInputElement).value })} />
+              <input .value=${item.title} placeholder=${`Событие ${i + 1}`} @input=${(e: Event) => this.setItem(i, { title: (e.target as HTMLInputElement).value })} />
+              <button type="button" class="indie-block__btn indie-block__del" @click=${() => this.persist({ ...this.data, items: items.filter((_, n) => n !== i) })}>✕</button>
+            </div>
+            <textarea class="indie-timeline__text" .value=${item.text} placeholder="Описание события" @input=${(e: Event) => this.setItem(i, { text: (e.target as HTMLTextAreaElement).value })}></textarea>
+          </div>
+        `)}
+        <button type="button" class="indie-block__btn" ?disabled=${items.length >= 50} @click=${() => this.persist({ ...this.data, items: [...items, { date: '', title: '', text: '' }] })}>+ Событие</button>
+      </div>
+    `
+  }
+}
+if (!customElements.get('affine-timeline')) customElements.define('affine-timeline', TimelineBlockComponent)
+
 /** Таблица: первая строка — заголовок; ячейки — обычный текст (выделение и ссылки — в абзацах) */
 const tableData = (raw: unknown): TableData => {
   const d = parseData(raw as string, DEFAULT_TABLE)
@@ -968,6 +1027,7 @@ const IVideoBlockViewExtension = BlockViewExtension(IVIDEO_FLAVOUR as BlockSuite
 const FaqBlockViewExtension = BlockViewExtension(FAQ_FLAVOUR as BlockSuite.Flavour, literal`affine-faq`)
 const TableBlockViewExtension = BlockViewExtension(TABLE_FLAVOUR as BlockSuite.Flavour, literal`affine-mdtable`)
 const ButtonBlockViewExtension = BlockViewExtension(BUTTON_FLAVOUR as BlockSuite.Flavour, literal`affine-actionbutton`)
+const TimelineBlockViewExtension = BlockViewExtension(TIMELINE_FLAVOUR as BlockSuite.Flavour, literal`affine-timeline`)
 
 /**
  * markdown round-trip: сериализуем как ```carousel / ```poll code-фенсы
@@ -1026,6 +1086,7 @@ export const userBlockMarkdownMatcher = createFenceMatcher(USER_BLOCK_FLAVOUR, '
 export const ivideoMarkdownMatcher = createFenceMatcher(IVIDEO_FLAVOUR, 'ivideo')
 export const faqMarkdownMatcher = createFenceMatcher(FAQ_FLAVOUR, 'faq')
 export const buttonMarkdownMatcher = createFenceMatcher(BUTTON_FLAVOUR, 'button')
+export const timelineMarkdownMatcher = createFenceMatcher(TIMELINE_FLAVOUR, 'timeline')
 
 export const CarouselBlockSpec = [BlockMarkdownAdapterExtension(carouselMarkdownMatcher), CarouselBlockViewExtension]
 export const PollBlockSpec = [BlockMarkdownAdapterExtension(pollMarkdownMatcher), PollBlockViewExtension]
@@ -1038,6 +1099,8 @@ export const IVideoBlockSpec = [BlockMarkdownAdapterExtension(ivideoMarkdownMatc
 export const FaqBlockSpec = [BlockMarkdownAdapterExtension(faqMarkdownMatcher), FaqBlockViewExtension]
 
 export const ButtonBlockSpec = [BlockMarkdownAdapterExtension(buttonMarkdownMatcher), ButtonBlockViewExtension]
+
+export const TimelineBlockSpec = [BlockMarkdownAdapterExtension(timelineMarkdownMatcher), TimelineBlockViewExtension]
 
 /** mdast ячейки → её markdown (выделение, код и ссылки сохраняются; | экранируется) */
 const mdText = (n: unknown): string => {
@@ -1117,7 +1180,7 @@ export const tableMarkdownMatcher: BlockMarkdownAdapterMatcher = {
 }
 export const TableBlockSpec = [BlockMarkdownAdapterExtension(tableMarkdownMatcher), TableBlockViewExtension]
 
-export const customBlockSpecs = [...CarouselBlockSpec, ...PollBlockSpec, ...CalloutBlockSpec, ...UserBlockSpec, ...IVideoBlockSpec, ...FaqBlockSpec, ...ButtonBlockSpec, ...TableBlockSpec]
+export const customBlockSpecs = [...CarouselBlockSpec, ...PollBlockSpec, ...CalloutBlockSpec, ...UserBlockSpec, ...IVideoBlockSpec, ...FaqBlockSpec, ...ButtonBlockSpec, ...TableBlockSpec, ...TimelineBlockSpec]
 /**
  * Карточка ссылки («/link») ↔ ```bookmark {url,title,description,icon,image}```. Штатный адаптер пишет её
  * обычной ссылкой — при следующей загрузке (переход между шагами, черновик) карточка «схлопывалась» в текст.
@@ -1163,6 +1226,7 @@ export const customMarkdownMatchers: BlockMarkdownAdapterMatcher[] = [
   ivideoMarkdownMatcher,
   faqMarkdownMatcher,
   buttonMarkdownMatcher,
+  timelineMarkdownMatcher,
 ]
 
 /** Пункты слэш-меню "/" — добавляются к встроенным, а не заменяют их. */
@@ -1248,6 +1312,13 @@ export function faqSlashItems(ctx: SlashMenuActionCtx) {
       icon: html`<span style="display:flex;width:20px;height:20px;align-items:center;justify-content:center;font-size:13px">▶</span>`,
       action: (c: SlashMenuActionCtx) => addCustomBlockViaSlashMenu(BUTTON_FLAVOUR, { data: JSON.stringify(DEFAULT_BUTTON) }, c),
     },
+    {
+      name: 'Timeline',
+      description: 'Хронология событий с датами и описаниями.',
+      alias: ['timeline', 'таймлайн', 'хронология', 'события'],
+      icon: html`<span style="display:flex;width:20px;height:20px;align-items:center;justify-content:center;font-size:14px">◷</span>`,
+      action: (c: SlashMenuActionCtx) => addCustomBlockViaSlashMenu(TIMELINE_FLAVOUR, { data: JSON.stringify(DEFAULT_TIMELINE) }, c),
+    },
   ]
 }
 
@@ -1299,6 +1370,9 @@ export function attachPremiumGuard(doc: {
     } else if (model.flavour === FAQ_FLAVOUR) {
       const f = parseData(model.data ?? '', DEFAULT_FAQ)
       text = f.items.map((it) => `${it.q} — ${it.a}`).join(' · ')
+    } else if (model.flavour === TIMELINE_FLAVOUR) {
+      const timeline = parseTimeline(model.data ?? '')
+      text = timeline?.items.map((item) => `${item.date} ${item.title} — ${item.text}`).join(' · ') ?? ''
     } else {
       try {
         text = String((JSON.parse(model.data ?? '{}') as { text?: string }).text ?? '')
@@ -1386,6 +1460,7 @@ const READ_VIEWS: [unknown, string][] = [
   [FaqBlockComponent, 'faq'],
   [ActionButtonBlockComponent, 'button'],
   [TableBlockComponent, 'table'],
+  [TimelineBlockComponent, 'timeline'],
 ]
 
 async function mountReadView(el: HTMLElement & { __readView?: ReadView }, host: Element, type: string, data: string) {

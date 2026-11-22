@@ -140,7 +140,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         const job = new Job({ collection })
         // фенсы своих блоков (```faq, ```poll…) — только им: штатный блок кода тоже их брал, и при загрузке
         // markdown получались два блока — код с JSON и сам блок (так было в предпросмотре)
-        const OWN_FENCES = new Set(['faq', 'poll', 'carousel', 'callout', 'userblock', 'ivideo', 'button', 'bookmark'])
+        const OWN_FENCES = new Set(['faq', 'poll', 'carousel', 'callout', 'userblock', 'ivideo', 'button', 'bookmark', 'timeline'])
         const adapter = new MarkdownAdapter(job, [
           ...customBlocksMod.customMarkdownMatchers,
           // карточку ссылки пишет наш bookmarkMarkdownMatcher (```bookmark) — штатный превращал её в обычную ссылку

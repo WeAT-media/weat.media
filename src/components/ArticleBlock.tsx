@@ -8,6 +8,7 @@ import CalloutView from '@/components/CalloutView'
 import UserBlockView from '@/components/UserBlockView'
 import FaqView from '@/components/FaqView'
 import ActionButtonView from '@/components/ActionButtonView'
+import TimelineView from '@/components/TimelineView'
 import type { ArticleBlock } from '@/types/types'
 
 const InteractiveVideo = lazy(() => import('@/components/InteractiveVideo'))
@@ -30,6 +31,7 @@ export default function Block({ block, id, eager = false }: { block: ArticleBloc
   }
   if (block.type === 'faq') return <FaqView raw={block.text} />
   if (block.type === 'button') return <ActionButtonView raw={block.text} />
+  if (block.type === 'timeline') return <TimelineView raw={block.text} />
   if (block.type === 'bookmark') return <BookmarkCard raw={block.text} />
   if (block.type === 'hr') return <hr className="my-10 border-0 border-t border-border" />
   if (block.type === 'table') return <TableView raw={block.text} />
