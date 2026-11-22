@@ -182,7 +182,7 @@ interface StoreValue extends Persisted {
   toggleWatchArticle: (articleId: string) => void
   unlock: (articleId: string) => void
   createCollection: (title: string, description: string) => Promise<Collection>
-  addToCollection: (collectionId: string, articleId: string) => void
+  addToCollection: (collectionId: string, articleId: string) => Promise<void>
   /** «Вынести статью на суд» — создаёт дело, возвращает его id */
   reportToCourt: (articleId: string, claim: { collegiumId: string; labelValue: string; charges: string }) => string
   /** Передача прав от краулера автору (репост -> своя запись) */
@@ -915,7 +915,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setRemoteCollections((prev) => [col, ...prev.filter((c) => c.id !== col.id)])
         return col
       },
-      addToCollection: (collectionId, articleId) => {
+      addToCollection: async (collectionId, articleId) => {
         const target = collections.find((c) => c.id === collectionId)
         if (!target || target.articleIds.includes(articleId)) return
         const updated = { ...target, articleIds: [...target.articleIds, articleId] }
@@ -926,14 +926,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : [updated, ...prev.extraCollections],
         }))
         if (remoteCollections.some((c) => c.id === collectionId)) {
-          collectionsApi.save(collectionId, updated).then((saved) => {
+          try {
+            const saved = await collectionsApi.save(collectionId, updated)
             setRemoteCollections((prev) => prev.map((c) => c.id === collectionId ? saved : c))
-          }, () => {
+          } catch (error) {
             setPersisted((prev) => ({
               ...prev,
               extraCollections: prev.extraCollections.map((c) => c.id === collectionId ? target : c),
             }))
-          })
+            throw error
+          }
         }
       },
       reportToCourt: (articleId, { collegiumId, labelValue, charges }) => {

@@ -110,7 +110,7 @@ const clearBackup = () => {
 
 export default function ComposePage() {
   const navigate = useNavigate()
-  const { publishArticle, forgetArticle, payoutConnected, user, collections, tiers, articles, prefs } = useStore()
+  const { publishArticle, forgetArticle, addToCollection, payoutConnected, user, collections, tiers, articles, prefs } = useStore()
   // ?import=<id> — черновик из импорта постов AT-аккаунта: редактор открывается с его текстом
   const [searchParams, setSearchParams] = useSearchParams()
   // новая статья (без ?draft/?import/?pending) — продолжаем с несохранённого текста, если он есть
@@ -582,6 +582,7 @@ export default function ComposePage() {
           excerpt: draft.excerpt,
           ...(publishAt !== undefined ? { publishAt } : {}),
         })
+        if (collectionId) await addToCollection(collectionId, remoteId(pendingUri))
         forgetArticle(pendingUri)
         navigate(`/article/${remoteId(pendingUri)}`)
       } catch (err) {
