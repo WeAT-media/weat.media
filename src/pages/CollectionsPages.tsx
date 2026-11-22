@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { ArrowLeft, FolderPlus } from 'lucide-react'
+import { ArrowLeft, FolderPlus, Trash2 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import Reveal from '@/components/Reveal'
 import Stamp from '@/components/Stamp'
@@ -8,11 +8,25 @@ import PaywallBadge from '@/components/PaywallBadge'
 import ArticleForesightLink from '@/components/ArticleForesightLink'
 
 export function CollectionsPage() {
-  const { collections, articles, user, createCollection } = useStore()
+  const { collections, articles, user, createCollection, deleteCollection } = useStore()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [deleting, setDeleting] = useState('')
+
+  const onDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Удалить подборку «${name}»? Статьи останутся опубликованными.`)) return
+    setDeleting(id)
+    setError('')
+    try {
+      await deleteCollection(id)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось удалить подборку.')
+    } finally {
+      setDeleting('')
+    }
+  }
 
   const onCreate = async (e: FormEvent) => {
     e.preventDefault()
@@ -86,21 +100,31 @@ export function CollectionsPage() {
           const count = c.articleIds.filter((id) => articles.some((a) => a.id === id)).length
           return (
             <Reveal key={c.id}>
-              <Link
-                to={`/collection/${c.id}`}
-                className="group rule flex items-center justify-between gap-4 py-6 first:border-t-0"
-              >
-                <div>
-                  <h2 className="text-xl font-extrabold tracking-tight decoration-accent underline-offset-4 group-hover:underline">
-                    {c.title}
-                  </h2>
-                  <p className="mt-1.5 max-w-[60ch] text-sm leading-relaxed text-muted-foreground">{c.description}</p>
-                  <p className="meta mt-2">
-                    @{c.authorHandle} · {count} записей
-                  </p>
-                </div>
-                <span className="meta shrink-0 text-accent">открыть →</span>
-              </Link>
+              <div className="rule flex items-center gap-3 py-6 first:border-t-0">
+                <Link to={`/collection/${c.id}`} className="group flex min-w-0 flex-1 items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-extrabold tracking-tight decoration-accent underline-offset-4 group-hover:underline">
+                      {c.title}
+                    </h2>
+                    <p className="mt-1.5 max-w-[60ch] text-sm leading-relaxed text-muted-foreground">{c.description}</p>
+                    <p className="meta mt-2">
+                      @{c.authorHandle} · {count} записей
+                    </p>
+                  </div>
+                  <span className="meta shrink-0 text-accent">открыть →</span>
+                </Link>
+                {user?.handle === c.authorHandle && (
+                  <button
+                    type="button"
+                    onClick={() => void onDelete(c.id, c.title)}
+                    disabled={deleting === c.id}
+                    aria-label={`Удалить подборку ${c.title}`}
+                    className="btn-ghost shrink-0 !px-3 !py-1.5 !text-[11px] text-destructive"
+                  >
+                    <Trash2 size={12} aria-hidden="true" /> {deleting === c.id ? 'Удаляем…' : 'Удалить'}
+                  </button>
+                )}
+              </div>
             </Reveal>
           )
         })}

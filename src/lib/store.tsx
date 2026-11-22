@@ -182,6 +182,7 @@ interface StoreValue extends Persisted {
   toggleWatchArticle: (articleId: string) => void
   unlock: (articleId: string) => void
   createCollection: (title: string, description: string) => Promise<Collection>
+  deleteCollection: (id: string) => Promise<void>
   addToCollection: (collectionId: string, articleId: string) => Promise<void>
   /** «Вынести статью на суд» — создаёт дело, возвращает его id */
   reportToCourt: (articleId: string, claim: { collegiumId: string; labelValue: string; charges: string }) => string
@@ -914,6 +915,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setPersisted((prev) => ({ ...prev, extraCollections: [col, ...prev.extraCollections.filter((c) => c.id !== col.id)] }))
         setRemoteCollections((prev) => [col, ...prev.filter((c) => c.id !== col.id)])
         return col
+      },
+      deleteCollection: async (id) => {
+        await collectionsApi.remove(id)
+        setPersisted((prev) => ({ ...prev, extraCollections: prev.extraCollections.filter((c) => c.id !== id) }))
+        setRemoteCollections((prev) => prev.filter((c) => c.id !== id))
       },
       addToCollection: async (collectionId, articleId) => {
         const target = collections.find((c) => c.id === collectionId)

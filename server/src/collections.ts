@@ -19,6 +19,7 @@ export interface CollectionRepo {
   list(did?: string): Promise<CollectionRow[]>
   get(id: string): Promise<CollectionRow | undefined>
   save(r: Pick<CollectionRow, 'id' | 'did' | 'handle' | 'title' | 'description' | 'article_ids'>): Promise<CollectionRow>
+  remove(did: string, id: string): Promise<boolean>
 }
 
 export function collectionRepo(sql: Sql): CollectionRepo {
@@ -40,6 +41,9 @@ export function collectionRepo(sql: Sql): CollectionRepo {
         RETURNING *`
       if (!saved) throw new PdsError(404, 'NotFound', 'Подборка не найдена')
       return saved
+    },
+    async remove(did, id) {
+      return (await sql`DELETE FROM collections WHERE id = ${id} AND did = ${did} RETURNING 1`).length > 0
     },
   }
 }
@@ -130,5 +134,10 @@ export function mountCollectionRoutes(app: Hono, d: { pds: PdsClient; collection
       id: current.id, did, handle, title: b.title, description: b.description, article_ids: [...new Set(b.articleIds)],
     })
     return c.json(dto(row))
+  })
+  app.delete('/me/collections/:id', async (c) => {
+    const { did } = await me(c)
+    if (!(await d.collections.remove(did, c.req.param('id')))) throw new PdsError(404, 'NotFound', 'Подборка не найдена')
+    return c.json({ ok: true })
   })
 }

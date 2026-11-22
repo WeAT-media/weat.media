@@ -310,9 +310,7 @@ export default function ArticlePage() {
   const tocItems = tocFromBlocks(visibleBlocks)
   // мок: зритель находится в РФ — GEO-ограничение применяется
   const geoBlocked = (article.geoBlock?.regions ?? []).includes('RU')
-  const collection = article.collectionId
-    ? collections.find((c) => c.id === article.collectionId)
-    : undefined
+  const collection = collections.find((c) => c.id === article.collectionId || c.articleIds.includes(article.id))
   // локальный файл доступен как object URL только в сессии загрузки; иначе — ссылка или демо-источник
   const videoSrc =
     getSessionVideo(article.id) ??

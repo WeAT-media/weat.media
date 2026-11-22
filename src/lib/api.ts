@@ -517,6 +517,7 @@ export const collections = {
   create: (b: Omit<Collection, 'authorHandle' | 'id'> & { id?: string }) => authed<Collection>('/me/collections', post(b)),
   save: (id: string, b: Pick<Collection, 'title' | 'description' | 'articleIds'>) =>
     authed<Collection>(`/me/collections/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
+  remove: (id: string) => authed<{ ok: true }>(`/me/collections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 }
 
 export const imports = {

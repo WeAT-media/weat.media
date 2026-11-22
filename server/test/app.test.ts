@@ -234,6 +234,7 @@ function memCollections(): CollectionRepo {
       rows.set(r.id, row)
       return row
     },
+    async remove(did, id) { const r = rows.get(id); return r?.did === did ? rows.delete(id) : false },
   }
 }
 
@@ -1594,6 +1595,9 @@ test('collections: persist publicly, migrate by stable id, only owner can update
   assert.deepEqual(publicItem.articleIds, ['article-1', 'article-2'])
   assert.equal((await app.request('/api/collections', { method: 'POST', body: JSON.stringify(body) })).status, 404)
   assert.equal((await app.request('/api/me/collections')).status, 401)
+  assert.equal((await app.request('/api/me/collections/u-col-local1', { method: 'DELETE', headers: auth(b.accessJwt) })).status, 404, 'чужую подборку нельзя удалить')
+  assert.equal((await app.request('/api/me/collections/u-col-local1', { method: 'DELETE', headers: auth(a.accessJwt) })).status, 200)
+  assert.equal((await app.request('/api/collections/u-col-local1')).status, 404)
 })
 
 test('admin profile edit: service account — repo profile; human — only site name; audited', async () => {
