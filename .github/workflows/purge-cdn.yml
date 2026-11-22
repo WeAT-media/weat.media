@@ -24,7 +24,7 @@ jobs:
             *) echo 'Path must start with /' >&2; exit 1 ;;
           esac
           if [[ "$PURGE_PATH" == *'*'* ]]; then
-            payload=$(jq -n --arg path "$PURGE_PATH" '{patterns: [$path]}')
+            payload=$(jq -n --arg path "$PURGE_PATH" '{paths: [$path]}')
           else
             payload=$(jq -n --arg path "$PURGE_PATH" '{urls: [$path]}')
           fi
