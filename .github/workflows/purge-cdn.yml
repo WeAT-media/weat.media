@@ -23,9 +23,14 @@ jobs:
             /*) ;;
             *) echo 'Path must start with /' >&2; exit 1 ;;
           esac
+          if [[ "$PURGE_PATH" == *'*'* ]]; then
+            payload=$(jq -n --arg path "$PURGE_PATH" '{patterns: [$path]}')
+          else
+            payload=$(jq -n --arg path "$PURGE_PATH" '{urls: [$path]}')
+          fi
           curl --fail-with-body --silent --show-error \
             --request POST \
             --header "Authorization: apikey ${GCORE_API_TOKEN}" \
             --header 'Content-Type: application/json' \
-            --data "$(jq -n --arg path "$PURGE_PATH" '{urls: [$path]}')" \
+            --data "$payload" \
             https://api.gcore.com/cdn/resources/1589468/purge
