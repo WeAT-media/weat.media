@@ -33,6 +33,7 @@ import { AdjustBody, AdjustmentDto } from './finance.js'
 import { LabelBody } from './labels.js'
 import { ProfileBody } from './profile.js'
 import { DraftBody, DraftDto, DraftSummaryDto } from './drafts.js'
+import { CollectionBody, CollectionDto } from './collections.js'
 import { SystemAccountBody } from './systemAccounts.js'
 import { AdminPayoutDto, BalanceDto, PayoutDecisionBody, PayoutDto, PayoutRequestBody, SaleDto } from './payouts.js'
 import { AuthorCommentDto, CommentBody, CommentDto } from './comments.js'
@@ -619,6 +620,13 @@ const ops: Op[] = [
   { method: 'get', path: '/me/drafts/{id}', tag: 'profile', summary: 'Черновик', auth: 'bearer', ok: { status: 200, schema: DraftDto, description: 'Черновик' }, errors: [[404, 'NotFound']] },
   { method: 'put', path: '/me/drafts/{id}', tag: 'profile', summary: 'Сохранить черновик', auth: 'bearer', body: DraftBody, ok: { status: 200, schema: DraftDto, description: 'Сохранён' }, errors: [[404, 'NotFound']] },
   { method: 'delete', path: '/me/drafts/{id}', tag: 'profile', summary: 'Удалить черновик', auth: 'bearer', ok: { status: 200, schema: z.object({ ok: z.literal(true) }), description: 'Удалён' }, errors: [[404, 'NotFound']] },
+  // ── публичные подборки статей
+  { method: 'get', path: '/collections', tag: 'articles', summary: 'Подборки авторов', ok: { status: 200, schema: z.object({ collections: z.array(CollectionDto) }), description: 'До 500 свежих подборок' } },
+  { method: 'get', path: '/collections/{id}', tag: 'articles', summary: 'Подборка', ok: { status: 200, schema: CollectionDto, description: 'Подборка и упорядоченные id статей' }, errors: [[404, 'NotFound']] },
+  { method: 'get', path: '/peer/collections', tag: 'external', summary: 'Подборки для соседнего контура', description: 'Только с заголовком x-indie-peer-hop.', ok: { status: 200, schema: z.object({ collections: z.array(CollectionDto) }), description: 'Публичные подборки этого контура' }, errors: [[404, 'NotFound']] },
+  { method: 'get', path: '/me/collections', tag: 'profile', summary: 'Мои подборки', auth: 'bearer', ok: { status: 200, schema: z.object({ collections: z.array(CollectionDto) }), description: 'Подборки автора' } },
+  { method: 'post', path: '/me/collections', tag: 'profile', summary: 'Создать подборку', auth: 'bearer', description: 'id можно передать при переносе локальной подборки; повтор с тем же id обновляет её без дубля.', body: CollectionBody, ok: { status: 201, schema: CollectionDto, description: 'Создана' } },
+  { method: 'put', path: '/me/collections/{id}', tag: 'profile', summary: 'Сохранить подборку', auth: 'bearer', body: CollectionBody, ok: { status: 200, schema: CollectionDto, description: 'Сохранена' }, errors: [[404, 'NotFound']] },
   // ── период охлаждения: 24 ч запись только на сайте, потом — в репозиторий автора по тому же адресу
   { method: 'get', path: '/me/pending', tag: 'articles', summary: 'Мои записи в периоде охлаждения', auth: 'bearer', description: 'Статьи и комментарии, которые ещё не ушли в AT (pendingUntil — когда уйдут; scheduledAt — отложенный пост ещё не вышел на сайте).', ok: { status: 200, schema: z.object({ items: z.array(z.record(z.string(), z.unknown())) }), description: 'Ждущие записи' } },
   { method: 'put', path: '/me/pending', tag: 'articles', summary: 'Исправить запись в охлаждении', auth: 'bearer', query: { uri: { description: 'at://… записи', required: true } }, description: 'Статья: title, subtitle, text, excerpt, tags, noindex, republished (null — убрать перепечатку), publishAt. Комментарий: text. После ухода в AT — 409.', body: z.record(z.string(), z.unknown()), ok: { status: 200, schema: z.record(z.string(), z.unknown()), description: 'Обновлённая запись' }, errors: [[404, 'NotFound'], [409, 'AlreadyPublished']] },

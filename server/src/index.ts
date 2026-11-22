@@ -23,6 +23,7 @@ import { createMailboxClient } from './mailbox.js'
 import { payoutRepo } from './payouts.js'
 import { systemAccountRepo } from './systemAccounts.js'
 import { draftRepo } from './drafts.js'
+import { collectionRepo } from './collections.js'
 import { sharedRepo } from './shared.js'
 import { cooldownRepo, createCooldown } from './cooldown.js'
 import { notificationRepo, notificationService } from './notifications.js'
@@ -69,6 +70,7 @@ const app = createApp({
   payouts: payoutRepo(sql),
   system: systemAccountRepo(sql),
   drafts: draftRepo(sql),
+  collections: collectionRepo(sql),
   shared: sharedRepo(sql),
   mail: createMailboxClient({
     domain: config.MAIL_DOMAIN,

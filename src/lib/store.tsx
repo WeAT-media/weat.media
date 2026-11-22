@@ -23,7 +23,7 @@ import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, toUser, articles as articlesApi, clearSession, comments, SESSION_ENDED_EVENT, SESSION_STORAGE_KEY, hasSession, likes, notifications as notificationsApi, support as supportApi, type ServerSettings } from '@/lib/api'
+import { api, toUser, articles as articlesApi, clearSession, comments, collections as collectionsApi, SESSION_ENDED_EVENT, SESSION_STORAGE_KEY, hasSession, likes, notifications as notificationsApi, support as supportApi, type ServerSettings } from '@/lib/api'
 import { videoFromLink, type RecordVideo } from '@/lib/videoLink'
 
 type SettingsSection = keyof ServerSettings
@@ -181,7 +181,7 @@ interface StoreValue extends Persisted {
   toggleAuthorSubscription: (handle: string) => void
   toggleWatchArticle: (articleId: string) => void
   unlock: (articleId: string) => void
-  createCollection: (title: string, description: string) => Collection
+  createCollection: (title: string, description: string) => Promise<Collection>
   addToCollection: (collectionId: string, articleId: string) => void
   /** «Вынести статью на суд» — создаёт дело, возвращает его id */
   reportToCourt: (articleId: string, claim: { collegiumId: string; labelValue: string; charges: string }) => string
@@ -596,10 +596,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [articles])
 
   const cases = persisted.extraCases
-  const collections = useMemo(
-    () => persisted.extraCollections,
-    [persisted.extraCollections],
-  )
+  const [remoteCollections, setRemoteCollections] = useState<Collection[]>([])
+  const ownCollectionsRef = useRef<Collection[]>([])
+  useEffect(() => {
+    ownCollectionsRef.current = persisted.extraCollections
+  }, [persisted.extraCollections])
+  useEffect(() => {
+    let alive = true
+    collectionsApi.list().then(({ collections }) => alive && setRemoteCollections(collections), () => {})
+    return () => { alive = false }
+  }, [])
+  useEffect(() => {
+    if (!syncDid) return
+    let alive = true
+    const timer = window.setTimeout(() => void (async () => {
+      try {
+        for (const col of ownCollectionsRef.current.filter((c) => c.id.startsWith('u-col-'))) {
+          await collectionsApi.create({ ...col, id: col.id })
+        }
+        const { collections } = await collectionsApi.mine()
+        if (!alive) return
+        setRemoteCollections((prev) => [...prev.filter((c) => !collections.some((own) => own.id === c.id)), ...collections])
+        setPersisted((prev) => ({ ...prev, extraCollections: prev.extraCollections.filter((c) => !collections.some((own) => own.id === c.id)) }))
+      } catch {
+        // При следующем входе миграция повторится: upsert по id не создаст дубль.
+      }
+    })(), 0)
+    return () => { alive = false; window.clearTimeout(timer) }
+  }, [syncDid])
+  const collections = useMemo(() => {
+    const remote = new Set(remoteCollections.map((c) => c.id))
+    return [...persisted.extraCollections.filter((c) => !remote.has(c.id)), ...remoteCollections]
+  }, [persisted.extraCollections, remoteCollections])
 
   const value = useMemo<StoreValue>(() => {
     const patch = (p: Partial<Persisted>) => setPersisted((prev) => ({ ...prev, ...p }))
@@ -803,14 +831,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           })
         }
         const publishedId = remote ? remoteId(remote.uri) : article.id
+        const selectedCollection = article.collectionId ? collections.find((c) => c.id === article.collectionId) : undefined
+        const updatedCollection = selectedCollection && !selectedCollection.articleIds.includes(publishedId)
+          ? { ...selectedCollection, articleIds: [...selectedCollection.articleIds, publishedId] }
+          : undefined
+        if (updatedCollection && remoteCollections.some((c) => c.id === updatedCollection.id)) {
+          collectionsApi.save(updatedCollection.id, updatedCollection).then((saved) => {
+            setRemoteCollections((prev) => prev.map((c) => c.id === saved.id ? saved : c))
+          }, () => {})
+        }
         setPersisted((prev) => ({
           ...prev,
-          extraCollections: article.collectionId
-            ? prev.extraCollections.map((collection) =>
-                collection.id === article.collectionId && !collection.articleIds.includes(publishedId)
-                  ? { ...collection, articleIds: [...collection.articleIds, publishedId] }
-                  : collection,
-              )
+          extraCollections: updatedCollection
+            ? [updatedCollection, ...prev.extraCollections.filter((collection) => collection.id !== updatedCollection.id)]
             : prev.extraCollections,
           extraArticles: [
             {
@@ -876,29 +909,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ? persisted.watchedArticles.filter((x) => x !== articleId)
             : [...persisted.watchedArticles, articleId],
         }),
-      createCollection: (title, description) => {
-        const col: Collection = {
-          id: `u-col-${Date.now()}`,
-          title,
-          description,
-          authorHandle: user?.handle ?? 'you',
-          articleIds: [],
-        }
-        patch({ extraCollections: [col, ...persisted.extraCollections] })
+      createCollection: async (title, description) => {
+        const col = await collectionsApi.create({ title, description, articleIds: [] })
+        setPersisted((prev) => ({ ...prev, extraCollections: [col, ...prev.extraCollections.filter((c) => c.id !== col.id)] }))
+        setRemoteCollections((prev) => [col, ...prev.filter((c) => c.id !== col.id)])
         return col
       },
       addToCollection: (collectionId, articleId) => {
-        const all = persisted.extraCollections
-        const target = all.find((c) => c.id === collectionId)
+        const target = collections.find((c) => c.id === collectionId)
         if (!target || target.articleIds.includes(articleId)) return
         const updated = { ...target, articleIds: [...target.articleIds, articleId] }
-        if (persisted.extraCollections.some((c) => c.id === collectionId)) {
-          patch({
-            extraCollections: persisted.extraCollections.map((c) => (c.id === collectionId ? updated : c)),
+        setPersisted((prev) => ({
+          ...prev,
+          extraCollections: prev.extraCollections.some((c) => c.id === collectionId)
+            ? prev.extraCollections.map((c) => (c.id === collectionId ? updated : c))
+            : [updated, ...prev.extraCollections],
+        }))
+        if (remoteCollections.some((c) => c.id === collectionId)) {
+          collectionsApi.save(collectionId, updated).then((saved) => {
+            setRemoteCollections((prev) => prev.map((c) => c.id === collectionId ? saved : c))
+          }, () => {
+            setPersisted((prev) => ({
+              ...prev,
+              extraCollections: prev.extraCollections.map((c) => c.id === collectionId ? target : c),
+            }))
           })
-        } else {
-          // клонируем seed-подборку в пользовательские при изменении
-          patch({ extraCollections: [updated, ...persisted.extraCollections] })
         }
       },
       reportToCourt: (articleId, { collegiumId, labelValue, charges }) => {
@@ -957,7 +992,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return token
       },
     }
-  }, [persisted, settings, articles, cases, collections, settingsSync])
+  }, [persisted, settings, articles, cases, collections, remoteCollections, settingsSync])
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
 }

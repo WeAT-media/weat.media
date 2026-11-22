@@ -12,17 +12,25 @@ export function CollectionsPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [error, setError] = useState('')
+  const [creating, setCreating] = useState(false)
 
-  const onCreate = (e: FormEvent) => {
+  const onCreate = async (e: FormEvent) => {
     e.preventDefault()
     if (title.trim().length < 3) {
       setError('Название короткое — минимум 3 символа.')
       return
     }
-    createCollection(title.trim(), description.trim())
-    setTitle('')
-    setDescription('')
-    setError('')
+    setCreating(true)
+    try {
+      await createCollection(title.trim(), description.trim())
+      setTitle('')
+      setDescription('')
+      setError('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось сохранить подборку на сервере.')
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
@@ -66,7 +74,7 @@ export function CollectionsPage() {
                 aria-label="Описание подборки"
                 className="rounded-md border border-input bg-background px-4 py-2.5 text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-              <button type="submit" className="btn-primary !py-2">Создать</button>
+              <button type="submit" className="btn-primary !py-2" disabled={creating}>{creating ? 'Сохраняем…' : 'Создать'}</button>
             </div>
             {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
           </form>

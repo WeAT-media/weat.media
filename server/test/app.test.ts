@@ -22,6 +22,7 @@ import type { MailboxClient, MailboxId, MailMessage } from '../src/mailbox.ts'
 import { payoutHasDeficit, type AdjustmentRow, type PayoutRepo, type PayoutRow } from '../src/payouts.ts'
 import type { SystemAccountRepo } from '../src/systemAccounts.ts'
 import type { DraftRepo, DraftRow } from '../src/drafts.ts'
+import type { CollectionRepo, CollectionRow } from '../src/collections.ts'
 import { createCooldown, memCooldown, type Cooldown } from '../src/cooldown.ts'
 import type { SessionRepo, SessionRow } from '../src/sessions.ts'
 
@@ -218,6 +219,21 @@ function memDrafts(): DraftRepo {
     },
     async remove(did, id) { const r = rows.get(id); return r?.did === did ? rows.delete(id) : false },
     async count(did) { return [...rows.values()].filter((r) => r.did === did).length },
+  }
+}
+
+function memCollections(): CollectionRepo {
+  const rows = new Map<string, CollectionRow>()
+  return {
+    async list(did) { return [...rows.values()].filter((r) => !did || r.did === did) },
+    async get(id) { return rows.get(id) },
+    async save(r) {
+      const cur = rows.get(r.id)
+      if (cur && cur.did !== r.did) throw new PdsError(404, 'NotFound', 'Подборка не найдена')
+      const row = { ...r, created_at: cur?.created_at ?? new Date(), updated_at: new Date() }
+      rows.set(r.id, row)
+      return row
+    },
   }
 }
 
@@ -805,6 +821,7 @@ function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: bo
     payouts: memPayouts(),
     system: memSystem(),
     drafts: memDrafts(),
+    collections: memCollections(),
     postSource: fakePostSource,
     staff: createStaffVerifier({ issuer: ZITADEL, projectId: PROJECT_ID, jwks: zJwks }),
     audit: memAudit,
@@ -1551,6 +1568,32 @@ test('drafts: create, autosave, list, others cannot read; mention search finds u
   assert.equal((await app.request(`/api/me/drafts/${created.id}`, { method: 'DELETE', headers: A })).status, 200)
   const found = await (await app.request('/api/users/search?q=draf')).json()
   assert.deepEqual(found.users.map((u: { handle: string }) => u.handle), ['drafter.indie.media'])
+})
+
+test('collections: persist publicly, migrate by stable id, only owner can update', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const a = await (await app.request('/api/auth/register', json({ ...reg, username: 'collector', email: 'collector@example.com' }, '5.1.1.1'))).json()
+  const b = await (await app.request('/api/auth/register', json({ ...reg, username: 'reader', email: 'reader@example.com' }, '5.1.1.1'))).json()
+  const auth = (token: string) => ({ authorization: `Bearer ${token}`, 'content-type': 'application/json' })
+  const body = { id: 'u-col-local1', title: 'Курс по AT Protocol', description: 'От PDS к AppView', articleIds: ['article-1'] }
+  const created = await app.request('/api/me/collections', { method: 'POST', headers: auth(a.accessJwt), body: JSON.stringify(body) })
+  assert.equal(created.status, 201)
+  assert.equal((await created.json()).authorHandle, a.user.handle)
+  const repeated = await app.request('/api/me/collections', { method: 'POST', headers: auth(a.accessJwt), body: JSON.stringify(body) })
+  assert.equal(repeated.status, 201)
+  const mine = await (await app.request('/api/me/collections', { headers: auth(a.accessJwt) })).json()
+  assert.equal(mine.collections.length, 1, 'миграция не создаёт дубль')
+  assert.deepEqual(mine.collections[0].articleIds, ['article-1'])
+  const updated = await app.request('/api/me/collections/u-col-local1', { method: 'PUT', headers: auth(a.accessJwt), body: JSON.stringify({ ...body, articleIds: ['article-1', 'article-2', 'article-1'] }) })
+  assert.deepEqual((await updated.json()).articleIds, ['article-1', 'article-2'])
+  const foreign = await app.request('/api/me/collections/u-col-local1', { method: 'PUT', headers: auth(b.accessJwt), body: JSON.stringify({ ...body, title: 'Чужая правка' }) })
+  assert.equal(foreign.status, 404)
+  const publicList = await (await app.request('/api/collections')).json()
+  assert.equal(publicList.collections[0].title, 'Курс по AT Protocol')
+  const publicItem = await (await app.request('/api/collections/u-col-local1')).json()
+  assert.deepEqual(publicItem.articleIds, ['article-1', 'article-2'])
+  assert.equal((await app.request('/api/collections', { method: 'POST', body: JSON.stringify(body) })).status, 404)
+  assert.equal((await app.request('/api/me/collections')).status, 401)
 })
 
 test('admin profile edit: service account — repo profile; human — only site name; audited', async () => {

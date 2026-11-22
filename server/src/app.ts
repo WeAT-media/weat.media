@@ -33,6 +33,7 @@ import { mountPdsGate } from './pdsGate.js'
 import { mountProfileRoutes, profileOps } from './profile.js'
 import { mountSystemAccountRoutes, type SystemAccountRepo } from './systemAccounts.js'
 import { mountDraftRoutes, type DraftRepo } from './drafts.js'
+import { mountCollectionRoutes, type CollectionRepo } from './collections.js'
 import { atprotoPostSource, mountImportRoutes, type ImportRepo, type PostSource } from './imports.js'
 import { mountSessionRoutes, sessionTracking, type SessionRepo } from './sessions.js'
 import { rateLimit, type Limiter } from './rateLimit.js'
@@ -66,6 +67,7 @@ export interface Deps {
   payouts: PayoutRepo
   system: SystemAccountRepo
   drafts: DraftRepo
+  collections: CollectionRepo
   /** совместное редактирование черновиков по ссылке; по умолчанию — в памяти (тесты) */
   shared?: SharedRepo
   /** период охлаждения (24 ч до ухода в AT); без него — публикация сразу (тесты, локальный стенд) */
@@ -337,6 +339,7 @@ export function createApp(deps: Deps) {
   const profiles = profileOps({ pds: d.pds, users: d.users })
   mountProfileRoutes(app, { pds: d.pds, ops: profiles }, { bearer })
   mountDraftRoutes(app, { pds: d.pds, drafts: d.drafts }, { bearer })
+  mountCollectionRoutes(app, { pds: d.pds, collections: d.collections, peerUrl: d.peer?.publicUrl }, { bearer })
   mountStandardAdminRoutes(app, { feedUrl: d.feedUrl, feedAdminToken: d.feedAdminToken }, { requireStaff, audit })
   mountLabelRoutes(app, { labelerUrl: d.labelerUrl, labelerToken: d.labelerToken, hidden: d.config.CONTOUR === 'ru' ? [...RESTRICTED_COLLEGIA] : [] }, { requireStaff, audit })
   // РФ-контур: записи с метками nsfw/politics закрыты на сервере (не настройка читателя)

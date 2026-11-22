@@ -1,6 +1,6 @@
 import { firstTouchUtm, lastTouchUtm } from '@/lib/utm'
 import type { BlockDef } from '@/lib/userBlocks'
-import type { EditorPreferences, LabelerSettings, Preferences, SubscriptionTier, User, ReadEntry, VideoProgressEntry } from '@/types/types'
+import type { Collection, EditorPreferences, LabelerSettings, Preferences, SubscriptionTier, User, ReadEntry, VideoProgressEntry } from '@/types/types'
 
 /** Ответы AppView (server/src/app.ts) */
 import type { RecordVideo } from '@/lib/videoLink'
@@ -508,6 +508,15 @@ export const drafts = {
   create: (b: { title: string; text: string; meta?: Record<string, unknown> }) => authed<Draft>('/me/drafts', post(b)),
   save: (id: string, b: { title: string; text: string; meta?: Record<string, unknown> }) => authed<Draft>(`/me/drafts/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
   remove: (id: string) => authed<{ ok: true }>(`/me/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+}
+
+export const collections = {
+  list: () => call<{ collections: Collection[] }>('/collections'),
+  get: (id: string) => call<Collection>(`/collections/${encodeURIComponent(id)}`),
+  mine: () => authed<{ collections: Collection[] }>('/me/collections'),
+  create: (b: Omit<Collection, 'authorHandle' | 'id'> & { id?: string }) => authed<Collection>('/me/collections', post(b)),
+  save: (id: string, b: Pick<Collection, 'title' | 'description' | 'articleIds'>) =>
+    authed<Collection>(`/me/collections/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
 }
 
 export const imports = {
