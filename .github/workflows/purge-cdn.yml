@@ -1,0 +1,31 @@
+name: Purge CDN
+
+on:
+  workflow_dispatch:
+    inputs:
+      path:
+        description: 'Путь без домена, например /global/assets/runtime-Ds2SDhqo.js'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Purge one URL
+        env:
+          GCORE_API_TOKEN: ${{ secrets.GCORE_API_TOKEN }}
+          PURGE_PATH: ${{ inputs.path }}
+        run: |
+          case "$PURGE_PATH" in
+            /*) ;;
+            *) echo 'Path must start with /' >&2; exit 1 ;;
+          esac
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: apikey ${GCORE_API_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data "$(jq -n --arg path "$PURGE_PATH" '{urls: [$path]}')" \
+            https://api.gcore.com/cdn/resources/1589468/purge
