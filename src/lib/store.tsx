@@ -23,7 +23,7 @@ import { currentUser as anonUser, labelers as seedLabelers } from '@/data/mock'
 
 import type { BlockDef } from '@/lib/userBlocks'
 import { currencyForCountry } from '@/lib/money'
-import { api, toUser, articles as articlesApi, clearSession, comments, collections as collectionsApi, SESSION_ENDED_EVENT, SESSION_STORAGE_KEY, hasSession, likes, notifications as notificationsApi, support as supportApi, type ServerSettings } from '@/lib/api'
+import { api, toUser, articles as articlesApi, clearSession, comments, collections as collectionsApi, SESSION_ENDED_EVENT, SESSION_STORAGE_KEY, hasSession, likes, notifications as notificationsApi, pending as pendingApi, support as supportApi, type ServerSettings } from '@/lib/api'
 import { videoFromLink, type RecordVideo } from '@/lib/videoLink'
 
 type SettingsSection = keyof ServerSettings
@@ -37,7 +37,7 @@ import { setEditorCaps } from '@/lib/editorCaps'
 import { setEditorPeople } from '@/lib/editorPeople'
 import { profileMetaSeed } from '@/data/profiles'
 import { PDS_URL } from '@/config/site'
-import { fetchArticleById, fetchFeedPage, fetchRemoteFeed, remoteId, toComment } from '@/lib/remoteFeed'
+import { fetchArticleById, fetchFeedPage, fetchRemoteFeed, remoteId, toArticle, toComment } from '@/lib/remoteFeed'
 import { ssrData } from '@/lib/ssr'
 import { decodePathParam } from '@/lib/safeUrl'
 import { useLocation } from 'react-router'
@@ -520,6 +520,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // На статье и в профиле не загружаем общую ленту: сервер отдаёт только нужные записи.
   const [remoteArticles, setRemoteArticles] = useState<Article[]>(() => ssrData()?.articles ?? [])
+  const [ownPending, setOwnPending] = useState<{ did: string; articles: Article[] } | null>(null)
+  const syncHandle = persisted.user?.handle
+  useEffect(() => {
+    if (!syncDid || !syncHandle) return
+    let alive = true
+    pendingApi.list().then(({ items }) => {
+      const pendingArticles = items.flatMap((i) => {
+        if (!i.uri.includes('/media.weat.article/')) return []
+        const article = toArticle({ ...i, cid: '', did: syncDid, handle: syncHandle, createdAt: i.record.createdAt ?? '', indexedAt: '', likeCount: 0, commentCount: 0 } as never)
+        return article ? [article] : []
+      })
+      if (alive) setOwnPending({ did: syncDid, articles: pendingArticles })
+    }, () => {})
+    return () => { alive = false }
+  }, [syncDid, syncHandle, location.pathname])
   useEffect(() => {
     let alive = true
     // лайки читателя с сервера: кнопка и счётчик статей из индекса — по ним, а не по localStorage
@@ -568,11 +583,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [syncDid, location.pathname])
 
   const articles = useMemo(() => {
-    // запись уже пришла с сервера — показываем её (правки в охлаждении, соавторы), копия в браузере нужна
-    // только пока сервер её ещё не отдаёт (сразу после публикации, отложенная — для автора)
-    const remote = new Set(remoteArticles.map((a) => a.atUri).filter(Boolean))
-    return [...persisted.extraArticles.filter((a) => !a.atUri || !remote.has(a.atUri)), ...remoteArticles]
-  }, [persisted.extraArticles, remoteArticles])
+    // Свои отложенные записи автор видит в профиле и подборках; для остальных они остаются скрытыми.
+    const visible = [...(ownPending && ownPending.did === syncDid ? ownPending.articles : []), ...remoteArticles]
+    const remote = new Set(visible.map((a) => a.atUri).filter(Boolean))
+    return [...persisted.extraArticles.filter((a) => !a.atUri || !remote.has(a.atUri)), ...visible]
+  }, [persisted.extraArticles, ownPending, remoteArticles, syncDid])
 
   useEffect(() => {
     if (!syncDid || articles.length === 0) return
@@ -836,7 +851,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const updatedCollection = selectedCollection && !selectedCollection.articleIds.includes(publishedId)
           ? { ...selectedCollection, articleIds: [...selectedCollection.articleIds, publishedId] }
           : undefined
-        if (updatedCollection && remoteCollections.some((c) => c.id === updatedCollection.id)) {
+        if (updatedCollection && hasSession()) {
           collectionsApi.save(updatedCollection.id, updatedCollection).then((saved) => {
             setRemoteCollections((prev) => prev.map((c) => c.id === saved.id ? saved : c))
           }, () => {})
@@ -931,7 +946,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ? prev.extraCollections.map((c) => (c.id === collectionId ? updated : c))
             : [updated, ...prev.extraCollections],
         }))
-        if (remoteCollections.some((c) => c.id === collectionId)) {
+        if (hasSession()) {
           try {
             const saved = await collectionsApi.save(collectionId, updated)
             setRemoteCollections((prev) => prev.map((c) => c.id === collectionId ? saved : c))
@@ -1000,7 +1015,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return token
       },
     }
-  }, [persisted, settings, articles, cases, collections, remoteCollections, settingsSync])
+  }, [persisted, settings, articles, cases, collections, settingsSync])
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
 }
