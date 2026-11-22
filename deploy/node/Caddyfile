@@ -187,6 +187,9 @@
 	handle @fonts {
 		root * /srv
 		header Cache-Control "public, max-age=604800"
+		# страница берёт шрифты с основного адреса (VITE_FONT_URL = https://weat.media/) и с crossorigin:
+		# на ru.weat.media и nl-1.weat.media без этого заголовка браузер их блокировал (CORS)
+		header Access-Control-Allow-Origin "*"
 		file_server
 	}
 
