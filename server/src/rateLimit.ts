@@ -21,7 +21,7 @@ export const RULES: RateRule[] = [
     name: 'auth',
     limit: 10,
     windowMs: 60_000,
-    match: (m, p) => m === 'POST' && (/^\/auth\/(login|register|mfa|handoff|password\/(forgot|reset))$/.test(p) || p === '/pds/createSession'),
+    match: (m, p) => m === 'POST' && (/^\/auth\/(login|register|mfa|handoff|password\/(forgot|reset))$/.test(p) || p === '/pds/createSession' || p === '/pds/oauth/prepare'),
   },
   // коды подтверждения и 2FA в настройках
   { name: 'codes', limit: 10, windowMs: 60_000, match: (m, p) => m === 'POST' && /^\/me\/(email|2fa|password)\//.test(p) },

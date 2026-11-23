@@ -238,8 +238,17 @@
 		reverse_proxy appview:8787
 	}
 
-	# вход в другие AT-приложения через OAuth (страница входа PDS): у аккаунтов с TOTP закрыт — PDS о TOTP не знает
-	# (server/src/pdsGate.ts); остальным запрос уходит в PDS без изменений
+	# OAuth сторонних AT-клиентов начинается на сайте: там доступны пароль, TOTP и соцсети.
+	# После входа одноразовый мост возвращает в исходный authorize на этом origin (server/src/pdsGate.ts).
+	handle /oauth/authorize {
+		redir * {$PUBLIC_URL}/oauth/continue?{query} 302
+	}
+	handle /oauth/continue {
+		rewrite * /api/pds/oauth-continue
+		reverse_proxy appview:8787
+	}
+
+	# штатный парольный вход PDS тоже остаётся под гейтом TOTP
 	handle /@atproto/oauth-provider/~api/sign-in {
 		rewrite * /api/pds/oauth-sign-in
 		reverse_proxy appview:8787

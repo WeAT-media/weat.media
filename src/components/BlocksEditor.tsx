@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Users } from 'lucide-react'
-import type { Doc } from '@blocksuite/store'
+import type { Doc, Job } from '@blocksuite/store'
 
 interface BlocksEditorProps {
   /** markdown — источник истины снаружи; редактор сериализует изменения обратно */
@@ -28,8 +28,8 @@ interface BlocksEditorProps {
   onContentInspect?: (info: { hasVideo: boolean }) => void
   /** только чтение: тот же рендер BlockSuite, что в редакторе (предпросмотр) — без расхождений с разметкой */
   readOnly?: boolean
-  /** живой документ редактора (Yjs) — для предпросмотра; вызывается, когда редактор готов */
-  onDoc?: (ydoc: import('yjs').Doc) => void
+  /** живой документ и немедленная сериализация — для предпросмотра и сохранения без ожидания дебаунса */
+  onDoc?: (ydoc: import('yjs').Doc, serialize: () => Promise<string>) => void
   /** зеркало чужого документа (предпросмотр): повторяет каждое его изменение, в т. ч. правки соавторов */
   mirror?: import('yjs').Doc | null
 }
@@ -141,7 +141,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         // фенсы своих блоков (```faq, ```poll…) — только им: штатный блок кода тоже их брал, и при загрузке
         // markdown получались два блока — код с JSON и сам блок (так было в предпросмотре)
         const OWN_FENCES = new Set(['faq', 'poll', 'carousel', 'callout', 'userblock', 'ivideo', 'button', 'bookmark', 'timeline'])
-        const adapter = new MarkdownAdapter(job, [
+        const markdownMatchers = [
           ...customBlocksMod.customMarkdownMatchers,
           // карточку ссылки пишет наш bookmarkMarkdownMatcher (```bookmark) — штатный превращал её в обычную ссылку
           // markdown-таблица → «Table View» (база AFFiNE), кроме помеченной простой (<!-- weat:simple-table -->)
@@ -183,7 +183,8 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
               ? { ...m, toMatch: (o: Parameters<typeof m.toMatch>[0]) => m.toMatch(o) && !OWN_FENCES.has(String((o.node as { lang?: string }).lang ?? '')) }
               : m,
           ),
-        ])
+        ]
+        const adapter = new MarkdownAdapter(job, markdownMatchers)
 
         // официальный паттерн (react-basic): пустой doc получает базовые блоки в initFn load()
         const createEmptyDoc = (id: string): Doc => {
@@ -337,6 +338,18 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         ]
         editor.doc = doc
         el.appendChild(editor)
+        await editor.updateComplete
+        // Вставленные Markdown/HTML-картинки скачиваем только через свой прокси: внешний AFFiNE и прямой
+        // cross-origin fetch блокируются CORS, после чего BlockSuite молча выбрасывает image-блок.
+        editor.std.clipboard.unuse(blocksMod.defaultImageProxyMiddleware)
+        editor.std.clipboard.use(blocksMod.customImageProxyMiddleware('/api/image-proxy'))
+        class ClipboardMixTextAdapter extends blocksMod.MixTextAdapter {
+          constructor(job: Job) {
+            super(job)
+            Object.assign(this, { _markdownAdapter: new MarkdownAdapter(job, markdownMatchers) })
+          }
+        }
+        editor.std.clipboard.registerAdapter('text/plain', ClipboardMixTextAdapter, 70)
         // тема BlockSuite (ThemeObserver) стартует «светлой» и меняется только по мутации data-theme у <html>;
         // наш theme-init.js ставит тему раньше — повторяем запись, чтобы панели и меню стали тёмными
         const kickTheme = () => {
@@ -374,7 +387,8 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
             // пустой заголовок BlockSuite пишет как «# Untitled» — у нас это стало бы заголовком статьи
             const rootTitle = String((doc.root as unknown as { title?: { toString(): string } } | null)?.title?.toString() ?? '').trim()
             return rootTitle ? (file ?? '') : (file ?? '').replace(/^#\s+Untitled\s*(\n+|$)/, '')
-          } catch {
+          } catch (e) {
+            console.error('Не удалось сериализовать документ редактора', e)
             return lastSerialized.current
           }
         }
@@ -417,7 +431,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         updateHandlerRef.current = onYUpdate
         stateRef.current = { doc }
         setReady(true)
-        onDocRef.current?.(doc.spaceDoc)
+        onDocRef.current?.(doc.spaceDoc, serialize)
       } catch (e) {
         if (!disposed) setError(String(e))
       }

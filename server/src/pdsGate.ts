@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { Hono } from 'hono'
 import type { MfaRepo, UserRepo } from './db.js'
 import type { PdsClient } from './pds.js'
@@ -28,7 +28,7 @@ function scopeOf(jwt: string): string | null {
   }
 }
 
-export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pds: PdsClient; mfa: MfaRepo; peer?: PeerContour; users?: UserRepo; peerSecret?: string }) {
+export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pdsHost?: string; pds: PdsClient; mfa: MfaRepo; peer?: PeerContour; users?: UserRepo; peerSecret?: string }) {
   app.post('/pds/createSession', async (c) => {
     if (!d.pdsUrl) return c.json({ error: 'NotConfigured', message: 'PDS не настроен' }, 503)
     const body = await c.req.text()
@@ -138,6 +138,89 @@ export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pds: PdsClient; mf
     out.delete('content-encoding')
     out.delete('content-length')
     return new Response(res.body, { status: res.status, headers: out })
+  })
+
+  const oauthBridges = new Map<string, { accessJwt: string; appName: string; identifier: string; password: string; authorize: string }>()
+  const publicPdsOrigin = () => `https://${d.pdsHost ?? new URL(d.pdsUrl!).host}`
+
+  /** Соцсети проходят через сайт: здесь полный PDS accessJwt меняется на одноразовый мост к штатной OAuth-сессии. */
+  app.post('/pds/oauth/prepare', async (c) => {
+    if (!d.pdsUrl) return c.json({ error: 'NotConfigured', message: 'PDS не настроен' }, 503)
+    const accessJwt = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
+    if (!accessJwt) return c.json({ error: 'AuthenticationRequired', message: 'Требуется вход' }, 401)
+    const body = await c.req.text()
+    if (body.length > 8_000) return c.json({ error: 'InvalidRequest', message: 'Слишком большой запрос' }, 413)
+    let clientId = ''
+    let requestUri = ''
+    try {
+      const v = JSON.parse(body) as { client_id?: unknown; request_uri?: unknown }
+      clientId = typeof v.client_id === 'string' ? v.client_id : ''
+      requestUri = typeof v.request_uri === 'string' ? v.request_uri : ''
+    } catch {
+      return c.json({ error: 'InvalidRequest', message: 'Некорректный OAuth-запрос' }, 400)
+    }
+    if (!/^https:\/\/\S+$/.test(clientId) || !/^urn:ietf:params:oauth:request_uri:\S+$/.test(requestUri)) {
+      return c.json({ error: 'InvalidRequest', message: 'Некорректный OAuth-запрос' }, 400)
+    }
+    let did = ''
+    try {
+      const payload = JSON.parse(Buffer.from(accessJwt.split('.')[1] ?? '', 'base64url').toString('utf8')) as { sub?: unknown }
+      did = typeof payload.sub === 'string' ? payload.sub : ''
+    } catch {
+      did = ''
+    }
+    if (!did.startsWith('did:')) return c.json({ error: 'AuthenticationRequired', message: 'Некорректная сессия' }, 401)
+    const appName = `oauth-bridge-${randomBytes(8).toString('hex')}`
+    const { password } = await d.pds.createAppPassword(accessJwt, appName).catch(() => ({ password: '' }))
+    if (!password) return c.json({ error: 'AuthenticationRequired', message: 'Сессия недействительна, войдите снова' }, 401)
+    const code = randomBytes(32).toString('base64url')
+    const params = new URLSearchParams({ client_id: clientId, request_uri: requestUri })
+    const authorize = `${publicPdsOrigin()}/oauth/authorize?${params}`
+    oauthBridges.set(code, { accessJwt, appName, identifier: did, password, authorize })
+    setTimeout(() => oauthBridges.delete(code), 60_000).unref()
+    return c.json({ url: `${publicPdsOrigin()}/oauth/continue?${new URLSearchParams({ code })}` })
+  })
+
+  /** Caddy вызывает на домене PDS: Set-Cookie и возврат в authorize остаются на его origin. */
+  app.get('/pds/oauth-continue', async (c) => {
+    if (!d.pdsUrl) return c.json({ error: 'NotConfigured' }, 503)
+    const code = c.req.query('code') ?? ''
+    const bridge = oauthBridges.get(code)
+    if (!bridge) return c.json({ error: 'InvalidCode', message: 'Ссылка входа истекла, попробуйте снова' }, 400)
+    oauthBridges.delete(code)
+    try {
+      const preflight = await fetch(bridge.authorize, { headers: { 'sec-fetch-site': 'same-origin' }, redirect: 'manual', signal: AbortSignal.timeout(15_000) })
+      const initialCookies = preflight.headers.getSetCookie()
+      const cookie = initialCookies.map((v) => v.split(';', 1)[0]).join('; ')
+      const csrf = initialCookies.flatMap((v) => {
+        const m = /(?:^|;\s*)csrf-token=([^;]+)/i.exec(v)
+        return m?.[1] ? [decodeURIComponent(m[1])] : []
+      })[0]
+      const headers: Record<string, string> = {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        origin: publicPdsOrigin(),
+        referer: bridge.authorize,
+        'sec-fetch-site': 'same-origin',
+        ...(cookie ? { cookie } : {}),
+        ...(csrf ? { 'x-csrf-token': csrf } : {}),
+      }
+      const res = await fetch(new URL('/@atproto/oauth-provider/~api/sign-in', d.pdsUrl), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ identifier: bridge.identifier, password: bridge.password }),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) return c.json({ error: 'UpstreamFailure', message: 'PDS не подтвердил вход, попробуйте снова' }, 502)
+      const out = new Headers({ location: bridge.authorize, 'cache-control': 'no-store' })
+      for (const value of [...initialCookies, ...res.headers.getSetCookie()]) out.append('set-cookie', value)
+      return new Response(null, { status: 302, headers: out })
+    } catch {
+      return c.json({ error: 'UpstreamFailure', message: 'PDS не отвечает, попробуйте снова' }, 502)
+    } finally {
+      await d.pds.revokeAppPassword(bridge.accessJwt, bridge.appName).catch(() => {})
+    }
   })
 
   /** соседнему контуру: включён ли TOTP у моего пользователя — только с общим ключом контуров */

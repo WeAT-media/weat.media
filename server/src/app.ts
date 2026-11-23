@@ -335,7 +335,7 @@ export function createApp(deps: Deps) {
   mountMailboxRoutes(app, { mail: d.mail }, { requireStaff, audit })
   mountPayoutRoutes(app, { pds: d.pds, payouts: d.payouts, secrets: d.secrets }, { bearer, requireStaff, audit })
   mountFinanceRoutes(app, { payouts: d.payouts, users: d.users }, { requireStaff, audit })
-  mountPdsGate(app, { pdsUrl: d.pdsUrl, pds: d.pds, mfa: d.mfa, peer: d.peer, users: d.users, peerSecret: d.config.PEER_SECRET })
+  mountPdsGate(app, { pdsUrl: d.pdsUrl, pdsHost: d.config.PDS_HOST, pds: d.pds, mfa: d.mfa, peer: d.peer, users: d.users, peerSecret: d.config.PEER_SECRET })
   const profiles = profileOps({ pds: d.pds, users: d.users })
   mountProfileRoutes(app, { pds: d.pds, ops: profiles }, { bearer })
   mountDraftRoutes(app, { pds: d.pds, drafts: d.drafts }, { bearer })

@@ -321,6 +321,14 @@ export default function ComposePage() {
   const [shareError, setShareError] = useState('')
   // живой документ редактора шага 1 — предпросмотр шага 2 его зеркалит (и правки соавторов тоже)
   const [liveDoc, setLiveDoc] = useState<import('yjs').Doc | null>(null)
+  const serializeEditor = useRef<(() => Promise<string>) | null>(null)
+  const syncEditor = useCallback(async () => {
+    const text = await serializeEditor.current?.() ?? bodyText
+    const nextTitle = text.match(/^#\s+(.*)(?:\n|$)/)?.[1]?.trim() || title
+    if (text !== bodyText) setBodyText(text)
+    if (nextTitle !== title) setTitle(nextTitle)
+    return { text, title: nextTitle }
+  }, [bodyText, title])
 
   // Черновик = текст (шаг 1) + настройки публикации (шаг 2). Видео-файл не сохраняется — только ссылка.
   const draftMeta = useMemo(
@@ -382,10 +390,11 @@ export default function ComposePage() {
     draftIdRef.current = draftId
   }, [draftId])
   const saveDraftNow = useCallback(async () => {
+    const current = await syncEditor()
     // правка статьи в охлаждении — не черновик
-    if (pendingUri || !hasSession() || (!title.trim() && !bodyText.trim())) return
+    if (pendingUri || !hasSession() || (!current.title.trim() && !current.text.trim())) return
     try {
-      const body = { title: title.trim(), text: bodyText, meta: draftMeta }
+      const body = { title: current.title.trim(), text: current.text, meta: draftMeta }
       const d = draftIdRef.current ? await draftsApi.save(draftIdRef.current, body) : await draftsApi.create(body)
       if (!draftIdRef.current) {
         draftIdRef.current = d.id
@@ -401,7 +410,7 @@ export default function ComposePage() {
     } catch {
       setDraftSaved('')
     }
-  }, [title, bodyText, draftMeta, setSearchParams, pendingUri])
+  }, [syncEditor, draftMeta, setSearchParams, pendingUri])
   // автосохранение: через 2 с после правки текста или настроек; пока грузится черновик — не пишем
   useEffect(() => {
     if (!importReady || loadedMeta) return
@@ -505,11 +514,12 @@ export default function ComposePage() {
     !parseBlocks(fullText).some(pollIsInvalid) &&
     (kind === 'text' || hasVideoEmbed)
 
-  const goStep2 = () => {
+  const goStep2 = async () => {
+    const current = await syncEditor()
     const next: Record<string, string> = {}
-    if (title.trim().length < 5) next.title = 'Заголовок короткий — минимум 5 символов.'
-    if (parseBlocks(fullText).length === 0) next.body = 'Напишите хотя бы один абзац.'
-    if (parseBlocks(fullText).some(pollIsInvalid))
+    if (current.title.trim().length < 5) next.title = 'Заголовок короткий — минимум 5 символов.'
+    if (parseBlocks(current.text).length === 0) next.body = 'Напишите хотя бы один абзац.'
+    if (parseBlocks(current.text).some(pollIsInvalid))
       next.body = 'Опрос неполный: нужен осмысленный вопрос и минимум 2 непустых разных варианта.'
     if (kind === 'video' && !hasVideoEmbed)
       next.body = 'Добавьте видео через / — attachment, YouTube или Loom.'
@@ -527,14 +537,21 @@ export default function ComposePage() {
     // публикует только кнопка «Опубликовать»: кнопки/Enter внутри блоков редактора форму не отправляют
     const submitter = (e.nativeEvent as SubmitEvent).submitter
     if (!submitter?.hasAttribute('data-publish')) return
+    const current = await syncEditor()
+    const currentDraft = {
+      ...draft,
+      title: current.title || 'Без заголовка',
+      excerpt: plainExcerpt(current.text.replace(/^#\s+.*(?:\n+|$)/, ''), 180),
+      blocks: parseBlocks(current.text),
+    }
     const next: Record<string, string> = {}
-    if (title.trim().length < 5) next.title = 'Заголовок короткий — минимум 5 символов.'
+    if (current.title.trim().length < 5) next.title = 'Заголовок короткий — минимум 5 символов.'
     if (kind === 'video' && videoMode === 'link' && !videoUrl.trim()) next.videoUrl = 'Укажите ссылку на видео.'
     if (kind === 'video' && videoMode === 'file' && !videoPreview) next.videoFile = 'Выберите видеофайл или переключитесь на ссылку.'
     if (kind === 'video' && !videoDesc.trim()) next.videoDesc = 'Добавьте описание видео.'
-    if (kind === 'text' && parseBlocks(fullText).length === 0) next.body = 'Напишите хотя бы один абзац.'
-    if (parseBlocks(fullText).some(pollIsInvalid)) next.body = 'Опрос неполный: нужен осмысленный вопрос и минимум 2 непустых разных варианта.'
-    if (kind === 'video' && parseBlocks(fullText).length === 0) next.body = 'Добавьте описание или таймкоды.'
+    if (kind === 'text' && currentDraft.blocks.length === 0) next.body = 'Напишите хотя бы один абзац.'
+    if (currentDraft.blocks.some(pollIsInvalid)) next.body = 'Опрос неполный: нужен осмысленный вопрос и минимум 2 непустых разных варианта.'
+    if (kind === 'video' && currentDraft.blocks.length === 0) next.body = 'Добавьте описание или таймкоды.'
     if (isPaid && !payoutConnected) next.price = 'Выплаты отключены — платная запись не может быть опубликована до повторного подключения.'
     if (isPaid && payoutConnected && accessType === 'one-time' && (!(Number(price) > 0))) next.price = 'Цена должна быть больше нуля.'
     if (isPaid && payoutConnected && accessType === 'subscription' && !tiers.some((t) => t.id === tierId && !t.archived))
@@ -559,12 +576,12 @@ export default function ComposePage() {
       keepSessionVideo(id, videoPreview.url)
     }
     // срок опроса считается от момента публикации (или от отложенной даты)
-    const startsAt = draft.publishAt ?? new Date().toISOString()
-    const blocks = draft.blocks.map((b) =>
+    const startsAt = currentDraft.publishAt ?? new Date().toISOString()
+    const blocks = currentDraft.blocks.map((b) =>
       b.type === 'poll' ? { ...b, text: JSON.stringify({ ...parsePoll(b.text), startsAt }) } : b,
     )
     // в репозиторий — markdown тела без строки-заголовка редактора
-    const text = fullText.replace(/^#\s+.*(?:\n+|$)/, '').trim()
+    const text = current.text.replace(/^#\s+.*(?:\n+|$)/, '').trim()
     setPublishing(true)
     setPublishError('')
     if (pendingUri) {
@@ -573,13 +590,13 @@ export default function ComposePage() {
         // отложить / перенести / снять отложенность — сервер пересчитает, когда статья видна на сайте и уходит в AT
         const publishAt = scheduleMode === 'later' && publishAtInput ? new Date(publishAtInput).toISOString() : wasScheduled.current ? null : undefined
         await pendingApi.update(pendingUri, {
-          title: title.trim(),
+          title: current.title.trim(),
           text,
           tags,
           noindex,
-          republished: draft.republished ? { url: draft.republished.url, ...(draft.republished.publishedAt ? { publishedAt: draft.republished.publishedAt } : {}) } : null,
+          republished: currentDraft.republished ? { url: currentDraft.republished.url, ...(currentDraft.republished.publishedAt ? { publishedAt: currentDraft.republished.publishedAt } : {}) } : null,
           ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}),
-          excerpt: draft.excerpt,
+          excerpt: currentDraft.excerpt,
           ...(publishAt !== undefined ? { publishAt } : {}),
         })
         if (collectionId) await addToCollection(collectionId, remoteId(pendingUri))
@@ -593,7 +610,7 @@ export default function ComposePage() {
       return
     }
     try {
-      const uri = await publishArticle({ ...draft, blocks, id, title: title.trim() }, text, draftId ?? undefined)
+      const uri = await publishArticle({ ...currentDraft, blocks, id, title: current.title.trim() }, text, draftId ?? undefined)
       if (importId) await imports.setStatus(importId, 'published', uri).catch(() => {})
       // опубликовано — черновик больше не нужен
       if (draftId) await draftsApi.remove(draftId).catch(() => {})
@@ -738,7 +755,10 @@ export default function ComposePage() {
               {importReady ? <BlocksEditor
                 key={sharedToken ?? 'solo'}
                 serverRoom={sharedToken ? { token: sharedToken, isOwner: true } : undefined}
-                onDoc={setLiveDoc}
+                onDoc={(doc, serialize) => {
+                  setLiveDoc(doc)
+                  serializeEditor.current = serialize
+                }}
                 value={bodyText}
                 title={title}
                 onContentInspect={(info) => setHasVideoEmbed(info.hasVideo)}

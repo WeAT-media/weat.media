@@ -62,6 +62,7 @@ const SecuritySettingsPage = lazy(() => import('@/pages/settings/SecuritySetting
 const DeveloperSettingsPage = lazy(() => import('@/pages/settings/DeveloperSettingsPage'))
 const ComposePage = lazy(() => import('@/pages/ComposePage'))
 const LoginPage = lazy(() => import('@/pages/LoginPage'))
+const OAuthContinuePage = lazy(() => import('@/pages/OAuthContinuePage'))
 const ApiDocsPage = lazy(() => import('@/pages/ApiDocsPage'))
 const DocsPage = lazy(() => import('@/pages/DocsPage'))
 const DesignPage = lazy(() => import('@/pages/DesignPage'))
@@ -193,6 +194,7 @@ export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
               <Route path="developer" element={<DeveloperSettingsPage />} />
             </Route>
             <Route path="/compose" element={<RequireSession><ComposePage /></RequireSession>} />
+            <Route path="/oauth/continue" element={<RequireSession><OAuthContinuePage /></RequireSession>} />
             <Route path="/login" element={<LoginView />} />
             <Route path="/login/reset" element={<PasswordResetPage />} />
             <Route path="/api" element={<ApiDocsView />} />
