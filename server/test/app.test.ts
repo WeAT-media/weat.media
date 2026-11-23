@@ -1248,6 +1248,13 @@ test('finance: admin sees totals, credits and debits a user balance with reason;
   assert.ok(auditLog.filter((e) => e.action === 'finance.adjust').length >= 2)
 })
 
+test('app CORS: bsky.app can call the public PDS createSession gate', async () => {
+  const app = makeApp()
+  const res = await app.request('/api/pds/createSession', { method: 'OPTIONS', headers: { origin: 'https://bsky.app', 'access-control-request-method': 'POST' } })
+  assert.equal(res.status, 204)
+  assert.equal(res.headers.get('access-control-allow-origin'), '*')
+})
+
 test('pds gate: external createSession — TOTP account with main password refused and session revoked; app password and non-TOTP pass', async () => {
   const { Hono } = await import('hono')
   const { mountPdsGate } = await import('../src/pdsGate.ts')
@@ -1269,11 +1276,7 @@ test('pds gate: external createSession — TOTP account with main password refus
     })
     const login = (identifier: string, password: string) =>
       app.request('/pds/createSession', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identifier, password }) })
-    const preflight = await app.request('/pds/createSession', { method: 'OPTIONS', headers: { origin: 'https://bsky.app', 'access-control-request-method': 'POST' } })
-    assert.equal(preflight.status, 204)
-    assert.equal(preflight.headers.get('access-control-allow-origin'), '*')
     const blocked = await login('totp', 'main-pass')
-    assert.equal(blocked.headers.get('access-control-allow-origin'), '*')
     assert.equal(blocked.status, 401)
     assert.equal((await blocked.json()).error, 'AuthFactorTokenRequired')
     assert.deepEqual(deleted, ['ref-totp'], 'выданная PDS полная сессия сразу отозвана')

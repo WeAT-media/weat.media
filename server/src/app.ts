@@ -197,7 +197,7 @@ export function createApp(deps: Deps) {
     return d.socketIp(c)
   }
 
-  app.use('*', cors({ origin: d.config.CORS_ORIGIN, allowHeaders: ['content-type', 'authorization'] }))
+  app.use('*', cors({ origin: (_origin, c) => c.req.path === '/api/pds/createSession' ? '*' : d.config.CORS_ORIGIN, allowHeaders: ['content-type', 'authorization'] }))
   // до всех маршрутов: иначе ранние обработчики ответят раньше лимитера
   if (d.rateLimiter !== false) app.use('*', rateLimit(clientIp, d.rateLimiter))
   // токен соседнего контура — запрос в родной контур пользователя (там его данные); вход работает с любого адреса
