@@ -202,7 +202,7 @@ export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pdsHost?: string; 
         origin: publicPdsOrigin(),
         referer: bridge.authorize,
         'sec-fetch-site': 'same-origin',
-        'sec-fetch-mode': 'cors',
+        'sec-fetch-mode': 'same-origin',
         ...(cookie ? { cookie } : {}),
         ...(csrf ? { 'x-csrf-token': csrf } : {}),
       }
@@ -213,7 +213,10 @@ export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pdsHost?: string; 
         redirect: 'manual',
         signal: AbortSignal.timeout(15_000),
       })
-      if (!res.ok) return c.json({ error: 'UpstreamFailure', message: 'PDS не подтвердил вход, попробуйте снова' }, 502)
+      if (!res.ok) {
+        const failure = (await res.json().catch(() => ({}))) as { error?: string; error_description?: string }
+        return c.json({ error: 'UpstreamFailure', message: 'PDS не подтвердил вход, попробуйте снова', upstreamStatus: res.status, upstreamError: failure.error, upstreamDescription: failure.error_description }, 502)
+      }
       const out = new Headers({ location: bridge.authorize, 'cache-control': 'no-store' })
       for (const value of [...initialCookies, ...res.headers.getSetCookie()]) out.append('set-cookie', value)
       return new Response(null, { status: 302, headers: out })
