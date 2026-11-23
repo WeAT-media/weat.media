@@ -391,9 +391,23 @@ export default function ComposePage() {
   }, [draftId])
   const saveDraftNow = useCallback(async () => {
     const current = await syncEditor()
-    // правка статьи в охлаждении — не черновик
-    if (pendingUri || !hasSession() || (!current.title.trim() && !current.text.trim())) return
+    if (!hasSession() || (!current.title.trim() && !current.text.trim())) return
     try {
+      if (pendingUri) {
+        await pendingApi.update(pendingUri, {
+          title: current.title.trim(),
+          text: current.text.replace(/^#\s+.*(?:\n+|$)/, '').trim(),
+          subtitle: subtitle.trim(),
+          excerpt: plainExcerpt(current.text.replace(/^#\s+.*(?:\n+|$)/, ''), 180),
+          tags,
+          noindex,
+          republished: republish && /^https?:\/\/\S+$/.test(republishUrl.trim())
+            ? { url: republishUrl.trim(), ...(republishDate ? { publishedAt: republishDate.length > 10 ? new Date(republishDate).toISOString() : republishDate } : {}) }
+            : null,
+        })
+        setDraftSaved(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+        return
+      }
       const body = { title: current.title.trim(), text: current.text, meta: draftMeta }
       const d = draftIdRef.current ? await draftsApi.save(draftIdRef.current, body) : await draftsApi.create(body)
       if (!draftIdRef.current) {
@@ -410,7 +424,7 @@ export default function ComposePage() {
     } catch {
       setDraftSaved('')
     }
-  }, [syncEditor, draftMeta, setSearchParams, pendingUri])
+  }, [syncEditor, draftMeta, setSearchParams, pendingUri, subtitle, tags, noindex, republish, republishUrl, republishDate])
   // автосохранение: через 2 с после правки текста или настроек; пока грузится черновик — не пишем
   useEffect(() => {
     if (!importReady || loadedMeta) return
@@ -705,13 +719,13 @@ export default function ComposePage() {
               }}
               className="btn-ghost !px-3 !py-1.5 !text-[11px]"
             >
-              Сохранить черновик
+              {pendingUri ? 'Сохранить статью' : 'Сохранить черновик'}
             </button>
             <span className="meta">
               {draftSaved === 'пусто'
                 ? 'сохранять нечего: напишите заголовок или текст'
                 : draftSaved
-                  ? `сохранён в ${draftSaved} · текст и настройки публикации`
+                  ? `${pendingUri ? 'статья сохранена' : 'черновик сохранён'} в ${draftSaved}${pendingUri ? '' : ' · текст и настройки публикации'}`
                   : 'сохраняется сам через 2 с после правки'}
             </span>
           </p>
