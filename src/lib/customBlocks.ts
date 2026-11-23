@@ -842,13 +842,15 @@ export class TimelineBlockComponent extends BlockComponent<BlockModel<DataProps>
     css`
       .indie-timeline__item { border-top: 1px solid var(--affine-border-color, #e3e2e4); padding-top: 8px; margin-top: 8px; }
       .indie-timeline__date { flex: 0 0 130px; }
+      .indie-timeline__datetime { flex: 0 0 190px; padding: 6px 4px; border: 1px solid var(--affine-border-color, #e3e2e4); border-radius: 6px; background: var(--affine-background-primary-color, #fff); color: inherit; font-size: 12px; }
       .indie-timeline__text { width: 100%; min-height: 52px; margin-top: 6px; padding: 6px 8px; border: 1px solid var(--affine-border-color, #e3e2e4); border-radius: 6px; background: var(--affine-background-primary-color, #fff); color: inherit; font: inherit; font-size: 13px; resize: vertical; }
       .indie-timeline__orientation { flex: 0 0 150px; padding: 6px 8px; border: 1px solid var(--affine-border-color, #e3e2e4); border-radius: 6px; background: var(--affine-background-primary-color, #fff); color: inherit; }
     `,
   ]
 
   private get data(): Timeline {
-    return parseTimeline(this.model.data) ?? DEFAULT_TIMELINE
+    const data = parseData(this.model.data, DEFAULT_TIMELINE)
+    return { ...data, items: Array.isArray(data.items) ? data.items : [] }
   }
   private persist(next: Timeline) {
     this.doc.updateBlock(this.model, { data: JSON.stringify(next) })
@@ -874,6 +876,14 @@ export class TimelineBlockComponent extends BlockComponent<BlockModel<DataProps>
           <div class="indie-timeline__item">
             <div class="indie-block__row">
               <input class="indie-timeline__date" .value=${item.date} placeholder="Дата или период" @input=${(e: Event) => this.setItem(i, { date: (e.target as HTMLInputElement).value })} />
+              <input
+                class="indie-timeline__datetime"
+                type="datetime-local"
+                aria-label=${`Дата и время события ${i + 1} (необязательно)`}
+                title="Выбрать дату и время (необязательно)"
+                .value=${/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(item.date) ? item.date.slice(0, 16) : ''}
+                @change=${(e: Event) => this.setItem(i, { date: (e.target as HTMLInputElement).value })}
+              />
               <input .value=${item.title} placeholder=${`Событие ${i + 1}`} @input=${(e: Event) => this.setItem(i, { title: (e.target as HTMLInputElement).value })} />
               <button type="button" class="indie-block__btn indie-block__del" @click=${() => this.persist({ ...this.data, items: items.filter((_, n) => n !== i) })}>✕</button>
             </div>
