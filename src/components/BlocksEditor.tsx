@@ -125,7 +125,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
                 ...s,
                 model: {
                   ...s.model,
-                  children: [...(s.model.children ?? []), 'affine:carousel', 'affine:poll', 'affine:callout', 'affine:userblock', 'affine:ivideo', 'affine:faq', 'affine:actionbutton', 'affine:mdtable'],
+                  children: [...(s.model.children ?? []), ...customBlocksMod.customBlockSchemas.map((block) => block.model.flavour)],
                 },
               }
             : s,
