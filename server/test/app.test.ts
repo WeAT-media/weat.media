@@ -1269,7 +1269,11 @@ test('pds gate: external createSession — TOTP account with main password refus
     })
     const login = (identifier: string, password: string) =>
       app.request('/pds/createSession', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ identifier, password }) })
+    const preflight = await app.request('/pds/createSession', { method: 'OPTIONS', headers: { origin: 'https://bsky.app', 'access-control-request-method': 'POST' } })
+    assert.equal(preflight.status, 204)
+    assert.equal(preflight.headers.get('access-control-allow-origin'), '*')
     const blocked = await login('totp', 'main-pass')
+    assert.equal(blocked.headers.get('access-control-allow-origin'), '*')
     assert.equal(blocked.status, 401)
     assert.equal((await blocked.json()).error, 'AuthFactorTokenRequired')
     assert.deepEqual(deleted, ['ref-totp'], 'выданная PDS полная сессия сразу отозвана')

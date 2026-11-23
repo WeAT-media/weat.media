@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import type { MfaRepo, UserRepo } from './db.js'
 import type { PdsClient } from './pds.js'
 import { PEER_HOP_HEADER, type PeerContour } from './contour.js'
@@ -29,6 +30,8 @@ function scopeOf(jwt: string): string | null {
 }
 
 export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pdsHost?: string; pds: PdsClient; mfa: MfaRepo; peer?: PeerContour; users?: UserRepo; peerSecret?: string }) {
+  // Публичный XRPC для AT-клиентов: как и у исходного PDS, Origin может быть любым (bsky.app и др.).
+  app.use('/pds/createSession', cors({ origin: '*', allowHeaders: ['content-type', 'authorization'] }))
   app.post('/pds/createSession', async (c) => {
     if (!d.pdsUrl) return c.json({ error: 'NotConfigured', message: 'PDS не настроен' }, 503)
     const body = await c.req.text()
