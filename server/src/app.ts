@@ -567,12 +567,25 @@ export function createApp(deps: Deps) {
     const cid = (blob.ref as { $link?: unknown } | undefined)?.$link
     if (typeof cid !== 'string') return c.json({ error: 'UpstreamFailure', message: 'PDS не вернул адрес изображения' }, 502)
     await d.editorImages!.put({ cid, did, mimeType, bytes })
-    const url = `${d.config.PUBLIC_URL}/api/editor-images/${encodeURIComponent(cid)}`
+    const assetBase = new URL(d.config.PUBLIC_URL)
+    if (assetBase.hostname === 'weat.media') assetBase.hostname = d.config.CONTOUR === 'ru' ? 'ru.weat.media' : 'nl-1.weat.media'
+    const url = `${assetBase.origin}/api/editor-images/${encodeURIComponent(cid)}`
     return c.json({ url })
   })
 
   app.get('/editor-images/:cid', async (c) => {
-    const image = await d.editorImages!.get(c.req.param('cid'))
+    const cid = c.req.param('cid')
+    const image = await d.editorImages!.get(cid)
+    if (!image && d.peer && !c.req.header(PEER_HOP_HEADER)) {
+      const res = await fetch(`${d.peer.publicUrl}/api/editor-images/${encodeURIComponent(cid)}`, {
+        headers: { [PEER_HOP_HEADER]: '1' }, signal: AbortSignal.timeout(10_000),
+      }).catch(() => null)
+      if (res?.ok && res.headers.get('content-type')?.startsWith('image/')) {
+        c.header('cache-control', 'public, max-age=31536000, immutable')
+        c.header('content-type', res.headers.get('content-type')!)
+        return c.body(await res.arrayBuffer())
+      }
+    }
     if (!image) return c.json({ error: 'NotFound', message: 'Изображение не найдено' }, 404)
     c.header('cache-control', 'public, max-age=31536000, immutable')
     c.header('content-type', image.mimeType)

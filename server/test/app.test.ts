@@ -795,7 +795,7 @@ const fakeAtproto: AtprotoAuth = {
 }
 
 let cooldownLast: Cooldown | undefined
-function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean; restricted?: Deps['restricted']; feedUrl?: string } = {}) {
+function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: boolean; contour?: 'global' | 'ru'; ipCountry?: Record<string, string>; peer?: Deps['peer']; nodeRole?: 'primary' | 'standby'; atproto?: boolean; restricted?: Deps['restricted']; feedUrl?: string; publicUrl?: string } = {}) {
   const deps: Deps = {
     config: {
       CONTOUR: opts.contour ?? 'global',
@@ -805,7 +805,7 @@ function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: bo
       ADMIN_TOKEN: 'admin-token-0123456789',
       ...(opts.peerSecret ? { PEER_SECRET: opts.peerSecret } : {}),
       CORS_ORIGIN: 'http://localhost:3000',
-      PUBLIC_URL: 'http://localhost:3000',
+      PUBLIC_URL: opts.publicUrl ?? 'http://localhost:3000',
       LAVA_OFFER_ID: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
       LAVA_WEBHOOK_SECRET: 'lava-webhook-secret-0123',
     },
@@ -1550,11 +1550,11 @@ test('profile: change name, about and avatar on the site; image type by signatur
 })
 
 test('editor images: uploaded file is available from the permanent AppView mirror', async () => {
-  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' }, publicUrl: 'https://weat.media' })
   const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'editorimg', email: 'editorimg@example.com' }, '5.1.1.1'))).json()
   const res = await app.request('/api/me/images', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'image/webp' }, body: new Uint8Array([1, 2, 3, 4]) })
   assert.equal(res.status, 200)
-  assert.deepEqual(await res.json(), { url: 'http://localhost:3000/api/editor-images/bafyavatar4' })
+  assert.deepEqual(await res.json(), { url: 'https://nl-1.weat.media/api/editor-images/bafyavatar4' })
   const image = await app.request('/api/editor-images/bafyavatar4')
   assert.equal(image.status, 200)
   assert.equal(image.headers.get('content-type'), 'image/webp')
@@ -1562,6 +1562,32 @@ test('editor images: uploaded file is available from the permanent AppView mirro
   assert.equal((await app.request('/api/editor-images/missing')).status, 404)
   assert.equal((await app.request('/api/me/images', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'text/plain' }, body: 'no' })).status, 415)
   assert.equal((await app.request('/api/me/images', { method: 'POST', headers: { 'content-type': 'image/webp' }, body: new Uint8Array([1]) })).status, 401)
+})
+
+test('editor images: a generic site URL finds the blob in the peer contour', async () => {
+  const { createServer } = await import('node:http')
+  const peerServer = createServer((req, res) => {
+    assert.equal(req.headers['x-indie-peer-hop'], '1')
+    res.writeHead(200, { 'content-type': 'image/webp' })
+    res.end(Buffer.from([5, 6, 7]))
+  })
+  await new Promise<void>((resolve) => peerServer.listen(0, '127.0.0.1', resolve))
+  try {
+    const address = peerServer.address()
+    if (!address || typeof address === 'string') throw new Error('No peer port')
+    const peer: Deps['peer'] = {
+      publicUrl: `http://127.0.0.1:${address.port}`,
+      resolve: async () => null,
+      profile: async () => null,
+    }
+    const app = makeApp({ peer })
+    const res = await app.request('/api/editor-images/bafypeer')
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('content-type'), 'image/webp')
+    assert.deepEqual(new Uint8Array(await res.arrayBuffer()), new Uint8Array([5, 6, 7]))
+  } finally {
+    await new Promise<void>((resolve) => peerServer.close(() => resolve()))
+  }
 })
 
 test('admin users: search by part of handle or name, @ prefix ok', async () => {
