@@ -65,6 +65,7 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
   const syncRef = useRef<{ disconnect: () => void } | null>(null)
   const mentionsRef = useRef<(() => void) | null>(null)
   const guardRef = useRef<(() => void) | null>(null)
+  const pasteHandlerRef = useRef<((event: ClipboardEvent) => void) | null>(null)
   const lastSerialized = useRef(value)
   const lastTitle = useRef(title ?? '')
   const onChangeRef = useRef(onChange)
@@ -356,6 +357,34 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
           }
         }
         editor.std.clipboard.registerAdapter('text/plain', ClipboardMixTextAdapter, 70)
+        const onSvgPaste = (event: ClipboardEvent) => {
+          const data = event.clipboardData
+          if (!data) return
+          const files = Array.from(data.files).filter((file) => file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg'))
+          const text = data.getData('text/plain').trim()
+          if (!files.length && !/^<svg[\s>]/i.test(text)) return
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          editedRef.current = true
+          void (async () => {
+            const svg = files[0] ?? new File([text], 'pasted-image.svg', { type: 'image/svg+xml' })
+            const sourceId = storeMod.nanoid()
+            await blobSource.set(sourceId, svg)
+            const selectedId = editor.std.selection.find('text')?.from.blockId
+              ?? editor.std.selection.find('block')?.blockId
+              ?? editor.std.selection.find('image')?.blockId
+            const selected = selectedId ? doc.getBlockById(selectedId) : null
+            const props = { sourceId, size: svg.size }
+            if (selected) {
+              doc.addSiblingBlocks(selected, [{ flavour: 'affine:image', ...props }], 'after')
+            } else {
+              const note = doc.root?.children.find((block) => block.flavour === 'affine:note')
+              doc.addBlock('affine:image', props, note ?? doc.root ?? undefined)
+            }
+          })().catch((error) => console.error('Не удалось вставить SVG', error))
+        }
+        pasteHandlerRef.current = onSvgPaste
+        el.addEventListener('paste', onSvgPaste, true)
         // тема BlockSuite (ThemeObserver) стартует «светлой» и меняется только по мутации data-theme у <html>;
         // наш theme-init.js ставит тему раньше — повторяем запись, чтобы панели и меню стали тёмными
         const kickTheme = () => {
@@ -448,6 +477,8 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
       mentionsRef.current = null
       guardRef.current?.()
       guardRef.current = null
+      if (pasteHandlerRef.current) el?.removeEventListener('paste', pasteHandlerRef.current, true)
+      pasteHandlerRef.current = null
       syncRef.current?.disconnect()
       syncRef.current = null
       const st = stateRef.current
