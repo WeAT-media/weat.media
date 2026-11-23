@@ -207,7 +207,7 @@ export function createApp(deps: Deps) {
   const tooLarge = (c: Context) => c.json({ error: 'PayloadTooLarge', message: 'Слишком большой запрос' }, 413)
   const BIG = new Set(['/api/me/articles/paid', '/api/v1/articles', '/api/me/avatar', '/api/v1/me/avatar', '/api/me/drafts'])
   app.use('*', async (c, next) =>
-    bodyLimit({ maxSize: BIG.has(c.req.path) ? 1024 * 1024 : 64 * 1024, onError: tooLarge })(c, next),
+    bodyLimit({ maxSize: c.req.path === '/api/me/images' ? 10 * 1024 * 1024 : BIG.has(c.req.path) ? 1024 * 1024 : 64 * 1024, onError: tooLarge })(c, next),
   )
   // журнал устройств: завершённая сессия не проходит; выданная пара токенов — запись (sessions.ts)
   app.use('*', sessionTracking({ sessions: d.sessions, secrets: d.secrets }, { bearer, country: (c) => d.geo.country(clientIp(c)) }))
@@ -552,6 +552,20 @@ export function createApp(deps: Deps) {
   mountImageProxyRoute(app)
   const unauthorized = (c: Context) =>
     c.json({ error: 'AuthenticationRequired', message: 'Нужен Bearer-токен' }, 401)
+
+  app.post('/me/images', async (c) => {
+    const did = await authDid(c)
+    if (!did) return unauthorized(c)
+    const mimeType = c.req.header('content-type')?.split(';', 1)[0] ?? ''
+    if (!['image/webp', 'image/png', 'image/jpeg', 'image/gif'].includes(mimeType)) return c.json({ error: 'UnsupportedImage', message: 'Нужна картинка WebP, PNG, JPEG или GIF' }, 415)
+    const bytes = new Uint8Array(await c.req.arrayBuffer())
+    if (!bytes.byteLength) return c.json({ error: 'InvalidRequest', message: 'Пустой файл' }, 400)
+    const { blob } = await d.pds.uploadBlob(bearer(c)!, bytes, mimeType)
+    const cid = (blob.ref as { $link?: unknown } | undefined)?.$link
+    if (typeof cid !== 'string' || !d.config.PDS_HOST) return c.json({ error: 'UpstreamFailure', message: 'PDS не вернул адрес изображения' }, 502)
+    const url = `https://${d.config.PDS_HOST}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`
+    return c.json({ url })
+  })
 
   app.get('/me', async (c) => {
     const did = await authDid(c)

@@ -320,6 +320,8 @@ export interface SecurityView {
 
 const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
 
+export const uploadEditorImage = (blob: Blob) => authed<{ url: string }>('/me/images', { method: 'POST', headers: { 'content-type': blob.type }, body: blob })
+
 export const security = {
   get: () => authed<SecurityView>('/me/security'),
   requestPasswordCode: () => authed<{ codeSent: true }>('/me/password/email/request', post({})),

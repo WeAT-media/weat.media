@@ -132,8 +132,9 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
         )
         schema.register(extendedSchemas)
         schema.register(customBlocksMod.customBlockSchemas)
-        const { createEditorBlobSource, URL_SOURCE } = await import('@/lib/editorAssets')
-        const collection = new DocCollection({ schema, id: `indie-${roomId ?? `solo-${Date.now()}`}`, blobSources: { main: createEditorBlobSource() as never } })
+        const { createEditorBlobSource, uploadEditorBlob, URL_SOURCE } = await import('@/lib/editorAssets')
+        const blobSource = createEditorBlobSource()
+        const collection = new DocCollection({ schema, id: `indie-${roomId ?? `solo-${Date.now()}`}`, blobSources: { main: blobSource as never } })
         // без этого collection.meta._proxy.pages остаётся undefined: addDocMeta молча
         // не добавляет запись, blockCollections не заполняется, createDoc() возвращает null
         collection.meta.initialize()
@@ -169,11 +170,16 @@ export default function BlocksEditor({ value, onChange, compact, roomId, serverR
                     ...m.fromBlockSnapshot,
                     enter: async (o: Parameters<NonNullable<typeof m.fromBlockSnapshot.enter>>[0], ctx: Parameters<NonNullable<typeof m.fromBlockSnapshot.enter>>[1]) => {
                       const id = String((o.node.props as { sourceId?: string }).sourceId ?? '')
-                      if (!id.startsWith(URL_SOURCE)) return m.fromBlockSnapshot.enter?.(o, ctx)
+                      let url = id.slice(URL_SOURCE.length)
+                      if (!id.startsWith(URL_SOURCE)) {
+                        const blob = await blobSource.get(id)
+                        if (!blob) throw new Error(`Изображение ${id} не найдено в редакторе`)
+                        url = await uploadEditorBlob(id, blob)
+                      }
                       const caption = (o.node.props as { caption?: string | null }).caption ?? null
                       ctx.walkerContext
                         .openNode({ type: 'paragraph', children: [] }, 'children')
-                        .openNode({ type: 'image', url: id.slice(URL_SOURCE.length), title: null, alt: caption }, 'children')
+                        .openNode({ type: 'image', url, title: null, alt: caption }, 'children')
                         .closeNode()
                         .closeNode()
                     },

@@ -800,6 +800,7 @@ function makeApp(opts: { peerSecret?: string; cooldown?: boolean; rateLimit?: bo
     config: {
       CONTOUR: opts.contour ?? 'global',
       PDS_HANDLE_DOMAIN: 'indie.media',
+      PDS_HOST: 'pds.indie.media',
       TRUST_PROXY: true,
       ADMIN_TOKEN: 'admin-token-0123456789',
       ...(opts.peerSecret ? { PEER_SECRET: opts.peerSecret } : {}),
@@ -1546,6 +1547,16 @@ test('profile: change name, about and avatar on the site; image type by signatur
   assert.equal(pub.avatar, 'bafyavatar11')
   assert.equal((await (await app.request('/api/me/avatar', { method: 'DELETE', headers: auth })).json()).avatar, null)
   assert.equal((await app.request('/api/me/avatar', { method: 'POST', body: png })).status, 401)
+})
+
+test('editor images: uploaded file becomes a permanent AT blob URL', async () => {
+  const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
+  const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'editorimg', email: 'editorimg@example.com' }, '5.1.1.1'))).json()
+  const res = await app.request('/api/me/images', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'image/webp' }, body: new Uint8Array([1, 2, 3, 4]) })
+  assert.equal(res.status, 200)
+  assert.deepEqual(await res.json(), { url: `https://pds.indie.media/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(u.user.did)}&cid=bafyavatar4` })
+  assert.equal((await app.request('/api/me/images', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'text/plain' }, body: 'no' })).status, 415)
+  assert.equal((await app.request('/api/me/images', { method: 'POST', headers: { 'content-type': 'image/webp' }, body: new Uint8Array([1]) })).status, 401)
 })
 
 test('admin users: search by part of handle or name, @ prefix ok', async () => {

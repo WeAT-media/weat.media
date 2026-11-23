@@ -6,6 +6,7 @@
  * хранилище, но получает те же blob по sourceId.
  */
 import { toWebp } from '@/lib/imageCompression'
+import { uploadEditorImage } from '@/lib/api'
 
 export const URL_SOURCE = 'url:'
 
@@ -22,6 +23,23 @@ function cacheBlob(key: string, blob: Blob) {
     size -= files.get(oldest)!.size
     files.delete(oldest)
   }
+}
+
+const uploads = new Map<string, Promise<string>>()
+
+export function uploadEditorBlob(key: string, blob: Blob): Promise<string> {
+  let pending = uploads.get(key)
+  if (!pending) {
+    pending = uploadEditorImage(blob).then(({ url }) => {
+      cacheBlob(`${URL_SOURCE}${url}`, blob)
+      return url
+    }).catch((error) => {
+      uploads.delete(key)
+      throw error
+    })
+    uploads.set(key, pending)
+  }
+  return pending
 }
 
 export function createEditorBlobSource() {
