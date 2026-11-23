@@ -4,6 +4,8 @@
  * картинку. Сами байты — через AppView (/api/image-proxy): CSP сайта не пускает браузер к чужим адресам.
  * Остальное (файлы, вставленные в редактор) — в памяти, как у штатного хранилища.
  */
+import { toWebp } from '@/lib/imageCompression'
+
 export const URL_SOURCE = 'url:'
 
 export function createEditorBlobSource() {
@@ -22,7 +24,11 @@ export function createEditorBlobSource() {
       return blob
     },
     async set(key: string, value: Blob) {
-      files.set(key, value)
+      let blob = value
+      if (!['image/gif', 'image/svg+xml', 'image/webp'].includes(value.type)) {
+        blob = await toWebp(value).catch(() => value)
+      }
+      files.set(key, blob)
       return key
     },
     async delete(key: string) {

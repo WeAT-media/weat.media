@@ -466,7 +466,7 @@ export const profile = {
     return { displayName: v?.displayName ?? null, description: v?.description ?? null }
   },
   update: (b: { displayName?: string | null; description?: string | null }) => authed<ProfileView>('/me/profile', { method: 'PATCH', body: JSON.stringify(b) }),
-  setAvatar: (file: File) => authed<ProfileView>('/me/avatar', { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } }),
+  setAvatar: (file: Blob) => authed<ProfileView>('/me/avatar', { method: 'POST', body: file, headers: { 'content-type': file.type || 'application/octet-stream' } }),
   removeAvatar: () => authed<ProfileView>('/me/avatar', { method: 'DELETE' }),
 }
 

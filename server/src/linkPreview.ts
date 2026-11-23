@@ -1,5 +1,6 @@
 import type { Context, Hono } from 'hono'
 import { createSafeFetch, isPublicAddress } from './safeFetch.js'
+import sharp from 'sharp'
 
 /**
  * Превью ссылки для редактора (карточка «/link» в BlockSuite): заголовок, описание, картинка, иконка из
@@ -122,10 +123,25 @@ export function mountLinkPreviewRoutes(app: Hono, d: { authDid(c: Context): Prom
 }
 
 
+const webpCache = new Map<string, Buffer>()
+
+function cachedWebp(url: string, convert: () => Promise<Buffer>): Promise<Buffer> {
+  const hit = webpCache.get(url)
+  if (hit) return Promise.resolve(hit)
+  return convert().then((webp) => {
+    if (webp.byteLength <= 2 * 1024 * 1024) {
+      if (webpCache.size >= 50) webpCache.delete(webpCache.keys().next().value!)
+      webpCache.set(url, webp)
+    }
+    return webp
+  })
+}
+
 /**
  * Картинки для редактора: BlockSuite при загрузке markdown скачивает ![…](https://…) сам, из браузера — а CSP
  * сайта (connect-src 'self') чужие адреса не пускает, и картинка вечно «грузилась». Отдаём её через AppView:
- * только http(s) на публичные адреса (safeFetch), только image/*, до 10 МБ, кэш — сутки.
+ * только http(s) на публичные адреса (safeFetch), только image/*, до 10 МБ, кэш — сутки. JPEG и PNG по запросу
+ * браузера конвертируются в WebP; анимация, SVG и уже сжатый WebP остаются в исходном формате.
  */
 export function mountImageProxyRoute(app: Hono, d: { fetch?: (url: string, init?: RequestInit) => Promise<Response> } = {}) {
   app.get('/image-proxy', async (c) => {
@@ -133,16 +149,29 @@ export function mountImageProxyRoute(app: Hono, d: { fetch?: (url: string, init?
     if (!/^https?:\/\//.test(url) || url.length > 2000) return c.json({ error: 'InvalidRequest', message: 'url: http(s)://…' }, 400)
     const { safeFetch, readBodyLimited } = await import('./safeFetch.js')
     const res = await (d.fetch ?? safeFetch)(url, { headers: { 'user-agent': UA, accept: 'image/*' }, signal: AbortSignal.timeout(10_000) }).catch(() => null)
-    const type = res?.headers.get('content-type') ?? ''
+    const type = (res?.headers.get('content-type') ?? '').split(';', 1)[0]!.trim().toLowerCase()
     if (!res?.ok || !type.startsWith('image/')) {
       await res?.body?.cancel().catch(() => {})
       return c.json({ error: 'NotFound', message: 'Не картинка или недоступна' }, 404)
     }
-    const body = await readBodyLimited(res, 10 * 1024 * 1024).catch(() => null)
-    if (!body) return c.json({ error: 'TooLarge', message: 'Картинка больше 10 МБ' }, 413)
+    const source = await readBodyLimited(res, 10 * 1024 * 1024).catch(() => null)
+    if (!source) return c.json({ error: 'TooLarge', message: 'Картинка больше 10 МБ' }, 413)
+    let body = source
+    let outputType = type
+    if (c.req.header('accept')?.includes('image/webp') && (type === 'image/jpeg' || type === 'image/png')) {
+      body = await cachedWebp(url, () =>
+        sharp(source, { limitInputPixels: 40_000_000 })
+          .rotate()
+          .resize({ width: 2560, height: 2560, fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 82 })
+          .toBuffer(),
+      ).catch(() => source)
+      if (body !== source) outputType = 'image/webp'
+    }
     return c.body(new Uint8Array(body), 200, {
-      'content-type': type,
+      'content-type': outputType,
       'cache-control': 'public, max-age=86400',
+      vary: 'Accept',
       'x-content-type-options': 'nosniff',
       // SVG с чужого сайта не должен исполнять скрипты в нашем домене
       'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",

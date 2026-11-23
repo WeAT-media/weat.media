@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store'
 import { useNavigate } from 'react-router'
 import { ApiError, api, avatarUrl, handles, profile } from '@/lib/api'
 import { HANDLE_DOMAIN } from '@/config/site'
+import { toWebp } from '@/lib/imageCompression'
 
 /**
  * Имя, «О себе» и фото профиля. Всё хранится в записи app.bsky.actor.profile вашего репозитория —
@@ -56,9 +57,11 @@ export default function ProfileSettingsPage() {
 
   const upload = (file: File | undefined) => {
     if (!file) return
-    if (file.size > 1_000_000) return setError('Фото больше 1 МБ — уменьшите его')
+    if (file.size > 10_000_000) return setError('Исходное фото больше 10 МБ — уменьшите его')
     void run(async () => {
-      setAvatar((await profile.setAvatar(file)).avatar)
+      const image = file.type === 'image/webp' ? file : await toWebp(file)
+      if (image.size > 1_000_000) throw new Error('Сжатое фото больше 1 МБ — выберите изображение меньшего размера')
+      setAvatar((await profile.setAvatar(image)).avatar)
     }, 'Фото обновлено')
   }
 
@@ -114,7 +117,7 @@ export default function ProfileSettingsPage() {
               </button>
             )}
           </div>
-          <p className="meta w-full !normal-case tracking-normal">PNG, JPEG или WebP, до 1 МБ</p>
+          <p className="meta w-full !normal-case tracking-normal">PNG, JPEG или WebP, до 10 МБ · сохраняется в WebP до 1 МБ</p>
         </div>
 
         <form onSubmit={save} className="mt-6 grid max-w-[560px] gap-3">
