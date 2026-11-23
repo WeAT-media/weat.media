@@ -218,7 +218,8 @@ export default function App({ pages = {} }: { pages?: Partial<AppPages> }) {
             <Route path="/support/legal" element={<SupportLegalView />} />
             <Route path="/legal" element={<LegalIndexView />} />
             <Route path="/purchase/:orderId" element={<PurchaseReturnPage />} />
-            <Route path="/after-payments" element={<AfterPaymentsPage />} />
+            <Route path="/after-payment" element={<AfterPaymentsPage />} />
+            <Route path="/after-payments" element={<Navigate to="/after-payment" replace />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route path="/admin" element={<Navigate to="/admin/tickets" replace />} />
             <Route path="/legal/:slug" element={<LegalDocView />} />

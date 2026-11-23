@@ -115,7 +115,7 @@ export default function AfterPaymentsPage() {
         <p className="mt-3 text-muted-foreground">
           Материалы для покупателей открываются после входа — войдите тем аккаунтом, с которого оплачивали.
         </p>
-        <Link to={`/login?${new URLSearchParams({ returnTo: '/after-payments' })}`} className="btn-primary mt-8">
+        <Link to={`/login?${new URLSearchParams({ returnTo: '/after-payment' })}`} className="btn-primary mt-8">
           <LogIn size={15} aria-hidden="true" /> Войти и открыть материалы
         </Link>
       </div>

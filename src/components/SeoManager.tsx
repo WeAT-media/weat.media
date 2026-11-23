@@ -41,7 +41,7 @@ export default function SeoManager() {
     const description = article ? (article.subtitle || article.excerpt).slice(0, 300) : author ? `Публикации ${author.name} (@${author.handle}) в ${SITE_NAME}.` : staticPage?.description ?? `Публикации и открытое сообщество ${SITE_NAME}.`
     const pageUrl = `${SITE_URL}${pathname}`
     const canonical = article?.republished?.url || pageUrl
-    const privatePage = /^\/(admin|login|auth|compose|shared-draft|purchase|after-payments)/.test(pathname) || pathname.includes('/settings') || pathname === '/ads/dashboard' || pathname === '/support/tickets'
+    const privatePage = /^\/(admin|login|auth|compose|shared-draft|purchase|after-payment)/.test(pathname) || pathname.includes('/settings') || pathname === '/ads/dashboard' || pathname === '/support/tickets'
     const knownPage = !!staticPage || /^\/(article|collection|case|profile|legal|support|design|ads|crawler)(\/|$)/.test(pathname)
     const missingArticle = !!articleId && !article
     const robots = privatePage || article?.noindex || missingArticle || !knownPage ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'

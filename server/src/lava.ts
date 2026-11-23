@@ -295,7 +295,7 @@ export function mountLavaRoutes(app: Hono, d: LavaDeps, h: { bearer(c: Context):
     const sbp = body?.paymentMethod === 'SBP'
     const id = `prm_${randomBytes(9).toString('base64url')}`
     const back = new URL(`/purchase/${id}`, d.publicUrl)
-    back.searchParams.set('returnTo', '/after-payments')
+    back.searchParams.set('returnTo', '/after-payment')
     const returns = back.protocol === 'https:'
       ? { successful_return_url: back.toString(), failure_return_url: back.toString(), cancel_return_url: back.toString() }
       : {}
