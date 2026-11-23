@@ -61,8 +61,8 @@ export function createEditorBlobSource() {
     },
     async set(key: string, value: Blob) {
       let blob = value
-      if (!['image/gif', 'image/svg+xml', 'image/webp'].includes(value.type)) {
-        blob = await toWebp(value).catch(() => value)
+      if (!['image/gif', 'image/webp'].includes(value.type)) {
+        blob = await toWebp(value)
       }
       cacheBlob(key, blob)
       return key
