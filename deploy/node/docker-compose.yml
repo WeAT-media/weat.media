@@ -20,6 +20,7 @@ services:
     environment:
       CONTOUR: ${CONTOUR}
       SITE_DOMAINS: ${SITE_DOMAINS}
+      PUBLIC_URL: ${PUBLIC_URL}
       STATIC_HOST: ${STATIC_HOST:-static.weat.media}
       PDS_HOST: ${PDS_HOST}
       PDS_HANDLE_DOMAIN: ${PDS_HANDLE_DOMAIN}
