@@ -27,6 +27,7 @@ import { collectionRepo } from './collections.js'
 import { sharedRepo } from './shared.js'
 import { cooldownRepo, createCooldown } from './cooldown.js'
 import { notificationRepo, notificationService } from './notifications.js'
+import { editorImageRepo } from './editorImages.js'
 
 const config = loadConfig()
 const sql = createDb(config.DATABASE_URL)
@@ -71,6 +72,7 @@ const app = createApp({
   system: systemAccountRepo(sql),
   drafts: draftRepo(sql),
   collections: collectionRepo(sql),
+  editorImages: editorImageRepo(sql),
   shared: sharedRepo(sql),
   mail: createMailboxClient({
     domain: config.MAIL_DOMAIN,

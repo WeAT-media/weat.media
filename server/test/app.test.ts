@@ -1549,12 +1549,17 @@ test('profile: change name, about and avatar on the site; image type by signatur
   assert.equal((await app.request('/api/me/avatar', { method: 'POST', body: png })).status, 401)
 })
 
-test('editor images: uploaded file becomes a permanent AT blob URL', async () => {
+test('editor images: uploaded file is available from the permanent AppView mirror', async () => {
   const app = makeApp({ ipCountry: { '5.1.1.1': 'DE' } })
   const u = await (await app.request('/api/auth/register', json({ ...reg, username: 'editorimg', email: 'editorimg@example.com' }, '5.1.1.1'))).json()
   const res = await app.request('/api/me/images', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'image/webp' }, body: new Uint8Array([1, 2, 3, 4]) })
   assert.equal(res.status, 200)
-  assert.deepEqual(await res.json(), { url: `https://pds.indie.media/xrpc/com.atproto.sync.getBlob?did=${encodeURIComponent(u.user.did)}&cid=bafyavatar4` })
+  assert.deepEqual(await res.json(), { url: 'http://localhost:3000/api/editor-images/bafyavatar4' })
+  const image = await app.request('/api/editor-images/bafyavatar4')
+  assert.equal(image.status, 200)
+  assert.equal(image.headers.get('content-type'), 'image/webp')
+  assert.deepEqual(new Uint8Array(await image.arrayBuffer()), new Uint8Array([1, 2, 3, 4]))
+  assert.equal((await app.request('/api/editor-images/missing')).status, 404)
   assert.equal((await app.request('/api/me/images', { method: 'POST', headers: { authorization: `Bearer ${u.accessJwt}`, 'content-type': 'text/plain' }, body: 'no' })).status, 415)
   assert.equal((await app.request('/api/me/images', { method: 'POST', headers: { 'content-type': 'image/webp' }, body: new Uint8Array([1]) })).status, 401)
 })

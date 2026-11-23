@@ -47,6 +47,7 @@ import { buildOpenApi } from './openapi.js'
 import { LEGAL_VERSION, LoginBody, Username, RefreshBody, RegisterBody, ResidenceBody, TierBody, AdminProfileBody } from './schemas.js'
 import { SettingsPatch, type SettingsRepo } from './settings.js'
 import { memoryNotificationRepo, mountNotificationRoutes, notificationService, type NotificationService } from './notifications.js'
+import { memEditorImages, type EditorImageRepo } from './editorImages.js'
 
 export interface Deps {
   config: Pick<Config, 'CONTOUR' | 'PDS_HANDLE_DOMAIN' | 'TRUST_PROXY' | 'ADMIN_TOKEN' | 'CORS_ORIGIN' | 'PUBLIC_URL'> & Partial<Pick<Config, 'LAVA_OFFER_ID' | 'PREMIUM_PRICE_RUB' | 'LAVA_WEBHOOK_SECRET' | 'ATPROTO_PLC_URL' | 'ATPROTO_ALLOW_HTTP' | 'PDS_HOST' | 'PEER_SECRET'>>
@@ -68,6 +69,8 @@ export interface Deps {
   system: SystemAccountRepo
   drafts: DraftRepo
   collections: CollectionRepo
+  /** зеркало изображений редактора: PDS может не отдать ещё не связанный с записью blob */
+  editorImages?: EditorImageRepo
   /** совместное редактирование черновиков по ссылке; по умолчанию — в памяти (тесты) */
   shared?: SharedRepo
   /** период охлаждения (24 ч до ухода в AT); без него — публикация сразу (тесты, локальный стенд) */
@@ -180,7 +183,7 @@ function guardPds(pds: PdsClient, mfa: Deps['mfa']): PdsClient {
 }
 
 export function createApp(deps: Deps) {
-  const d: Deps = { ...deps, pds: guardPds(deps.pds, deps.mfa) }
+  const d: Deps = { editorImages: memEditorImages(), ...deps, pds: guardPds(deps.pds, deps.mfa) }
   const app = new Hono().basePath('/api')
 
   const clientIp = (c: Context): string => {
@@ -562,9 +565,18 @@ export function createApp(deps: Deps) {
     if (!bytes.byteLength) return c.json({ error: 'InvalidRequest', message: 'Пустой файл' }, 400)
     const { blob } = await d.pds.uploadBlob(bearer(c)!, bytes, mimeType)
     const cid = (blob.ref as { $link?: unknown } | undefined)?.$link
-    if (typeof cid !== 'string' || !d.config.PDS_HOST) return c.json({ error: 'UpstreamFailure', message: 'PDS не вернул адрес изображения' }, 502)
-    const url = `https://${d.config.PDS_HOST}/xrpc/com.atproto.sync.getBlob?${new URLSearchParams({ did, cid })}`
+    if (typeof cid !== 'string') return c.json({ error: 'UpstreamFailure', message: 'PDS не вернул адрес изображения' }, 502)
+    await d.editorImages!.put({ cid, did, mimeType, bytes })
+    const url = `${d.config.PUBLIC_URL}/api/editor-images/${encodeURIComponent(cid)}`
     return c.json({ url })
+  })
+
+  app.get('/editor-images/:cid', async (c) => {
+    const image = await d.editorImages!.get(c.req.param('cid'))
+    if (!image) return c.json({ error: 'NotFound', message: 'Изображение не найдено' }, 404)
+    c.header('cache-control', 'public, max-age=31536000, immutable')
+    c.header('content-type', image.mimeType)
+    return c.body(Uint8Array.from(image.bytes).buffer)
   })
 
   app.get('/me', async (c) => {
