@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createServer } from 'node:http'
 import test from 'node:test'
 import { Hono } from 'hono'
 import { mountPdsGate } from '../src/pdsGate.ts'
@@ -7,7 +8,7 @@ import type { PdsClient } from '../src/pds.ts'
 
 const jwt = `h.${Buffer.from(JSON.stringify({ sub: 'did:plc:alina', scope: 'com.atproto.access' })).toString('base64url')}.s`
 
-function gate() {
+function gate(rawRequest?: typeof import('undici').request) {
   const app = new Hono()
   const revoked: string[] = []
   mountPdsGate(app, {
@@ -22,6 +23,7 @@ function gate() {
     } as unknown as PdsClient,
     mfa: { get: async () => ({ totpEnabledAt: null }) } as unknown as MfaRepo,
     users: { findByDid: async () => ({ did: 'did:plc:alina' }) } as unknown as UserRepo,
+    rawRequest,
   })
   return { app, revoked }
 }
@@ -32,24 +34,27 @@ const oauthBody = {
 }
 
 test('AT OAuth bridge: social session returns to authorize, forwards cookies and revokes temporary app password', async () => {
-  const { app, revoked } = gate()
-  const realFetch = globalThis.fetch
   const calls: string[] = []
-  globalThis.fetch = (async (url: URL | string, init?: RequestInit) => {
+  const rawRequest = (async (url: URL, init: { headers: Record<string, string>; body: string }) => {
     const u = String(url)
     calls.push(u)
-    if (u.startsWith('https://pds.weat.media/oauth/authorize')) {
-      return new Response('<html>sign in</html>', { status: 200, headers: { 'set-cookie': 'csrf-token=csrf123; Path=/; HttpOnly; Secure; SameSite=Lax' } })
-    }
     assert.equal(u, 'http://pds.internal:2583/@atproto/oauth-provider/~api/sign-in')
-    assert.equal(init?.headers && new Headers(init.headers).get('x-csrf-token'), 'csrf123')
-    assert.equal(init?.headers && new Headers(init.headers).get('sec-fetch-mode'), 'same-origin')
-    const body = JSON.parse(String(init?.body)) as { locale: string; identifier: string; password: string; remember: boolean }
+    assert.equal(init.headers['x-csrf-token'], 'csrf123')
+    assert.equal(init.headers['sec-fetch-mode'], 'same-origin')
+    const body = JSON.parse(init.body) as { locale: string; identifier: string; password: string; remember: boolean }
     assert.equal(body.locale, 'ru')
     assert.equal(body.remember, true)
     assert.equal(body.identifier, 'did:plc:alina')
     assert.match(body.password, /^pw-for-oauth-bridge-/)
-    return new Response(JSON.stringify({ account: { sub: body.identifier } }), { status: 200, headers: { 'set-cookie': 'oauth-session=ok; Path=/; HttpOnly; Secure; SameSite=Lax' } })
+    return { statusCode: 200, headers: { 'set-cookie': 'oauth-session=ok; Path=/; HttpOnly; Secure; SameSite=Lax' }, body: { json: async () => ({ account: { sub: body.identifier } }) } }
+  }) as typeof import('undici').request
+  const { app, revoked } = gate(rawRequest)
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (url: URL | string) => {
+    const u = String(url)
+    calls.push(u)
+    assert.ok(u.startsWith('https://pds.weat.media/oauth/authorize'))
+    return new Response('<html>sign in</html>', { status: 200, headers: { 'set-cookie': 'csrf-token=csrf123; Path=/; HttpOnly; Secure; SameSite=Lax' } })
   }) as typeof fetch
   try {
     const prepared = await app.request('/pds/oauth/prepare', {
@@ -89,4 +94,40 @@ test('AT OAuth bridge: requires a session and accepts only an AT authorize reque
     body: JSON.stringify({ ...oauthBody, request_uri: 'https://evil.example/request' }),
   })
   assert.equal(badRequest.status, 400)
+})
+
+
+test('AT OAuth bridge: real HTTP request preserves Sec-Fetch-Mode same-origin', async (t) => {
+  let seenMode: string | undefined
+  const server = createServer((req, res) => {
+    seenMode = req.headers['sec-fetch-mode']
+    res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'oauth-session=ok; Path=/; HttpOnly' })
+    res.end('{"account":{"sub":"did:plc:alina"}}')
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => server.close())
+  const address = server.address()
+  assert.ok(address && typeof address === 'object')
+  const app = new Hono()
+  mountPdsGate(app, {
+    pdsUrl: `http://127.0.0.1:${address.port}`,
+    pdsHost: 'pds.weat.media',
+    pds: {
+      createAppPassword: async () => ({ password: 'temporary' }),
+      revokeAppPassword: async () => {},
+    } as unknown as PdsClient,
+    mfa: { get: async () => ({ totpEnabledAt: null }) } as unknown as MfaRepo,
+  })
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response('', { status: 200, headers: { 'set-cookie': 'csrf-token=csrf123; Path=/' } })) as typeof fetch
+  t.after(() => { globalThis.fetch = realFetch })
+  const prepared = await app.request('/pds/oauth/prepare', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
+    body: JSON.stringify(oauthBody),
+  })
+  const { url } = await prepared.json() as { url: string }
+  const response = await app.request(`/pds/oauth-continue?code=${encodeURIComponent(new URL(url).searchParams.get('code')!)}`)
+  assert.equal(response.status, 302)
+  assert.equal(seenMode, 'same-origin')
 })
