@@ -43,7 +43,10 @@ test('AT OAuth bridge: social session returns to authorize, forwards cookies and
     }
     assert.equal(u, 'http://pds.internal:2583/@atproto/oauth-provider/~api/sign-in')
     assert.equal(init?.headers && new Headers(init.headers).get('x-csrf-token'), 'csrf123')
-    const body = JSON.parse(String(init?.body)) as { identifier: string; password: string }
+    assert.equal(init?.headers && new Headers(init.headers).get('sec-fetch-mode'), 'cors')
+    const body = JSON.parse(String(init?.body)) as { locale: string; identifier: string; password: string; remember: boolean }
+    assert.equal(body.locale, 'ru')
+    assert.equal(body.remember, true)
     assert.equal(body.identifier, 'did:plc:alina')
     assert.match(body.password, /^pw-for-oauth-bridge-/)
     return new Response(JSON.stringify({ account: { sub: body.identifier } }), { status: 200, headers: { 'set-cookie': 'oauth-session=ok; Path=/; HttpOnly; Secure; SameSite=Lax' } })

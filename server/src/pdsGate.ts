@@ -202,13 +202,14 @@ export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pdsHost?: string; 
         origin: publicPdsOrigin(),
         referer: bridge.authorize,
         'sec-fetch-site': 'same-origin',
+        'sec-fetch-mode': 'cors',
         ...(cookie ? { cookie } : {}),
         ...(csrf ? { 'x-csrf-token': csrf } : {}),
       }
       const res = await fetch(new URL('/@atproto/oauth-provider/~api/sign-in', d.pdsUrl), {
         method: 'POST',
         headers,
-        body: JSON.stringify({ identifier: bridge.identifier, password: bridge.password }),
+        body: JSON.stringify({ locale: 'ru', identifier: bridge.identifier, password: bridge.password, remember: true }),
         redirect: 'manual',
         signal: AbortSignal.timeout(15_000),
       })
