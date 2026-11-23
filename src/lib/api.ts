@@ -670,8 +670,6 @@ export const api = {
   async handoff(code: string) {
     return finish(await call<GatedResponse>('/auth/handoff', post({ code })))
   },
-  /** возврат в OAuth стороннего AT-клиента после входа на сайте */
-  oauthContinue: (body: { client_id: string; request_uri: string }) => authed<{ url: string }>('/pds/oauth/prepare', post(body)),
   /** второй шаг: код из приложения или резервный код */
   async mfa(mfaToken: string, code: string) {
     return finish(await call<GatedResponse>('/auth/mfa', post({ mfaToken, code })))

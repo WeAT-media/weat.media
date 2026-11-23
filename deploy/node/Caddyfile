@@ -238,15 +238,13 @@
 		reverse_proxy appview:8787
 	}
 
-	# OAuth сторонних AT-клиентов начинается на сайте: там доступны пароль, TOTP и соцсети.
-	# После входа одноразовый мост возвращает в исходный authorize на этом origin (server/src/pdsGate.ts).
-	handle /oauth/authorize {
-		redir * {$PUBLIC_URL}/oauth/continue?{query} 302
+	# Сначала показываем на сайте, какой аккаунт будет использован. Штатная страница PDS принимает
+	# только основной AT-пароль: password=1 открывает её без промежуточной остановки.
+	@oauth_site {
+		path /oauth/authorize
+		not query password=1
 	}
-	handle /oauth/continue {
-		rewrite * /api/pds/oauth-continue
-		reverse_proxy appview:8787
-	}
+	redir @oauth_site {$PUBLIC_URL}/oauth/continue?{query} 302
 
 	# штатный парольный вход PDS тоже остаётся под гейтом TOTP
 	handle /@atproto/oauth-provider/~api/sign-in {
