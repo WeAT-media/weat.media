@@ -35,9 +35,14 @@ const oauthBody = {
 
 test('AT OAuth bridge: social session returns to authorize, forwards cookies and revokes temporary app password', async () => {
   const calls: string[] = []
-  const rawRequest = (async (url: URL, init: { headers: Record<string, string>; body: string }) => {
+  const rawRequest = (async (url: URL, init: { method: string; headers: Record<string, string>; body: string }) => {
     const u = String(url)
     calls.push(u)
+    if (init.method === 'GET') {
+      assert.ok(u.startsWith('http://pds.internal:2583/oauth/authorize'))
+      assert.equal(init.headers.host, 'pds.weat.media')
+      return { statusCode: 200, headers: { 'set-cookie': 'csrf-token=csrf123; Path=/; HttpOnly; Secure; SameSite=Lax' }, body: { text: async () => '<html>sign in</html>', json: async () => ({}) } }
+    }
     assert.equal(u, 'http://pds.internal:2583/@atproto/oauth-provider/~api/sign-in')
     assert.equal(init.headers['x-csrf-token'], 'csrf123')
     assert.equal(init.headers['sec-fetch-mode'], 'same-origin')
@@ -49,15 +54,7 @@ test('AT OAuth bridge: social session returns to authorize, forwards cookies and
     return { statusCode: 200, headers: { 'set-cookie': 'oauth-session=ok; Path=/; HttpOnly; Secure; SameSite=Lax' }, body: { json: async () => ({ account: { sub: body.identifier } }) } }
   }) as typeof import('undici').request
   const { app, revoked } = gate(rawRequest)
-  const realFetch = globalThis.fetch
-  globalThis.fetch = (async (url: URL | string) => {
-    const u = String(url)
-    calls.push(u)
-    assert.ok(u.startsWith('https://pds.weat.media/oauth/authorize'))
-    return new Response('<html>sign in</html>', { status: 200, headers: { 'set-cookie': 'csrf-token=csrf123; Path=/; HttpOnly; Secure; SameSite=Lax' } })
-  }) as typeof fetch
-  try {
-    const prepared = await app.request('/pds/oauth/prepare', {
+  const prepared = await app.request('/pds/oauth/prepare', {
       method: 'POST',
       headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
       body: JSON.stringify(oauthBody),
@@ -74,9 +71,6 @@ test('AT OAuth bridge: social session returns to authorize, forwards cookies and
     assert.match(revoked[0]!, /^oauth-bridge-/)
     assert.equal((await app.request(`/pds/oauth-continue?code=${encodeURIComponent(code)}`)).status, 400, 'код одноразовый')
     assert.equal(calls.filter((u) => u.includes('/~api/sign-in')).length, 1)
-  } finally {
-    globalThis.fetch = realFetch
-  }
 })
 
 test('AT OAuth bridge: requires a session and accepts only an AT authorize request', async () => {
@@ -97,10 +91,17 @@ test('AT OAuth bridge: requires a session and accepts only an AT authorize reque
 })
 
 
-test('AT OAuth bridge: real HTTP request preserves Sec-Fetch-Mode same-origin', async (t) => {
+test('AT OAuth bridge: real HTTP request preserves Sec-Fetch-Mode and CSRF headers', async (t) => {
   let seenMode: string | undefined
+  let seenCsrf: string | undefined
   const server = createServer((req, res) => {
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'text/html', 'set-cookie': 'csrf-token=csrf123; Path=/' })
+      res.end('<html>sign in</html>')
+      return
+    }
     seenMode = req.headers['sec-fetch-mode']
+    seenCsrf = req.headers['x-csrf-token']
     res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': 'oauth-session=ok; Path=/; HttpOnly' })
     res.end('{"account":{"sub":"did:plc:alina"}}')
   })
@@ -118,9 +119,6 @@ test('AT OAuth bridge: real HTTP request preserves Sec-Fetch-Mode same-origin', 
     } as unknown as PdsClient,
     mfa: { get: async () => ({ totpEnabledAt: null }) } as unknown as MfaRepo,
   })
-  const realFetch = globalThis.fetch
-  globalThis.fetch = (async () => new Response('', { status: 200, headers: { 'set-cookie': 'csrf-token=csrf123; Path=/' } })) as typeof fetch
-  t.after(() => { globalThis.fetch = realFetch })
   const prepared = await app.request('/pds/oauth/prepare', {
     method: 'POST',
     headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
@@ -130,4 +128,5 @@ test('AT OAuth bridge: real HTTP request preserves Sec-Fetch-Mode same-origin', 
   const response = await app.request(`/pds/oauth-continue?code=${encodeURIComponent(new URL(url).searchParams.get('code')!)}`)
   assert.equal(response.status, 302)
   assert.equal(seenMode, 'same-origin')
+  assert.equal(seenCsrf, 'csrf123')
 })

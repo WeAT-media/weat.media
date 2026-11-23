@@ -190,8 +190,17 @@ export function mountPdsGate(app: Hono, d: { pdsUrl?: string; pdsHost?: string; 
     if (!bridge) return c.json({ error: 'InvalidCode', message: 'Ссылка входа истекла, попробуйте снова' }, 400)
     oauthBridges.delete(code)
     try {
-      const preflight = await fetch(bridge.authorize, { headers: { 'sec-fetch-site': 'same-origin' }, redirect: 'manual', signal: AbortSignal.timeout(15_000) })
-      const initialCookies = preflight.headers.getSetCookie()
+      const raw = d.rawRequest ?? httpRequest
+      const publicAuthorize = new URL(bridge.authorize)
+      const preflight = await raw(new URL(`${publicAuthorize.pathname}${publicAuthorize.search}`, d.pdsUrl), {
+        method: 'GET',
+        headers: { host: publicAuthorize.host, 'sec-fetch-site': 'same-origin' },
+        headersTimeout: 15_000,
+        bodyTimeout: 15_000,
+      })
+      await preflight.body.text()
+      const preflightSetCookie = preflight.headers['set-cookie']
+      const initialCookies = Array.isArray(preflightSetCookie) ? preflightSetCookie : preflightSetCookie ? [preflightSetCookie] : []
       const cookie = initialCookies.map((v) => v.split(';', 1)[0]).join('; ')
       const csrf = initialCookies.flatMap((v) => {
         const m = /(?:^|;\s*)csrf-token=([^;]+)/i.exec(v)
