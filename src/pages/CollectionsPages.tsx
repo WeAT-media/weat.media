@@ -134,8 +134,25 @@ export function CollectionsPage() {
 }
 
 export function CollectionPage({ id }: { id?: string }) {
-  const { collections, articles, unlocked } = useStore()
+  const { collections, articles, unlocked, user, addToCollection } = useStore()
+  const [articleId, setArticleId] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState('')
   const col = collections.find((c) => c.id === id)
+  const onAdd = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!col || !articleId) return
+    setAdding(true)
+    setError('')
+    try {
+      await addToCollection(col.id, articleId)
+      setArticleId('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось добавить статью в подборку.')
+    } finally {
+      setAdding(false)
+    }
+  }
   if (!col) {
     return (
       <div className="mx-auto max-w-[720px] px-5 py-24 text-center">
@@ -149,6 +166,9 @@ export function CollectionPage({ id }: { id?: string }) {
   const items = col.articleIds
     .map((aid) => articles.find((a) => a.id === aid))
     .filter((a): a is NonNullable<typeof a> => Boolean(a))
+  const available = user?.handle === col.authorHandle
+    ? articles.filter((a) => a.author.handle === col.authorHandle && !col.articleIds.includes(a.id))
+    : []
 
   return (
     <div className="mx-auto max-w-[860px] px-5 pb-24 md:px-8">
@@ -163,6 +183,30 @@ export function CollectionPage({ id }: { id?: string }) {
         <h1 className="mt-2 text-4xl font-extrabold tracking-tight md:text-5xl">{col.title}</h1>
         <p className="mt-4 max-w-[64ch] text-[15px] leading-relaxed text-muted-foreground">{col.description}</p>
       </div>
+      {user?.handle === col.authorHandle && (
+        <form onSubmit={onAdd} className="mt-8 border border-border bg-secondary/40 p-5">
+          <label htmlFor="collection-article" className="meta">Добавить статью</label>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+            <select
+              id="collection-article"
+              value={articleId}
+              onChange={(e) => {
+                setArticleId(e.target.value)
+                if (error) setError('')
+              }}
+              disabled={adding || available.length === 0}
+              className="min-w-0 flex-1 rounded-md border border-input bg-background px-4 py-2.5 text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="">{available.length ? 'Выберите публикацию' : 'Все ваши статьи уже в подборке'}</option>
+              {available.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+            </select>
+            <button type="submit" className="btn-primary shrink-0 !py-2" disabled={adding || !articleId}>
+              {adding ? 'Добавляем…' : 'Добавить'}
+            </button>
+          </div>
+          {error && <p role="alert" className="mt-2 text-sm text-destructive">{error}</p>}
+        </form>
+      )}
       <ol className="mt-10">
         {items.map((a, i) => (
           <Reveal key={a.id}>
